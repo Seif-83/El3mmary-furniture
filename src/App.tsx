@@ -1,0 +1,498 @@
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  Armchair, 
+  Users, 
+  LogIn, 
+  Trash2, 
+  LogOut, 
+  ChevronRight, 
+  Phone, 
+  User as UserIcon,
+  ShieldCheck,
+  CheckCircle2,
+  Table as TableIcon,
+  Languages,
+  Eye,
+  EyeOff
+} from 'lucide-react';
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword,
+  signOut, 
+  onAuthStateChanged,
+  User
+} from 'firebase/auth';
+import { 
+  collection, 
+  addDoc, 
+  getDocs, 
+  deleteDoc, 
+  doc, 
+  query, 
+  orderBy, 
+  serverTimestamp,
+  Timestamp
+} from 'firebase/firestore';
+import { auth, db } from './lib/firebase';
+import toast, { Toaster } from 'react-hot-toast';
+import { format } from 'date-fns';
+
+interface LoginRecord {
+  id: string;
+  name: string;
+  phone: string;
+  loginAt: Timestamp;
+}
+
+const ADMIN_EMAIL = "admin@gmail.com";
+
+const translations = {
+  en: {
+    brand: "EL3MMARY",
+    userDatabase: "User Database",
+    signOut: "Sign Out",
+    masterAdmin: "Master Administrator",
+    userManagement: "User Management",
+    totalUsers: "Total Users",
+    loginsToday: "Logins Today",
+    userName: "User Name",
+    phoneNumber: "Phone Number",
+    loginDate: "First Login Date",
+    actions: "Actions",
+    delete: "Delete",
+    successMsg: "Logged in successfully!",
+    portalSoon: "User portal coming soon...",
+    return: "Return",
+    welcome: "Welcome to El3mmary",
+    enterCreds: "Enter your credentials to access the database.",
+    userLogin: "User Login",
+    adminAccess: "Admin Access",
+    fullName: "Your Full Name",
+    enterPortal: "Enter Portal",
+    adminUser: "Admin Username",
+    passphrase: "Passphrase",
+    validating: "Validating...",
+    authenticating: "Authenticating...",
+    noRecords: "No user records found.",
+    processing: "Processing...",
+  },
+  ar: {
+    brand: "العماري",
+    userDatabase: "قاعدة البيانات",
+    signOut: "تسجيل الخروج",
+    masterAdmin: "المسؤول الرئيسي",
+    userManagement: "إدارة المستخدمين",
+    totalUsers: "إجمالي المستخدمين",
+    loginsToday: "تسجيلات اليوم",
+    userName: "الاسم",
+    phoneNumber: "رقم الهاتف",
+    loginDate: "تاريخ الدخول",
+    actions: "إجراءات",
+    delete: "حذف",
+    successMsg: "تم تسجيل الدخول بنجاح!",
+    portalSoon: "بوابة المستخدم قادمة قريبًا...",
+    return: "العودة",
+    welcome: "مرحباً بكم في العماري",
+    enterCreds: "أدخل بياناتك للوصول إلى قاعدة البيانات.",
+    userLogin: "دخول المستخدم",
+    adminAccess: "دخول المسؤول",
+    fullName: "الاسم الكامل",
+    enterPortal: "دخول البوابة",
+    adminUser: "اسم المسؤول",
+    passphrase: "كلمة المرور",
+    validating: "جاري التحقق...",
+    authenticating: "جاري الدخول...",
+    noRecords: "لا يوجد سجلات.",
+    processing: "جاري المعالجة...",
+  }
+};
+
+export default function App() {
+  const [lang, setLang] = useState<'en' | 'ar'>('en');
+  const t = translations[lang];
+  
+  const [activeTab, setActiveTab] = useState<'user' | 'employee'>('user');
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const [loginRecords, setLoginRecords] = useState<LoginRecord[]>([]);
+  const [userLoggedIn, setUserLoggedIn] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  const [formData, setFormData] = useState({
+    username: '', 
+    password: '',
+    name: '',
+    phone: ''
+  });
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      setIsAuthChecking(false);
+      if (user && user.email === ADMIN_EMAIL) {
+        fetchRecords();
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const fetchRecords = async () => {
+    try {
+      const q = query(collection(db, 'logins'), orderBy('loginAt', 'desc'));
+      const querySnapshot = await getDocs(q);
+      const records = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as LoginRecord[];
+      setLoginRecords(records);
+    } catch (error) {
+      console.error("Error fetching records:", error);
+    }
+  };
+
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    
+    const expectedEmail = process.env.ADMIN_EMAIL || ADMIN_EMAIL;
+    const expectedPass = process.env.ADMIN_PASSWORD || "admin123";
+
+    if (formData.username.toLowerCase() === expectedEmail.toLowerCase() && formData.password === expectedPass) {
+      try {
+        try {
+          await signInWithEmailAndPassword(auth, expectedEmail, expectedPass);
+        } catch (authError: any) {
+          if (authError.code === 'auth/user-not-found' || authError.code === 'auth/invalid-credential' || authError.code === 'auth/invalid-email') {
+            await createUserWithEmailAndPassword(auth, expectedEmail, expectedPass);
+          } else {
+            throw authError;
+          }
+        }
+        toast.success(lang === 'ar' ? "تم التحقق من المسؤول" : "Administrator Verified");
+        setFormData({ ...formData, username: '', password: '' });
+      } catch (error: any) {
+        console.error(error);
+        toast.error(error.message);
+      }
+    } else {
+      toast.error(lang === 'ar' ? "بيانات إعتماد غير صالحة" : "Invalid administrator credentials");
+    }
+    setIsLoading(false);
+  };
+
+  const handleUserLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.name.trim() || !formData.phone.trim()) {
+      return toast.error(lang === 'ar' ? "يرجى إدخال البيانات" : "Please enter your data");
+    }
+    
+    setIsLoading(true);
+    try {
+      await addDoc(collection(db, 'logins'), {
+        name: formData.name.trim(),
+        phone: formData.phone.trim(),
+        loginAt: serverTimestamp()
+      });
+      setUserLoggedIn(true);
+      setFormData({ ...formData, name: '', phone: '' });
+      toast.success(lang === 'ar' ? "تم التسجيل بنجاح" : "Login logged successfully");
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.message);
+    }
+    setIsLoading(false);
+  };
+
+  const handleDeleteRecord = async (id: string) => {
+    if (!confirm(lang === 'ar' ? "هل أنت متأكد؟" : "Are you sure?")) return;
+    try {
+      await deleteDoc(doc(db, 'logins', id));
+      setLoginRecords(prev => prev.filter(r => r.id !== id));
+      toast.success(lang === 'ar' ? "تم الحذف" : "Record removed");
+    } catch (error) {
+      toast.error(lang === 'ar' ? "غير مصرح" : "Unauthorized");
+    }
+  };
+
+  const handleLogout = () => {
+    signOut(auth);
+    setLoginRecords([]);
+    setUserLoggedIn(false);
+    toast.success(lang === 'ar' ? "تم تسجيل الخروج" : "Logged out");
+  };
+
+  if (isAuthChecking) {
+    return (
+      <div className="min-h-screen bg-[#f2eee8] flex items-center justify-center">
+        <motion.div 
+          animate={{ scale: [1, 1.1, 1], opacity: [0.5, 1, 0.5] }}
+          transition={{ duration: 2, repeat: Infinity }}
+        >
+          <Armchair className="w-12 h-12 text-[#d4a373]" />
+        </motion.div>
+      </div>
+    );
+  }
+
+  return (
+    <div 
+      className={`min-h-screen text-zinc-800 font-sans selection:bg-[#d4a373] selection:text-white flex flex-col md:flex-row ${lang === 'ar' ? 'font-sans' : ''}`}
+      dir={lang === 'ar' ? 'rtl' : 'ltr'}
+    >
+      <Toaster position={lang === 'ar' ? 'bottom-left' : 'bottom-right'} />
+      
+      {/* Sidebar */}
+      <aside className="w-full md:w-64 glass-dark shrink-0 flex flex-col p-8 gap-10 md:h-screen md:sticky md:top-0 z-50">
+        <div className="flex items-center justify-between">
+          <div className="logo border-b-2 border-accent-tan pb-1 text-xl font-bold tracking-widest uppercase">
+            {t.brand}
+          </div>
+        </div>
+
+        <button 
+          onClick={() => setLang(lang === 'en' ? 'ar' : 'en')}
+          className="flex items-center gap-3 px-4 py-3 rounded-xl glass hover:bg-white/40 transition-all text-sm font-bold"
+        >
+          <Languages className="w-4 h-4 text-accent-tan" />
+          {lang === 'en' ? 'العربية' : 'English'}
+        </button>
+        
+        <nav className="flex flex-col gap-4 flex-1">
+          <div className={`px-4 py-3 rounded-xl text-sm font-semibold glass transition-all cursor-pointer ${activeTab === 'user' ? 'text-zinc-900 shadow-sm' : 'text-zinc-500 opacity-70'}`} onClick={() => !currentUser && !userLoggedIn && setActiveTab('user')}>
+            {t.userDatabase}
+          </div>
+          {currentUser && (
+            <button 
+              onClick={handleLogout}
+              className="mt-auto flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-danger hover:opacity-80 transition-opacity pt-4"
+            >
+              <LogOut className="w-4 h-4" />
+              {t.signOut}
+            </button>
+          )}
+        </nav>
+      </aside>
+
+      <main className="flex-1 p-6 md:p-12 max-w-7xl mx-auto w-full overflow-hidden">
+        <AnimatePresence mode="wait">
+          {currentUser && currentUser.email === ADMIN_EMAIL ? (
+            <motion.div
+              key="admin-dash"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-8"
+            >
+              <div className="header flex flex-col md:flex-row md:items-end justify-between gap-6">
+                <div>
+                  <span className="text-[10px] font-bold bg-zinc-800 text-white px-2 py-1 rounded mb-1 inline-block uppercase tracking-wider">{t.masterAdmin}</span>
+                  <h1 className="text-3xl md:text-4xl font-light text-zinc-800">{t.userManagement}</h1>
+                </div>
+                
+                <div className="flex gap-4">
+                  <div className="glass p-5 rounded-2xl min-w-[140px]">
+                    <div className="text-[11px] uppercase font-bold text-zinc-500 mb-1 tracking-wider">{t.totalUsers}</div>
+                    <div className="text-3xl font-semibold">{loginRecords.length}</div>
+                  </div>
+                  <div className="glass p-5 rounded-2xl min-w-[140px]">
+                    <div className="text-[11px] uppercase font-bold text-zinc-500 mb-1 tracking-wider">{t.loginsToday}</div>
+                    <div className="text-3xl font-semibold">{loginRecords.filter(r => r.loginAt?.toDate().toDateString() === new Date().toDateString()).length}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="glass rounded-3xl overflow-hidden shadow-2xl shadow-black/5 p-4 md:p-8">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-black/5">
+                        <th className={`px-4 py-5 text-[11px] font-bold uppercase tracking-widest text-zinc-500 ${lang === 'ar' ? 'text-right' : 'text-left'}`}>{t.userName}</th>
+                        <th className={`px-4 py-5 text-[11px] font-bold uppercase tracking-widest text-zinc-500 ${lang === 'ar' ? 'text-right' : 'text-left'}`}>{t.phoneNumber}</th>
+                        <th className={`px-4 py-5 text-[11px] font-bold uppercase tracking-widest text-zinc-500 ${lang === 'ar' ? 'text-right' : 'text-left'}`}>{t.loginDate}</th>
+                        <th className={`px-4 py-5 text-[11px] font-bold uppercase tracking-widest text-zinc-500 ${lang === 'ar' ? 'text-left' : 'text-right'}`}>{t.actions}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-black/5">
+                      {loginRecords.length > 0 ? loginRecords.map((record) => (
+                        <tr key={record.id} className="hover:bg-white/30 transition-colors group">
+                          <td className="px-4 py-6">
+                            <span className="font-semibold text-zinc-800">{record.name}</span>
+                          </td>
+                          <td className="px-4 py-6">
+                            <span className="font-mono text-sm bg-black/5 px-2 py-1 rounded text-zinc-600">
+                              {record.phone}
+                            </span>
+                          </td>
+                          <td className="px-4 py-6 text-sm text-zinc-500 font-mono">
+                            {record.loginAt ? format(record.loginAt.toDate(), lang === 'ar' ? 'yyyy/MM/dd HH:mm' : 'MMM dd, yyyy · HH:mm') : '...'}
+                          </td>
+                          <td className={`px-4 py-6 ${lang === 'ar' ? 'text-left' : 'text-right'}`}>
+                            <button 
+                              onClick={() => handleDeleteRecord(record.id)}
+                              className="text-danger border border-danger/40 px-3 py-1.5 rounded-lg text-xs font-bold uppercase hover:bg-danger hover:text-white transition-all"
+                            >
+                              {t.delete}
+                            </button>
+                          </td>
+                        </tr>
+                      )) : (
+                        <tr>
+                          <td colSpan={4} className="px-4 py-16 text-center text-zinc-400 italic font-medium">
+                            {t.noRecords}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </motion.div>
+          ) : userLoggedIn ? (
+            <div className="min-h-[80vh] flex items-center justify-center relative">
+               <motion.div
+                key="user-success"
+                initial={{ opacity: 0, y: 50 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-success text-white p-8 md:p-12 rounded-[2rem] shadow-2xl flex items-center gap-8 relative overflow-hidden"
+              >
+                <div className={`absolute top-0 opacity-10 ${lang === 'ar' ? 'left-0' : 'right-0'} p-8`}>
+                   <CheckCircle2 className="w-32 h-32" />
+                </div>
+                <div className="w-3 h-3 bg-white rounded-full animate-pulse shadow-glow shadow-white/50 shrink-0" />
+                <div>
+                  <h1 className="text-2xl font-bold">{t.successMsg}</h1>
+                  <p className="text-white/80 text-sm mt-1">{t.portalSoon}</p>
+                  <button 
+                    onClick={() => setUserLoggedIn(false)}
+                    className="mt-6 px-6 py-2 bg-white/20 hover:bg-white/30 rounded-xl text-xs font-bold uppercase tracking-widest transition-all"
+                  >
+                    {t.return}
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          ) : (
+            <div className="max-w-md mx-auto py-12">
+              <div className="text-center mb-12">
+                <Armchair className="w-12 h-12 text-accent-tan mx-auto mb-4" />
+                <h2 className="text-3xl font-light tracking-tight text-zinc-800">{t.welcome}</h2>
+                <p className="text-zinc-500 text-sm mt-2 font-medium">{t.enterCreds}</p>
+              </div>
+
+              <div className="glass rounded-[2rem] p-8 shadow-2xl shadow-black/5">
+                <div className="flex p-1.5 bg-black/5 rounded-2xl mb-8">
+                  <button 
+                    onClick={() => setActiveTab('user')}
+                    className={`flex-1 py-3 rounded-xl text-[11px] font-bold uppercase tracking-widest transition-all ${
+                      activeTab === 'user' ? 'bg-white shadow-md text-zinc-900 border border-black/5' : 'text-zinc-400 hover:text-zinc-600'
+                    }`}
+                  >
+                    {t.userLogin}
+                  </button>
+                  <button 
+                    onClick={() => setActiveTab('employee')}
+                    className={`flex-1 py-3 rounded-xl text-[11px] font-bold uppercase tracking-widest transition-all ${
+                      activeTab === 'employee' ? 'bg-white shadow-md text-zinc-900 border border-black/5' : 'text-zinc-400 hover:text-zinc-600'
+                    }`}
+                  >
+                    {t.adminAccess}
+                  </button>
+                </div>
+
+                <AnimatePresence mode="wait">
+                  {activeTab === 'user' ? (
+                    <motion.form
+                      key="user-form"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      onSubmit={handleUserLogin}
+                      className="space-y-6"
+                    >
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-400 block px-1">{t.fullName}</label>
+                        <input 
+                          required
+                          type="text"
+                          className="w-full px-5 py-4 bg-white/50 border border-black/10 rounded-2xl focus:outline-none focus:ring-4 focus:ring-accent-tan/5 focus:border-accent-tan transition-all"
+                          value={formData.name}
+                          onChange={(e) => setFormData({...formData, name: e.target.value})}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-400 block px-1">{t.phoneNumber}</label>
+                        <input 
+                          required
+                          type="tel"
+                          className="w-full px-5 py-4 bg-white/50 border border-black/10 rounded-2xl focus:outline-none focus:ring-4 focus:ring-accent-tan/5 focus:border-accent-tan transition-all font-mono"
+                          value={formData.phone}
+                          onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                        />
+                      </div>
+                      <button 
+                        disabled={isLoading}
+                        type="submit"
+                        className="w-full bg-accent-tan text-white py-4 rounded-2xl font-bold uppercase tracking-widest hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50 shadow-xl shadow-accent-tan/20 flex items-center justify-center gap-2 group"
+                      >
+                        {isLoading ? t.processing : t.enterPortal}
+                        <ChevronRight className={`w-4 h-4 transition-transform ${lang === 'ar' ? 'rotate-180 group-hover:-translate-x-1' : 'group-hover:translate-x-1'}`} />
+                      </button>
+                    </motion.form>
+                  ) : (
+                    <motion.form
+                      key="employee-form"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      onSubmit={handleAdminLogin}
+                      className="space-y-6"
+                    >
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-400 block px-1">{t.adminUser}</label>
+                        <input 
+                          required
+                          type="text"
+                          className="w-full px-5 py-4 bg-white/50 border border-black/10 rounded-2xl focus:outline-none focus:ring-4 focus:ring-accent-tan/5 focus:border-accent-tan transition-all"
+                          value={formData.username}
+                          onChange={(e) => setFormData({...formData, username: e.target.value})}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-400 block px-1">{t.passphrase}</label>
+                        <div className="relative">
+                          <input 
+                            required
+                            type={showPassword ? "text" : "password"}
+                            className="w-full px-5 py-4 bg-white/50 border border-black/10 rounded-2xl focus:outline-none focus:ring-4 focus:ring-accent-tan/5 focus:border-accent-tan transition-all"
+                            value={formData.password}
+                            onChange={(e) => setFormData({...formData, password: e.target.value})}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-zinc-400 hover:text-zinc-600 transition-colors"
+                          >
+                            {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                          </button>
+                        </div>
+                      </div>
+                      <button 
+                        disabled={isLoading}
+                        type="submit"
+                        className="w-full bg-zinc-800 text-white py-4 rounded-2xl font-bold uppercase tracking-widest hover:bg-black active:scale-[0.98] transition-all disabled:opacity-50 shadow-xl shadow-black/10"
+                      >
+                        {isLoading ? t.authenticating : t.adminAccess}
+                      </button>
+                    </motion.form>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+          )}
+        </AnimatePresence>
+      </main>
+    </div>
+  );
+}
