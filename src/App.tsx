@@ -51,7 +51,7 @@ const ADMIN_EMAIL = "admin@gmail.com";
 
 const translations = {
   en: {
-    brand: "EL3MMARY",
+    brand: "Welcome to EL3mmary",
     userDatabase: "User Database",
     signOut: "Sign Out",
     masterAdmin: "Master Administrator",
@@ -80,9 +80,11 @@ const translations = {
     processing: "Processing...",
     phoneError: "Phone number must be between 10 and 11 digits",
     exportExcel: "Export Excel",
+    start: "Start",
+    welcomeDesc: "Premium Furniture & Interior Design Solutions",
   },
   ar: {
-    brand: "العماري",
+    brand: "مرحبا بكم في العماري",
     userDatabase: "قاعدة البيانات",
     signOut: "تسجيل الخروج",
     masterAdmin: "المسؤول الرئيسي",
@@ -111,6 +113,8 @@ const translations = {
     processing: "جاري المعالجة...",
     phoneError: "يجب أن يكون رقم الهاتف بين 10 و 11 رقم",
     exportExcel: "تصدير الملف",
+    start: "ابدأ الآن",
+    welcomeDesc: "حلول فاخرة للأثاث والتصميم الداخلي",
   }
 };
 
@@ -125,6 +129,7 @@ export default function App() {
   const [loginRecords, setLoginRecords] = useState<LoginRecord[]>([]);
   const [userLoggedIn, setUserLoggedIn] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
 
   const [formData, setFormData] = useState({
     username: '', 
@@ -267,10 +272,64 @@ export default function App() {
   }
 
   return (
-    <div 
-      className={`min-h-screen text-zinc-800 font-sans selection:bg-[#d4a373] selection:text-white flex flex-col md:flex-row ${lang === 'ar' ? 'font-sans' : ''}`}
-      dir={lang === 'ar' ? 'rtl' : 'ltr'}
-    >
+    <AnimatePresence mode="wait">
+      {showSplash ? (
+        <motion.div 
+          key="splash"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0, scale: 1.05, filter: "blur(10px)" }}
+          transition={{ duration: 0.5 }}
+          className="min-h-screen bg-[#f2eee8] flex items-center justify-center p-6 w-full"
+        >
+          <div className="max-w-2xl w-full text-center space-y-12">
+            <motion.div
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.2 }}
+            >
+              <div className="flex justify-center mb-8">
+                <button 
+                  onClick={() => setLang(lang === 'en' ? 'ar' : 'en')}
+                  className="flex items-center gap-3 px-6 py-3 rounded-2xl glass hover:bg-white/40 transition-all text-sm font-bold shadow-sm"
+                >
+                  <Languages className="w-4 h-4 text-accent-tan" />
+                  {lang === 'en' ? 'العربية' : 'English'}
+                </button>
+              </div>
+              <Armchair className="w-20 h-20 text-accent-tan mx-auto mb-8 animate-pulse" />
+              <h1 className="text-5xl md:text-7xl font-bold tracking-tighter text-zinc-900 mb-4">
+                {t.brand}
+              </h1>
+              <p className="text-xl text-zinc-500 font-medium">
+                {t.welcomeDesc}
+              </p>
+            </motion.div>
+
+            <motion.button
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ delay: 0.4, type: "spring" }}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowSplash(false)}
+              className="group relative inline-flex items-center justify-center px-12 py-6 bg-zinc-900 text-white rounded-[2rem] text-xl font-bold uppercase tracking-[0.2em] overflow-hidden transition-all shadow-2xl hover:shadow-zinc-900/40"
+            >
+              <div className="absolute inset-0 bg-accent-tan opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <span className="relative z-10">{t.start}</span>
+              <ChevronRight className={`relative z-10 w-6 h-6 ml-3 transition-transform group-hover:translate-x-2 ${lang === 'ar' ? 'rotate-180 group-hover:-translate-x-2' : ''}`} />
+            </motion.button>
+          </div>
+        </motion.div>
+      ) : (
+        <motion.div 
+          key="app"
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.5 }}
+          className={`min-h-screen text-zinc-800 font-sans selection:bg-[#d4a373] selection:text-white flex flex-col md:flex-row w-full ${lang === 'ar' ? 'font-sans' : ''}`}
+          dir={lang === 'ar' ? 'rtl' : 'ltr'}
+        >
       <Toaster position={lang === 'ar' ? 'bottom-left' : 'bottom-right'} />
       
       {/* Sidebar */}
@@ -534,6 +593,8 @@ export default function App() {
           )}
         </AnimatePresence>
       </main>
-    </div>
+    </motion.div>
+    )}
+    </AnimatePresence>
   );
 }
