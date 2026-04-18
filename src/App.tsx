@@ -76,6 +76,7 @@ const translations = {
     authenticating: "Authenticating...",
     noRecords: "No user records found.",
     processing: "Processing...",
+    phoneError: "Phone number must be between 10 and 11 digits",
   },
   ar: {
     brand: "العماري",
@@ -105,6 +106,7 @@ const translations = {
     authenticating: "جاري الدخول...",
     noRecords: "لا يوجد سجلات.",
     processing: "جاري المعالجة...",
+    phoneError: "يجب أن يكون رقم الهاتف بين 10 و 11 رقم",
   }
 };
 
@@ -186,6 +188,11 @@ export default function App() {
     e.preventDefault();
     if (!formData.name.trim() || !formData.phone.trim()) {
       return toast.error(lang === 'ar' ? "يرجى إدخال البيانات" : "Please enter your data");
+    }
+
+    const phoneDigits = formData.phone.replace(/\D/g, '');
+    if (phoneDigits.length < 10 || phoneDigits.length > 11) {
+      return toast.error(t.phoneError);
     }
     
     setIsLoading(true);
