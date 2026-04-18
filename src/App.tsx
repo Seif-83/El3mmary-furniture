@@ -14,8 +14,10 @@ import {
   Table as TableIcon,
   Languages,
   Eye,
-  EyeOff
+  EyeOff,
+  Download
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword,
@@ -77,6 +79,7 @@ const translations = {
     noRecords: "No user records found.",
     processing: "Processing...",
     phoneError: "Phone number must be between 10 and 11 digits",
+    exportExcel: "Export Excel",
   },
   ar: {
     brand: "العماري",
@@ -107,6 +110,7 @@ const translations = {
     noRecords: "لا يوجد سجلات.",
     processing: "جاري المعالجة...",
     phoneError: "يجب أن يكون رقم الهاتف بين 10 و 11 رقم",
+    exportExcel: "تصدير الملف",
   }
 };
 
@@ -151,6 +155,25 @@ export default function App() {
       setLoginRecords(records);
     } catch (error) {
       console.error("Error fetching records:", error);
+    }
+  };
+
+  const handleExportExcel = () => {
+    try {
+      const data = loginRecords.map(record => ({
+        [t.userName]: record.name,
+        [t.phoneNumber]: record.phone,
+        [t.loginDate]: record.loginAt ? format(record.loginAt.toDate(), 'yyyy-MM-dd HH:mm') : ''
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(data);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Logins");
+      XLSX.writeFile(workbook, "El3mmary_User_Logins.xlsx");
+      toast.success(lang === 'ar' ? "تم تصدير الملف" : "Excel file exported");
+    } catch (error) {
+      console.error("Export error:", error);
+      toast.error(lang === 'ar' ? "فشل التصدير" : "Export failed");
     }
   };
 
@@ -298,7 +321,14 @@ export default function App() {
                   <h1 className="text-3xl md:text-4xl font-light text-zinc-800">{t.userManagement}</h1>
                 </div>
                 
-                <div className="flex gap-4">
+                <div className="flex flex-wrap gap-4 items-center">
+                  <button 
+                    onClick={handleExportExcel}
+                    className="glass px-6 py-4 rounded-2xl flex items-center gap-3 hover:bg-white/40 transition-all font-bold text-xs uppercase tracking-widest text-[#d4a373] group"
+                  >
+                    <Download className="w-4 h-4 group-hover:bounce" />
+                    {t.exportExcel}
+                  </button>
                   <div className="glass p-5 rounded-2xl min-w-[140px]">
                     <div className="text-[11px] uppercase font-bold text-zinc-500 mb-1 tracking-wider">{t.totalUsers}</div>
                     <div className="text-3xl font-semibold">{loginRecords.length}</div>
