@@ -465,14 +465,18 @@ export default function App() {
                           <input 
                             required
                             type={showPassword ? "text" : "password"}
-                            className="w-full px-5 py-4 bg-white/50 border border-black/10 rounded-2xl focus:outline-none focus:ring-4 focus:ring-accent-tan/5 focus:border-accent-tan transition-all"
+                            className={`w-full py-4 bg-white/50 border border-black/10 rounded-2xl focus:outline-none focus:ring-4 focus:ring-accent-tan/5 focus:border-accent-tan transition-all ${
+                              lang === 'ar' ? 'pl-14 pr-5' : 'pr-14 pl-5'
+                            }`}
                             value={formData.password}
                             onChange={(e) => setFormData({...formData, password: e.target.value})}
                           />
                           <button
                             type="button"
                             onClick={() => setShowPassword(!showPassword)}
-                            className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-zinc-400 hover:text-zinc-600 transition-colors"
+                            className={`absolute top-1/2 -translate-y-1/2 p-2 text-zinc-400 hover:text-zinc-600 transition-colors ${
+                              lang === 'ar' ? 'left-4' : 'right-4'
+                            }`}
                           >
                             {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                           </button>
