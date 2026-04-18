@@ -15,7 +15,10 @@ import {
   Languages,
   Eye,
   EyeOff,
-  Download
+  Download,
+  Plus,
+  Edit2,
+  X
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { 
@@ -34,6 +37,7 @@ import {
   query, 
   orderBy, 
   serverTimestamp,
+  updateDoc,
   Timestamp
 } from 'firebase/firestore';
 import { auth, db } from './lib/firebase';
@@ -82,6 +86,10 @@ const translations = {
     exportExcel: "Export Excel",
     start: "Start",
     welcomeDesc: "Premium Furniture & Interior Design Solutions",
+    addCustomer: "Add Customer",
+    editCustomer: "Edit Customer",
+    save: "Save",
+    cancel: "Cancel",
   },
   ar: {
     brand: "مرحبا بكم في العماري",
@@ -115,6 +123,10 @@ const translations = {
     exportExcel: "تصدير الملف",
     start: "ابدأ الآن",
     welcomeDesc: "حلول فاخرة للأثاث والتصميم الداخلي",
+    addCustomer: "إضافة عميل",
+    editCustomer: "تعديل عميل",
+    save: "حفظ",
+    cancel: "إلغاء",
   }
 };
 
@@ -130,6 +142,10 @@ export default function App() {
   const [userLoggedIn, setUserLoggedIn] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
+  
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     username: '', 
@@ -258,6 +274,55 @@ export default function App() {
     toast.success(lang === 'ar' ? "تم تسجيل الخروج" : "Logged out");
   };
 
+  const handleOpenAddModal = () => {
+    setFormData({ ...formData, name: '', phone: '' });
+    setModalMode('add');
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEditModal = (record: LoginRecord) => {
+    setFormData({ ...formData, name: record.name, phone: record.phone });
+    setEditingId(record.id);
+    setModalMode('edit');
+    setIsModalOpen(true);
+  };
+
+  const handleSaveRecord = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.name.trim() || !formData.phone.trim()) {
+      return toast.error(lang === 'ar' ? "يرجى إدخال البيانات" : "Please enter your data");
+    }
+
+    const phoneDigits = formData.phone.replace(/\D/g, '');
+    if (phoneDigits.length < 10 || phoneDigits.length > 11) {
+      return toast.error(t.phoneError);
+    }
+
+    setIsLoading(true);
+    try {
+      if (modalMode === 'add') {
+        await addDoc(collection(db, 'logins'), {
+          name: formData.name.trim(),
+          phone: formData.phone.trim(),
+          loginAt: serverTimestamp()
+        });
+        toast.success(lang === 'ar' ? "تمت الإضافة بنجاح" : "Customer added successfully");
+      } else if (modalMode === 'edit' && editingId) {
+        await updateDoc(doc(db, 'logins', editingId), {
+          name: formData.name.trim(),
+          phone: formData.phone.trim()
+        });
+        toast.success(lang === 'ar' ? "تم التعديل بنجاح" : "Customer updated successfully");
+      }
+      setIsModalOpen(false);
+      fetchRecords();
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.message);
+    }
+    setIsLoading(false);
+  };
+
   if (isAuthChecking) {
     return (
       <div className="min-h-screen bg-[#f2eee8] flex items-center justify-center">
@@ -382,6 +447,13 @@ export default function App() {
                 
                 <div className="flex flex-wrap gap-4 items-center">
                   <button 
+                    onClick={handleOpenAddModal}
+                    className="glass px-6 py-4 rounded-2xl flex items-center gap-3 hover:bg-white/40 transition-all font-bold text-xs uppercase tracking-widest text-zinc-800 group"
+                  >
+                    <Plus className="w-4 h-4 text-accent-tan transition-transform group-hover:rotate-90" />
+                    {t.addCustomer}
+                  </button>
+                  <button 
                     onClick={handleExportExcel}
                     className="glass px-6 py-4 rounded-2xl flex items-center gap-3 hover:bg-white/40 transition-all font-bold text-xs uppercase tracking-widest text-[#d4a373] group"
                   >
@@ -424,7 +496,14 @@ export default function App() {
                           <td className="px-4 py-6 text-sm text-zinc-500 font-mono">
                             {record.loginAt ? format(record.loginAt.toDate(), lang === 'ar' ? 'yyyy/MM/dd HH:mm' : 'MMM dd, yyyy · HH:mm') : '...'}
                           </td>
-                          <td className={`px-4 py-6 ${lang === 'ar' ? 'text-left' : 'text-right'}`}>
+                          <td className={`px-4 py-6 ${lang === 'ar' ? 'text-left' : 'text-right'} flex gap-2 justify-end`}>
+                            <button 
+                              onClick={() => handleOpenEditModal(record)}
+                              className="text-zinc-600 border border-zinc-200 px-3 py-1.5 rounded-lg text-xs font-bold uppercase hover:bg-zinc-800 hover:text-white hover:border-zinc-800 transition-all flex items-center gap-2"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                              {lang === 'ar' ? 'تعديل' : 'Edit'}
+                            </button>
                             <button 
                               onClick={() => handleDeleteRecord(record.id)}
                               className="text-danger border border-danger/40 px-3 py-1.5 rounded-lg text-xs font-bold uppercase hover:bg-danger hover:text-white transition-all"
@@ -595,6 +674,85 @@ export default function App() {
       </main>
     </motion.div>
     )}
+    
+    {/* User Management Modal */}
+    <AnimatePresence>
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsModalOpen(false)}
+            className="absolute inset-0 bg-black/20 backdrop-blur-sm"
+          />
+          <motion.div
+            initial={{ scale: 0.9, y: 20, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            exit={{ scale: 0.9, y: 20, opacity: 0 }}
+            className="bg-white/90 backdrop-blur-xl rounded-[2.5rem] w-full max-w-lg p-8 md:p-12 shadow-2xl relative overflow-hidden z-10"
+          >
+            <div className="absolute top-0 right-0 p-8">
+              <button 
+                onClick={() => setIsModalOpen(false)}
+                className="p-2 hover:bg-black/5 rounded-full transition-colors"
+              >
+                <X className="w-6 h-6 text-zinc-400" />
+              </button>
+            </div>
+
+            <div className="mb-10 text-center md:text-left">
+              <div className="w-12 h-12 bg-accent-tan/10 rounded-2xl flex items-center justify-center mb-4 mx-auto md:mx-0">
+                {modalMode === 'add' ? <Plus className="w-6 h-6 text-accent-tan" /> : <Edit2 className="w-6 h-6 text-accent-tan" />}
+              </div>
+              <h2 className="text-3xl font-light text-zinc-900">
+                {modalMode === 'add' ? t.addCustomer : t.editCustomer}
+              </h2>
+            </div>
+
+            <form onSubmit={handleSaveRecord} className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-400 block px-1">{t.fullName}</label>
+                <input 
+                  required
+                  type="text"
+                  className="w-full px-5 py-4 bg-white border border-black/10 rounded-2xl focus:outline-none focus:ring-4 focus:ring-accent-tan/5 focus:border-accent-tan transition-all"
+                  value={formData.name}
+                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-400 block px-1">{t.phoneNumber}</label>
+                <input 
+                  required
+                  type="tel"
+                  className="w-full px-5 py-4 bg-white border border-black/10 rounded-2xl focus:outline-none focus:ring-4 focus:ring-accent-tan/5 focus:border-accent-tan transition-all font-mono"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                />
+              </div>
+
+              <div className="flex flex-col md:flex-row gap-4 pt-4">
+                <button 
+                  type="submit"
+                  disabled={isLoading}
+                  className="flex-1 bg-zinc-900 text-white py-4 rounded-2xl font-bold uppercase tracking-widest hover:bg-black active:scale-[0.98] transition-all disabled:opacity-50 shadow-xl shadow-black/10"
+                >
+                  {isLoading ? t.processing : t.save}
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-8 py-4 bg-black/5 text-zinc-600 rounded-2xl font-bold uppercase tracking-widest hover:bg-black/10 transition-all text-xs"
+                >
+                  {t.cancel}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
     </AnimatePresence>
   );
 }
