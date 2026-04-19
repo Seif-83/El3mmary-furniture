@@ -63,6 +63,13 @@ interface CatalogSheet {
   createdAt: Timestamp;
 }
 
+interface CustomerRecord {
+  id: string;
+  name: string;
+  phone: string;
+  createdAt: Timestamp;
+}
+
 const ADMIN_EMAIL = "admin@gmail.com";
 
 const translations = {
@@ -98,8 +105,8 @@ const translations = {
     exportExcel: "Export Excel",
     start: "Start",
     welcomeDesc: "Premium Furniture & Interior Design Solutions",
-    addCustomer: "Add Customer",
-    editCustomer: "Edit Customer",
+    addCustomer: "Add User",
+    editCustomer: "Edit Record",
     save: "Save",
     cancel: "Cancel",
     publishedSheets: "Published Sheets",
@@ -109,6 +116,9 @@ const translations = {
     viewSheet: "View Data",
     logins: "Logins",
     catalog: "Catalog",
+    customers: "Customers",
+    totalCustomers: "Total Customers",
+    addCustomerBtn: "Add Customer",
   },
   ar: {
     brand: "مرحبا بكم في العماري",
@@ -142,8 +152,8 @@ const translations = {
     exportExcel: "تصدير الملف",
     start: "ابدأ الآن",
     welcomeDesc: "حلول فاخرة للأثاث والتصميم الداخلي",
-    addCustomer: "إضافة عميل",
-    editCustomer: "تعديل عميل",
+    addCustomer: "إضافة مستخدم",
+    editCustomer: "تعديل السجل",
     save: "حفظ",
     cancel: "إلغاء",
     publishedSheets: "الملفات المنشورة",
@@ -153,6 +163,9 @@ const translations = {
     viewSheet: "عرض البيانات",
     logins: "تسجيلات الدخول",
     catalog: "الكتالوج",
+    customers: "العملاء",
+    totalCustomers: "إجمالي العملاء",
+    addCustomerBtn: "إضافة عميل",
   }
 };
 
@@ -173,8 +186,9 @@ export default function App() {
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   const [editingId, setEditingId] = useState<string | null>(null);
   
-  const [adminSubView, setAdminSubView] = useState<'logins' | 'catalogs'>('logins');
+  const [adminSubView, setAdminSubView] = useState<'logins' | 'catalogs' | 'customers'>('logins');
   const [catalogs, setCatalogs] = useState<CatalogSheet[]>([]);
+  const [customerRecords, setCustomerRecords] = useState<CustomerRecord[]>([]);
   const [selectedSheetId, setSelectedSheetId] = useState<string | null>(null);
   
   const selectedSheet = catalogs.find(c => c.id === selectedSheetId);
@@ -189,6 +203,7 @@ export default function App() {
   useEffect(() => {
     let unsubscribeLogins: (() => void) | undefined;
     let unsubscribeCatalogs: (() => void) | undefined;
+    let unsubscribeCustomers: (() => void) | undefined;
 
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
@@ -224,11 +239,25 @@ export default function App() {
         }, (error) => {
           console.error("Catalogs snapshot error:", error);
         });
+
+        // Real-time Customers
+        const qCustomers = query(collection(db, 'customers'), orderBy('createdAt', 'desc'));
+        unsubscribeCustomers = onSnapshot(qCustomers, (snapshot) => {
+          const records = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          })) as CustomerRecord[];
+          setCustomerRecords(records);
+        }, (error) => {
+          console.error("Customers snapshot error:", error);
+        });
       } else {
         if (unsubscribeLogins) unsubscribeLogins();
         if (unsubscribeCatalogs) unsubscribeCatalogs();
+        if (unsubscribeCustomers) unsubscribeCustomers();
         setLoginRecords([]);
         setCatalogs([]);
+        setCustomerRecords([]);
         setSelectedSheetId(null);
       }
     });
@@ -237,6 +266,7 @@ export default function App() {
       unsubscribeAuth();
       if (unsubscribeLogins) unsubscribeLogins();
       if (unsubscribeCatalogs) unsubscribeCatalogs();
+      if (unsubscribeCustomers) unsubscribeCustomers();
     };
   }, []);
 
@@ -377,8 +407,17 @@ export default function App() {
     if (!confirm(lang === 'ar' ? "هل أنت متأكد؟" : "Are you sure?")) return;
     try {
       await deleteDoc(doc(db, 'logins', id));
-      setLoginRecords(prev => prev.filter(r => r.id !== id));
       toast.success(lang === 'ar' ? "تم الحذف" : "Record removed");
+    } catch (error) {
+      toast.error(lang === 'ar' ? "غير مصرح" : "Unauthorized");
+    }
+  };
+
+  const handleDeleteCustomer = async (id: string) => {
+    if (!confirm(lang === 'ar' ? "هل أنت متأكد؟" : "Are you sure?")) return;
+    try {
+      await deleteDoc(doc(db, 'customers', id));
+      toast.success(lang === 'ar' ? "تم حذف العميل" : "Customer removed");
     } catch (error) {
       toast.error(lang === 'ar' ? "غير مصرح" : "Unauthorized");
     }
@@ -418,18 +457,20 @@ export default function App() {
     setIsLoading(true);
     try {
       if (modalMode === 'add') {
-        await addDoc(collection(db, 'logins'), {
+        const targetCollection = adminSubView === 'customers' ? 'customers' : 'logins';
+        await addDoc(collection(db, targetCollection), {
           name: formData.name.trim(),
           phone: formData.phone.trim(),
-          loginAt: serverTimestamp()
+          [adminSubView === 'customers' ? 'createdAt' : 'loginAt']: serverTimestamp()
         });
-        toast.success(lang === 'ar' ? "تمت الإضافة بنجاح" : "Customer added successfully");
+        toast.success(lang === 'ar' ? "تمت الإضافة بنجاح" : "Record added successfully");
       } else if (modalMode === 'edit' && editingId) {
-        await updateDoc(doc(db, 'logins', editingId), {
+        const targetCollection = adminSubView === 'customers' ? 'customers' : 'logins';
+        await updateDoc(doc(db, targetCollection, editingId), {
           name: formData.name.trim(),
           phone: formData.phone.trim()
         });
-        toast.success(lang === 'ar' ? "تم التعديل بنجاح" : "Customer updated successfully");
+        toast.success(lang === 'ar' ? "تم التعديل بنجاح" : "Record updated successfully");
       }
       setIsModalOpen(false);
     } catch (error: any) {
@@ -540,6 +581,13 @@ export default function App() {
                 {t.logins}
               </div>
               <div 
+                className={`px-4 py-3 rounded-xl text-sm font-semibold glass transition-all cursor-pointer flex items-center gap-3 ${adminSubView === 'customers' ? 'text-zinc-900 shadow-sm border border-black/5 bg-white' : 'text-zinc-500 opacity-70 hover:opacity-100 hover:bg-white/30'}`} 
+                onClick={() => setAdminSubView('customers')}
+              >
+                <UserIcon className="w-4 h-4" />
+                {t.customers}
+              </div>
+              <div 
                 className={`px-4 py-3 rounded-xl text-sm font-semibold glass transition-all cursor-pointer flex items-center gap-3 ${adminSubView === 'catalogs' ? 'text-zinc-900 shadow-sm border border-black/5 bg-white' : 'text-zinc-500 opacity-70 hover:opacity-100 hover:bg-white/30'}`} 
                 onClick={() => setAdminSubView('catalogs')}
               >
@@ -640,6 +688,88 @@ export default function App() {
                                 </button>
                                 <button 
                                   onClick={() => handleDeleteRecord(record.id)}
+                                  className="text-danger border border-danger/40 px-3 py-1.5 rounded-lg text-xs font-bold uppercase hover:bg-danger hover:text-white transition-all"
+                                >
+                                  {t.delete}
+                                </button>
+                              </td>
+                            </tr>
+                          )) : (
+                            <tr>
+                              <td colSpan={4} className="px-4 py-16 text-center text-zinc-400 italic font-medium">
+                                {t.noRecords}
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </motion.div>
+              ) : adminSubView === 'customers' ? (
+                <motion.div
+                  key="admin-dash-customers"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="space-y-8"
+                >
+                  <div className="header flex flex-col md:flex-row md:items-end justify-between gap-6">
+                    <div>
+                      <span className="text-[10px] font-bold bg-zinc-800 text-white px-2 py-1 rounded mb-1 inline-block uppercase tracking-wider">{t.masterAdmin}</span>
+                      <h1 className="text-3xl md:text-4xl font-light text-zinc-800">{t.customers}</h1>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-4 items-center">
+                      <button 
+                        onClick={handleOpenAddModal}
+                        className="glass px-6 py-4 rounded-2xl flex items-center gap-3 hover:bg-white/40 transition-all font-bold text-xs uppercase tracking-widest text-zinc-800 group"
+                      >
+                        <Plus className="w-4 h-4 text-accent-tan transition-transform group-hover:rotate-90" />
+                        {t.addCustomerBtn}
+                      </button>
+                      <div className="glass p-5 rounded-2xl min-w-[140px]">
+                        <div className="text-[11px] uppercase font-bold text-zinc-500 mb-1 tracking-wider">{t.totalCustomers}</div>
+                        <div className="text-3xl font-semibold">{customerRecords.length}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="glass rounded-3xl overflow-hidden shadow-2xl shadow-black/5 p-4 md:p-8">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-black/5">
+                            <th className={`px-4 py-5 text-[11px] font-bold uppercase tracking-widest text-zinc-500 ${lang === 'ar' ? 'text-right' : 'text-left'}`}>{t.userName}</th>
+                            <th className={`px-4 py-5 text-[11px] font-bold uppercase tracking-widest text-zinc-500 ${lang === 'ar' ? 'text-right' : 'text-left'}`}>{t.phoneNumber}</th>
+                            <th className={`px-4 py-5 text-[11px] font-bold uppercase tracking-widest text-zinc-500 ${lang === 'ar' ? 'text-right' : 'text-left'}`}>{t.loginDate}</th>
+                            <th className={`px-4 py-5 text-[11px] font-bold uppercase tracking-widest text-zinc-500 ${lang === 'ar' ? 'text-left' : 'text-right'}`}>{t.actions}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-black/5">
+                          {customerRecords.length > 0 ? customerRecords.map((record) => (
+                            <tr key={record.id} className="hover:bg-white/30 transition-colors group">
+                              <td className="px-4 py-6">
+                                <span className="font-semibold text-zinc-800">{record.name}</span>
+                              </td>
+                              <td className="px-4 py-6">
+                                <span className="font-mono text-sm bg-black/5 px-2 py-1 rounded text-zinc-600">
+                                  {record.phone}
+                                </span>
+                              </td>
+                              <td className="px-4 py-6 text-sm text-zinc-500 font-mono">
+                                {record.createdAt ? format(record.createdAt.toDate(), lang === 'ar' ? 'yyyy/MM/dd HH:mm' : 'MMM dd, yyyy · HH:mm') : '...'}
+                              </td>
+                              <td className={`px-4 py-6 ${lang === 'ar' ? 'text-left' : 'text-right'} flex gap-2 justify-end`}>
+                                <button 
+                                  onClick={() => handleOpenEditModal(record)}
+                                  className="text-zinc-600 border border-zinc-200 px-3 py-1.5 rounded-lg text-xs font-bold uppercase hover:bg-zinc-800 hover:text-white hover:border-zinc-800 transition-all flex items-center gap-2"
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                  {lang === 'ar' ? 'تعديل' : 'Edit'}
+                                </button>
+                                <button 
+                                  onClick={() => handleDeleteCustomer(record.id)}
                                   className="text-danger border border-danger/40 px-3 py-1.5 rounded-lg text-xs font-bold uppercase hover:bg-danger hover:text-white transition-all"
                                 >
                                   {t.delete}
