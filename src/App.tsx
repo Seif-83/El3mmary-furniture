@@ -41,6 +41,8 @@ import {
   doc, 
   query, 
   orderBy, 
+  where,
+  limit,
   serverTimestamp,
   updateDoc,
   Timestamp
@@ -463,6 +465,15 @@ export default function App() {
     try {
       if (modalMode === 'add') {
         const targetCollection = adminSubView === 'customers' ? 'customers' : 'logins';
+        const q = query(collection(db, targetCollection), where('phone', '==', formData.phone.trim()), limit(1));
+        const querySnapshot = await getDocs(q);
+
+        if (!querySnapshot.empty) {
+            toast.error(lang === 'ar' ? "هذا الرقم مسجل بالفعل" : "This phone number is already registered");
+            setIsLoading(false);
+            return;
+        }
+
         await addDoc(collection(db, targetCollection), {
           name: formData.name.trim(),
           phone: formData.phone.trim(),
