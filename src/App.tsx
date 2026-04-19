@@ -390,11 +390,18 @@ export default function App() {
     
     setIsLoading(true);
     try {
-      await addDoc(collection(db, 'logins'), {
-        name: formData.name.trim(),
-        phone: formData.phone.trim(),
-        loginAt: serverTimestamp()
-      });
+      // Check if user already exists in 'logins'
+      const q = query(collection(db, 'logins'), where('phone', '==', formData.phone.trim()), limit(1));
+      const querySnapshot = await getDocs(q);
+      
+      if (querySnapshot.empty) {
+        await addDoc(collection(db, 'logins'), {
+          name: formData.name.trim(),
+          phone: formData.phone.trim(),
+          loginAt: serverTimestamp()
+        });
+      }
+      
       setUserLoggedIn(true);
       setFormData({ ...formData, name: '', phone: '' });
       toast.success(lang === 'ar' ? "تم التسجيل بنجاح" : "Login logged successfully");
