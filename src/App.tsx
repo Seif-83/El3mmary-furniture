@@ -1068,7 +1068,7 @@ export default function App() {
                 {modalMode === 'add' ? <Plus className="w-6 h-6 text-accent-tan" /> : <Edit2 className="w-6 h-6 text-accent-tan" />}
               </div>
               <h2 className="text-3xl font-light text-zinc-900">
-                {modalMode === 'add' ? t.addCustomer : t.editCustomer}
+                {modalMode === 'add' ? (adminSubView === 'customers' ? t.addCustomerBtn : t.addCustomer) : t.editCustomer}
               </h2>
             </div>
 
