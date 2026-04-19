@@ -6,7 +6,7 @@ service cloud.firestore {
     // We remove all complex type checks for now to identify if rules are the bottleneck
     match /logins/{loginId} {
       allow create: if true;
-      allow list, get, delete: if request.auth != null && request.auth.token.email == "admin@gmail.com";
+      allow list, get, update, delete: if request.auth != null && request.auth.token.email == "admin@gmail.com";
     }
 
     // Default deny for everything else
