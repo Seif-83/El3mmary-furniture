@@ -175,7 +175,9 @@ export default function App() {
   
   const [adminSubView, setAdminSubView] = useState<'logins' | 'catalogs'>('logins');
   const [catalogs, setCatalogs] = useState<CatalogSheet[]>([]);
-  const [selectedSheet, setSelectedSheet] = useState<CatalogSheet | null>(null);
+  const [selectedSheetId, setSelectedSheetId] = useState<string | null>(null);
+  
+  const selectedSheet = catalogs.find(c => c.id === selectedSheetId);
 
   const [formData, setFormData] = useState({
     username: '', 
@@ -216,8 +218,8 @@ export default function App() {
           setCatalogs(catalogSheets);
           
           // Auto-select newest sheet if none selected
-          if (catalogSheets.length > 0 && !selectedSheet) {
-            setSelectedSheet(catalogSheets[0]);
+          if (catalogSheets.length > 0 && !selectedSheetId) {
+            setSelectedSheetId(catalogSheets[0].id);
           }
         }, (error) => {
           console.error("Catalogs snapshot error:", error);
@@ -227,7 +229,7 @@ export default function App() {
         if (unsubscribeCatalogs) unsubscribeCatalogs();
         setLoginRecords([]);
         setCatalogs([]);
-        setSelectedSheet(null);
+        setSelectedSheetId(null);
       }
     });
 
@@ -261,11 +263,14 @@ export default function App() {
         if (!title) return;
 
         setIsLoading(true);
-        await addDoc(collection(db, 'catalogs'), {
+        const docRef = await addDoc(collection(db, 'catalogs'), {
           title,
           data,
           createdAt: serverTimestamp()
         });
+        
+        // Switch to the new sheet immediately
+        setSelectedSheetId(docRef.id);
         
         toast.success(lang === 'ar' ? "تم النشر بنجاح" : "Sheet published successfully");
       } catch (error) {
@@ -282,9 +287,8 @@ export default function App() {
     if (!confirm(lang === 'ar' ? "هل أنت متأكد من حذف هذا الملف؟" : "Are you sure you want to delete this sheet?")) return;
     try {
       await deleteDoc(doc(db, 'catalogs', id));
-      setCatalogs(prev => prev.filter(c => c.id !== id));
-      if (selectedSheet?.id === id) {
-        setSelectedSheet(null);
+      if (selectedSheetId === id) {
+        setSelectedSheetId(null);
       }
       toast.success(lang === 'ar' ? "تم الحذف" : "Sheet deleted");
     } catch (error) {
@@ -428,7 +432,6 @@ export default function App() {
         toast.success(lang === 'ar' ? "تم التعديل بنجاح" : "Customer updated successfully");
       }
       setIsModalOpen(false);
-      fetchRecords();
     } catch (error: any) {
       console.error(error);
       toast.error(error.message);
@@ -686,9 +689,9 @@ export default function App() {
                         {catalogs.map(sheet => (
                           <button
                             key={sheet.id}
-                            onClick={() => setSelectedSheet(sheet)}
+                            onClick={() => setSelectedSheetId(sheet.id)}
                             className={`px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all shrink-0 ${
-                              selectedSheet?.id === sheet.id 
+                              selectedSheetId === sheet.id 
                                 ? 'bg-white text-zinc-900 shadow-md border border-black/5' 
                                 : 'text-zinc-500 hover:text-zinc-800'
                             }`}
@@ -702,7 +705,7 @@ export default function App() {
                         <div className="space-y-4">
                           <div className="flex items-center justify-between px-2">
                              <div className="text-sm text-zinc-500">
-                                {t.loginDate}: {format(selectedSheet.createdAt.toDate(), 'yyyy/MM/dd HH:mm')}
+                                {t.loginDate}: {selectedSheet.createdAt ? format(selectedSheet.createdAt.toDate(), 'yyyy/MM/dd HH:mm') : '...'}
                              </div>
                              <button 
                                onClick={() => deleteCatalogSection(selectedSheet.id)}
