@@ -18,7 +18,11 @@ import {
   Download,
   Plus,
   Edit2,
-  X
+  X,
+  FileSpreadsheet,
+  FolderOpen,
+  LayoutDashboard,
+  Upload
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { 
@@ -49,6 +53,13 @@ interface LoginRecord {
   name: string;
   phone: string;
   loginAt: Timestamp;
+}
+
+interface CatalogSheet {
+  id: string;
+  title: string;
+  data: any[];
+  createdAt: Timestamp;
 }
 
 const ADMIN_EMAIL = "admin@gmail.com";
@@ -90,6 +101,13 @@ const translations = {
     editCustomer: "Edit Customer",
     save: "Save",
     cancel: "Cancel",
+    publishedSheets: "Published Sheets",
+    uploadNew: "Upload New Sheet",
+    deleteSheet: "Delete Sheet",
+    noSheets: "No sheets published yet.",
+    viewSheet: "View Data",
+    logins: "Logins",
+    catalog: "Catalog",
   },
   ar: {
     brand: "مرحبا بكم في العماري",
@@ -127,6 +145,13 @@ const translations = {
     editCustomer: "تعديل عميل",
     save: "حفظ",
     cancel: "إلغاء",
+    publishedSheets: "الملفات المنشورة",
+    uploadNew: "نشر ملف جديد",
+    deleteSheet: "حذف الملف",
+    noSheets: "لا توجد ملفات منشورة بعد.",
+    viewSheet: "عرض البيانات",
+    logins: "تسجيلات الدخول",
+    catalog: "الكتالوج",
   }
 };
 
@@ -146,6 +171,10 @@ export default function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   const [editingId, setEditingId] = useState<string | null>(null);
+  
+  const [adminSubView, setAdminSubView] = useState<'logins' | 'catalogs'>('logins');
+  const [catalogs, setCatalogs] = useState<CatalogSheet[]>([]);
+  const [selectedSheet, setSelectedSheet] = useState<CatalogSheet | null>(null);
 
   const [formData, setFormData] = useState({
     username: '', 
@@ -174,8 +203,79 @@ export default function App() {
         ...doc.data()
       })) as LoginRecord[];
       setLoginRecords(records);
+      fetchCatalogs(); // Fetch catalogs whenever we fetch records
     } catch (error) {
       console.error("Error fetching records:", error);
+    }
+  };
+
+  const fetchCatalogs = async () => {
+    try {
+      const q = query(collection(db, 'catalogs'), orderBy('createdAt', 'desc'));
+      const querySnapshot = await getDocs(q);
+      const catalogSheets = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as CatalogSheet[];
+      setCatalogs(catalogSheets);
+      if (catalogSheets.length > 0 && !selectedSheet) {
+        setSelectedSheet(catalogSheets[0]);
+      }
+    } catch (error) {
+      console.error("Error fetching catalogs:", error);
+    }
+  };
+
+  const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws);
+        
+        if (data.length === 0) {
+          return toast.error("File is empty");
+        }
+
+        const title = prompt(lang === 'ar' ? "أدخل اسم الملف:" : "Enter sheet title:", file.name.split('.')[0]);
+        if (!title) return;
+
+        setIsLoading(true);
+        await addDoc(collection(db, 'catalogs'), {
+          title,
+          data,
+          createdAt: serverTimestamp()
+        });
+        
+        toast.success(lang === 'ar' ? "تم النشر بنجاح" : "Sheet published successfully");
+        fetchCatalogs();
+      } catch (error) {
+        console.error("Excel import error:", error);
+        toast.error("Failed to parse Excel file");
+      }
+      setIsLoading(false);
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = ''; // Reset input
+  };
+
+  const deleteCatalogSection = async (id: string) => {
+    if (!confirm(lang === 'ar' ? "هل أنت متأكد من حذف هذا الملف؟" : "Are you sure you want to delete this sheet?")) return;
+    try {
+      await deleteDoc(doc(db, 'catalogs', id));
+      setCatalogs(prev => prev.filter(c => c.id !== id));
+      if (selectedSheet?.id === id) {
+        setSelectedSheet(null);
+      }
+      toast.success(lang === 'ar' ? "تم الحذف" : "Sheet deleted");
+    } catch (error) {
+      toast.error("Failed to delete sheet");
     }
   };
 
@@ -414,9 +514,29 @@ export default function App() {
         </button>
         
         <nav className="flex flex-col gap-4 flex-1">
-          <div className={`px-4 py-3 rounded-xl text-sm font-semibold glass transition-all cursor-pointer ${activeTab === 'user' ? 'text-zinc-900 shadow-sm' : 'text-zinc-500 opacity-70'}`} onClick={() => !currentUser && !userLoggedIn && setActiveTab('user')}>
-            {t.userDatabase}
-          </div>
+          {currentUser && currentUser.email === ADMIN_EMAIL ? (
+            <>
+              <div 
+                className={`px-4 py-3 rounded-xl text-sm font-semibold glass transition-all cursor-pointer flex items-center gap-3 ${adminSubView === 'logins' ? 'text-zinc-900 shadow-sm border border-black/5 bg-white' : 'text-zinc-500 opacity-70 hover:opacity-100 hover:bg-white/30'}`} 
+                onClick={() => setAdminSubView('logins')}
+              >
+                <Users className="w-4 h-4" />
+                {t.logins}
+              </div>
+              <div 
+                className={`px-4 py-3 rounded-xl text-sm font-semibold glass transition-all cursor-pointer flex items-center gap-3 ${adminSubView === 'catalogs' ? 'text-zinc-900 shadow-sm border border-black/5 bg-white' : 'text-zinc-500 opacity-70 hover:opacity-100 hover:bg-white/30'}`} 
+                onClick={() => setAdminSubView('catalogs')}
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                {t.publishedSheets}
+              </div>
+            </>
+          ) : (
+            <div className={`px-4 py-3 rounded-xl text-sm font-semibold glass transition-all cursor-pointer ${activeTab === 'user' ? 'text-zinc-900 shadow-sm' : 'text-zinc-500 opacity-70'}`} onClick={() => !currentUser && !userLoggedIn && setActiveTab('user')}>
+              {t.userDatabase}
+            </div>
+          )}
+          
           {currentUser && (
             <button 
               onClick={handleLogout}
@@ -432,98 +552,194 @@ export default function App() {
       <main className="flex-1 p-6 md:p-12 max-w-7xl mx-auto w-full overflow-hidden">
         <AnimatePresence mode="wait">
           {currentUser && currentUser.email === ADMIN_EMAIL ? (
-            <motion.div
-              key="admin-dash"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-8"
-            >
-              <div className="header flex flex-col md:flex-row md:items-end justify-between gap-6">
-                <div>
-                  <span className="text-[10px] font-bold bg-zinc-800 text-white px-2 py-1 rounded mb-1 inline-block uppercase tracking-wider">{t.masterAdmin}</span>
-                  <h1 className="text-3xl md:text-4xl font-light text-zinc-800">{t.userManagement}</h1>
-                </div>
-                
-                <div className="flex flex-wrap gap-4 items-center">
-                  <button 
-                    onClick={handleOpenAddModal}
-                    className="glass px-6 py-4 rounded-2xl flex items-center gap-3 hover:bg-white/40 transition-all font-bold text-xs uppercase tracking-widest text-zinc-800 group"
-                  >
-                    <Plus className="w-4 h-4 text-accent-tan transition-transform group-hover:rotate-90" />
-                    {t.addCustomer}
-                  </button>
-                  <button 
-                    onClick={handleExportExcel}
-                    className="glass px-6 py-4 rounded-2xl flex items-center gap-3 hover:bg-white/40 transition-all font-bold text-xs uppercase tracking-widest text-[#d4a373] group"
-                  >
-                    <Download className="w-4 h-4 group-hover:bounce" />
-                    {t.exportExcel}
-                  </button>
-                  <div className="glass p-5 rounded-2xl min-w-[140px]">
-                    <div className="text-[11px] uppercase font-bold text-zinc-500 mb-1 tracking-wider">{t.totalUsers}</div>
-                    <div className="text-3xl font-semibold">{loginRecords.length}</div>
+            <AnimatePresence mode="wait">
+              {adminSubView === 'logins' ? (
+                <motion.div
+                  key="admin-dash-logins"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="space-y-8"
+                >
+                  <div className="header flex flex-col md:flex-row md:items-end justify-between gap-6">
+                    <div>
+                      <span className="text-[10px] font-bold bg-zinc-800 text-white px-2 py-1 rounded mb-1 inline-block uppercase tracking-wider">{t.masterAdmin}</span>
+                      <h1 className="text-3xl md:text-4xl font-light text-zinc-800">{t.userManagement}</h1>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-4 items-center">
+                      <button 
+                        onClick={handleOpenAddModal}
+                        className="glass px-6 py-4 rounded-2xl flex items-center gap-3 hover:bg-white/40 transition-all font-bold text-xs uppercase tracking-widest text-zinc-800 group"
+                      >
+                        <Plus className="w-4 h-4 text-accent-tan transition-transform group-hover:rotate-90" />
+                        {t.addCustomer}
+                      </button>
+                      <button 
+                        onClick={handleExportExcel}
+                        className="glass px-6 py-4 rounded-2xl flex items-center gap-3 hover:bg-white/40 transition-all font-bold text-xs uppercase tracking-widest text-[#d4a373] group"
+                      >
+                        <Download className="w-4 h-4 group-hover:bounce" />
+                        {t.exportExcel}
+                      </button>
+                      <div className="glass p-5 rounded-2xl min-w-[140px]">
+                        <div className="text-[11px] uppercase font-bold text-zinc-500 mb-1 tracking-wider">{t.totalUsers}</div>
+                        <div className="text-3xl font-semibold">{loginRecords.length}</div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="glass p-5 rounded-2xl min-w-[140px]">
-                    <div className="text-[11px] uppercase font-bold text-zinc-500 mb-1 tracking-wider">{t.loginsToday}</div>
-                    <div className="text-3xl font-semibold">{loginRecords.filter(r => r.loginAt?.toDate().toDateString() === new Date().toDateString()).length}</div>
-                  </div>
-                </div>
-              </div>
 
-              <div className="glass rounded-3xl overflow-hidden shadow-2xl shadow-black/5 p-4 md:p-8">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="border-b border-black/5">
-                        <th className={`px-4 py-5 text-[11px] font-bold uppercase tracking-widest text-zinc-500 ${lang === 'ar' ? 'text-right' : 'text-left'}`}>{t.userName}</th>
-                        <th className={`px-4 py-5 text-[11px] font-bold uppercase tracking-widest text-zinc-500 ${lang === 'ar' ? 'text-right' : 'text-left'}`}>{t.phoneNumber}</th>
-                        <th className={`px-4 py-5 text-[11px] font-bold uppercase tracking-widest text-zinc-500 ${lang === 'ar' ? 'text-right' : 'text-left'}`}>{t.loginDate}</th>
-                        <th className={`px-4 py-5 text-[11px] font-bold uppercase tracking-widest text-zinc-500 ${lang === 'ar' ? 'text-left' : 'text-right'}`}>{t.actions}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-black/5">
-                      {loginRecords.length > 0 ? loginRecords.map((record) => (
-                        <tr key={record.id} className="hover:bg-white/30 transition-colors group">
-                          <td className="px-4 py-6">
-                            <span className="font-semibold text-zinc-800">{record.name}</span>
-                          </td>
-                          <td className="px-4 py-6">
-                            <span className="font-mono text-sm bg-black/5 px-2 py-1 rounded text-zinc-600">
-                              {record.phone}
-                            </span>
-                          </td>
-                          <td className="px-4 py-6 text-sm text-zinc-500 font-mono">
-                            {record.loginAt ? format(record.loginAt.toDate(), lang === 'ar' ? 'yyyy/MM/dd HH:mm' : 'MMM dd, yyyy · HH:mm') : '...'}
-                          </td>
-                          <td className={`px-4 py-6 ${lang === 'ar' ? 'text-left' : 'text-right'} flex gap-2 justify-end`}>
-                            <button 
-                              onClick={() => handleOpenEditModal(record)}
-                              className="text-zinc-600 border border-zinc-200 px-3 py-1.5 rounded-lg text-xs font-bold uppercase hover:bg-zinc-800 hover:text-white hover:border-zinc-800 transition-all flex items-center gap-2"
-                            >
-                              <Edit2 className="w-3 h-3" />
-                              {lang === 'ar' ? 'تعديل' : 'Edit'}
-                            </button>
-                            <button 
-                              onClick={() => handleDeleteRecord(record.id)}
-                              className="text-danger border border-danger/40 px-3 py-1.5 rounded-lg text-xs font-bold uppercase hover:bg-danger hover:text-white transition-all"
-                            >
-                              {t.delete}
-                            </button>
-                          </td>
-                        </tr>
-                      )) : (
-                        <tr>
-                          <td colSpan={4} className="px-4 py-16 text-center text-zinc-400 italic font-medium">
-                            {t.noRecords}
-                          </td>
-                        </tr>
+                  <div className="glass rounded-3xl overflow-hidden shadow-2xl shadow-black/5 p-4 md:p-8">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-black/5">
+                            <th className={`px-4 py-5 text-[11px] font-bold uppercase tracking-widest text-zinc-500 ${lang === 'ar' ? 'text-right' : 'text-left'}`}>{t.userName}</th>
+                            <th className={`px-4 py-5 text-[11px] font-bold uppercase tracking-widest text-zinc-500 ${lang === 'ar' ? 'text-right' : 'text-left'}`}>{t.phoneNumber}</th>
+                            <th className={`px-4 py-5 text-[11px] font-bold uppercase tracking-widest text-zinc-500 ${lang === 'ar' ? 'text-right' : 'text-left'}`}>{t.loginDate}</th>
+                            <th className={`px-4 py-5 text-[11px] font-bold uppercase tracking-widest text-zinc-500 ${lang === 'ar' ? 'text-left' : 'text-right'}`}>{t.actions}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-black/5">
+                          {loginRecords.length > 0 ? loginRecords.map((record) => (
+                            <tr key={record.id} className="hover:bg-white/30 transition-colors group">
+                              <td className="px-4 py-6">
+                                <span className="font-semibold text-zinc-800">{record.name}</span>
+                              </td>
+                              <td className="px-4 py-6">
+                                <span className="font-mono text-sm bg-black/5 px-2 py-1 rounded text-zinc-600">
+                                  {record.phone}
+                                </span>
+                              </td>
+                              <td className="px-4 py-6 text-sm text-zinc-500 font-mono">
+                                {record.loginAt ? format(record.loginAt.toDate(), lang === 'ar' ? 'yyyy/MM/dd HH:mm' : 'MMM dd, yyyy · HH:mm') : '...'}
+                              </td>
+                              <td className={`px-4 py-6 ${lang === 'ar' ? 'text-left' : 'text-right'} flex gap-2 justify-end`}>
+                                <button 
+                                  onClick={() => handleOpenEditModal(record)}
+                                  className="text-zinc-600 border border-zinc-200 px-3 py-1.5 rounded-lg text-xs font-bold uppercase hover:bg-zinc-800 hover:text-white hover:border-zinc-800 transition-all flex items-center gap-2"
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                  {lang === 'ar' ? 'تعديل' : 'Edit'}
+                                </button>
+                                <button 
+                                  onClick={() => handleDeleteRecord(record.id)}
+                                  className="text-danger border border-danger/40 px-3 py-1.5 rounded-lg text-xs font-bold uppercase hover:bg-danger hover:text-white transition-all"
+                                >
+                                  {t.delete}
+                                </button>
+                              </td>
+                            </tr>
+                          )) : (
+                            <tr>
+                              <td colSpan={4} className="px-4 py-16 text-center text-zinc-400 italic font-medium">
+                                {t.noRecords}
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="admin-dash-catalogs"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="space-y-8"
+                >
+                  <div className="header flex flex-col md:flex-row md:items-end justify-between gap-6">
+                    <div>
+                      <span className="text-[10px] font-bold bg-zinc-800 text-white px-2 py-1 rounded mb-1 inline-block uppercase tracking-wider">{t.catalog}</span>
+                      <h1 className="text-3xl md:text-4xl font-light text-zinc-800">{t.publishedSheets}</h1>
+                    </div>
+                    
+                    <div className="flex gap-4">
+                      <label 
+                        className="glass px-6 py-4 rounded-2xl flex items-center gap-3 hover:bg-white/40 transition-all font-bold text-xs uppercase tracking-widest text-zinc-800 cursor-pointer group"
+                      >
+                        <Upload className="w-4 h-4 text-accent-tan transition-transform group-hover:-translate-y-1" />
+                        {t.uploadNew}
+                        <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleImportExcel} />
+                      </label>
+                    </div>
+                  </div>
+
+                  {catalogs.length > 0 ? (
+                    <div className="grid grid-cols-1 gap-8">
+                      <div className="flex gap-2 p-1 bg-black/5 rounded-2xl w-full max-w-4xl overflow-x-auto whitespace-nowrap scrollbar-hide">
+                        {catalogs.map(sheet => (
+                          <button
+                            key={sheet.id}
+                            onClick={() => setSelectedSheet(sheet)}
+                            className={`px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all shrink-0 ${
+                              selectedSheet?.id === sheet.id 
+                                ? 'bg-white text-zinc-900 shadow-md border border-black/5' 
+                                : 'text-zinc-500 hover:text-zinc-800'
+                            }`}
+                          >
+                            {sheet.title}
+                          </button>
+                        ))}
+                      </div>
+
+                      {selectedSheet && (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between px-2">
+                             <div className="text-sm text-zinc-500">
+                                {t.loginDate}: {format(selectedSheet.createdAt.toDate(), 'yyyy/MM/dd HH:mm')}
+                             </div>
+                             <button 
+                               onClick={() => deleteCatalogSection(selectedSheet.id)}
+                               className="flex items-center gap-2 text-danger text-[11px] font-bold uppercase tracking-widest hover:opacity-70 transition-opacity"
+                             >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                {t.deleteSheet}
+                             </button>
+                          </div>
+                          
+                          <div className="glass rounded-3xl overflow-hidden shadow-2xl shadow-black/5 p-4 md:p-8">
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left border-collapse">
+                                <thead>
+                                  <tr className="border-b border-black/5">
+                                    {selectedSheet.data.length > 0 && Object.keys(selectedSheet.data[0]).map((header) => (
+                                      <th key={header} className={`px-4 py-5 text-[11px] font-bold uppercase tracking-widest text-zinc-500 ${lang === 'ar' ? 'text-right' : 'text-left'}`}>
+                                        {header}
+                                      </th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-black/5">
+                                  {selectedSheet.data.map((row, idx) => (
+                                    <tr key={idx} className="hover:bg-white/30 transition-colors group">
+                                      {Object.values(row).map((val: any, vidx) => (
+                                        <td key={vidx} className="px-4 py-6 text-sm text-zinc-800">
+                                          {val?.toString()}
+                                        </td>
+                                      ))}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </div>
                       )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </motion.div>
+                    </div>
+                  ) : (
+                    <div className="glass rounded-[2.5rem] p-20 text-center space-y-4 flex flex-col items-center">
+                      <div className="bg-zinc-100 p-6 rounded-full inline-block">
+                        <FileSpreadsheet className="w-12 h-12 text-zinc-300" />
+                      </div>
+                      <p className="text-zinc-400 italic">{t.noSheets}</p>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
           ) : userLoggedIn ? (
             <div className="min-h-[80vh] flex items-center justify-center relative">
                <motion.div
