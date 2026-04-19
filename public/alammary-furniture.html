@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>العماري للأثاث</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Unbounded:wght@300;400;700;900&family=Fraunces:ital,opsz,wght@0,9..144,100;0,9..144,700;1,9..144,100;1,9..144,700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --sand:    #F5EDD8;
+  --cream:   #FDFAF3;
+  --rust:    #C94B2A;
+  --rust-lt: #E8674A;
+  --teal:    #1B7C7C;
+  --teal-lt: #2AADAD;
+  --ink:     #111008;
+  --mustard: #D4A017;
+  --blush:   #F2C4A8;
+  --sage:    #8BAF8B;
+}
+
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Tajawal', sans-serif;
+  background: var(--cream);
+  color: var(--ink);
+  overflow-x: hidden;
+  cursor: none;
+}
+
+/* ─── CUSTOM CURSOR ─── */
+.cursor {
+  position: fixed; top:0; left:0; z-index:9999;
+  width:14px; height:14px;
+  background: var(--rust);
+  border-radius:50%;
+  pointer-events:none;
+  transform: translate(-50%,-50%);
+  transition: transform 0.1s, width 0.3s, height 0.3s, background 0.3s;
+  mix-blend-mode: multiply;
+}
+.cursor.big { width:60px; height:60px; background: var(--teal); opacity:0.35; }
+
+/* ─── NAVBAR ─── */
+nav {
+  position: fixed; top:0; left:0; right:0; z-index:200;
+  display:flex; align-items:center; justify-content:space-between;
+  padding: 1.2rem 4vw;
+  background: var(--cream);
+  border-bottom: 2px solid var(--ink);
+  transition: transform 0.4s;
+}
+nav.hide { transform: translateY(-100%); }
+
+.nav-brand {
+  display:flex; flex-direction:column; line-height:1;
+  text-decoration:none;
+}
+.nav-brand .ar {
+  font-family:'Tajawal',sans-serif; font-weight:900; font-size:1.5rem;
+  color: var(--ink); letter-spacing:-0.01em;
+}
+.nav-brand .en {
+  font-family:'Unbounded',sans-serif; font-weight:300; font-size:0.5rem;
+  color: var(--rust); letter-spacing:0.35em; text-transform:uppercase; margin-top:2px;
+}
+
+.nav-links { display:flex; align-items:center; gap:2.5rem; list-style:none; }
+.nav-links a {
+  font-weight:500; font-size:0.9rem; color:var(--ink); text-decoration:none;
+  position:relative; padding-bottom:2px;
+}
+.nav-links a::after {
+  content:''; position:absolute; bottom:0; right:0;
+  width:0; height:2px; background:var(--rust);
+  transition: width 0.3s;
+}
+.nav-links a:hover::after { width:100%; }
+
+.nav-btn {
+  font-family:'Unbounded',sans-serif; font-weight:700; font-size:0.62rem;
+  letter-spacing:0.1em; text-transform:uppercase;
+  background:var(--ink); color:var(--cream);
+  padding:0.75rem 1.5rem; text-decoration:none; border:none; cursor:pointer;
+  transition: background 0.25s, color 0.25s;
+}
+.nav-btn:hover { background:var(--rust); }
+
+/* ─── HERO ─── */
+#hero {
+  min-height:100vh; padding-top:80px;
+  background: var(--sand);
+  display:grid; grid-template-columns:1fr 1fr;
+  position:relative; overflow:hidden;
+}
+
+#hero::before {
+  content:'';
+  position:absolute; top:-120px; left:-120px;
+  width:600px; height:600px;
+  border-radius:50%;
+  background: var(--rust);
+  opacity:0.07;
+  z-index:0;
+}
+#hero::after {
+  content:'';
+  position:absolute; bottom:-80px; right:20%;
+  width:320px; height:320px; border-radius:50%;
+  background: var(--teal);
+  opacity:0.08; z-index:0;
+}
+
+.hero-left {
+  display:flex; flex-direction:column; justify-content:center;
+  padding: 6rem 4vw 6rem 6vw;
+  position:relative; z-index:2;
+}
+
+.hero-tag {
+  display:inline-flex; align-items:center; gap:0.6rem;
+  background:var(--rust); color:white;
+  padding:0.4rem 1rem; margin-bottom:2rem;
+  font-family:'Unbounded',sans-serif; font-size:0.55rem; font-weight:400;
+  letter-spacing:0.2em; text-transform:uppercase;
+  width:fit-content;
+  animation: slideIn 0.7s ease both;
+}
+.hero-tag::before {
+  content:''; width:8px; height:8px; border-radius:50%;
+  background:white; flex-shrink:0;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.hero-title {
+  font-family:'Tajawal',sans-serif; font-weight:900;
+  font-size: clamp(4.5rem, 9vw, 9rem);
+  line-height:0.9; color:var(--ink);
+  margin-bottom:0.5rem;
+  animation: heroUp 0.9s cubic-bezier(0.16,1,0.3,1) 0.15s both;
+}
+.hero-title .stroke-text {
+  -webkit-text-stroke: 2.5px var(--ink);
+  color: transparent;
+}
+.hero-title .color-text { color: var(--rust); }
+
+.hero-subtitle-row {
+  display:flex; align-items:flex-end; gap:1.5rem; margin-top:1.5rem;
+  animation: heroUp 0.9s cubic-bezier(0.16,1,0.3,1) 0.3s both;
+}
+.hero-desc {
+  font-size:1rem; line-height:1.75; color:rgba(17,16,8,0.6);
+  max-width:320px;
+}
+
+.hero-actions {
+  display:flex; gap:1rem; margin-top:2.5rem; flex-wrap:wrap;
+  animation: heroUp 0.9s cubic-bezier(0.16,1,0.3,1) 0.45s both;
+}
+.btn-solid {
+  font-family:'Unbounded',sans-serif; font-weight:700; font-size:0.62rem;
+  letter-spacing:0.1em; text-transform:uppercase;
+  background:var(--ink); color:var(--cream);
+  padding:1rem 2rem; text-decoration:none; border:none; cursor:pointer;
+  transition: background 0.25s, transform 0.2s;
+  display:inline-block;
+}
+.btn-solid:hover { background:var(--rust); transform:translateY(-2px); }
+.btn-outline {
+  font-family:'Unbounded',sans-serif; font-weight:400; font-size:0.62rem;
+  letter-spacing:0.1em; text-transform:uppercase;
+  background:transparent; color:var(--ink); border:2px solid var(--ink);
+  padding:1rem 2rem; text-decoration:none; cursor:pointer;
+  transition: background 0.25s, color 0.25s, transform 0.2s;
+  display:inline-block;
+}
+.btn-outline:hover { background:var(--ink); color:var(--cream); transform:translateY(-2px); }
+
+.hero-numbers {
+  display:flex; gap:2.5rem; margin-top:3.5rem; padding-top:2rem;
+  border-top:1px solid rgba(17,16,8,0.15);
+  animation: heroUp 0.9s cubic-bezier(0.16,1,0.3,1) 0.6s both;
+}
+.h-num .n {
+  font-family:'Fraunces',serif; font-size:2.5rem; font-weight:700;
+  color:var(--rust); display:block; line-height:1;
+}
+.h-num .l { font-size:0.78rem; color:rgba(17,16,8,0.5); margin-top:4px; display:block; }
+
+.hero-right {
+  position:relative; overflow:hidden;
+  background: var(--teal);
+  display:flex; align-items:center; justify-content:center;
+  animation: fadeIn 1s ease 0.2s both;
+}
+.hero-right::before {
+  content:'';
+  position:absolute; inset:0;
+  background:
+    repeating-linear-gradient(45deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 28px),
+    repeating-linear-gradient(-45deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 28px);
+}
+.hero-right-inner {
+  position:relative; z-index:2; text-align:center; padding:3rem;
+}
+.hero-furniture-art {
+  width:100%; max-width:400px;
+  animation: floatY 5s ease-in-out infinite;
+}
+.hero-right-label {
+  position:absolute; bottom:2rem; left:50%; transform:translateX(-50%);
+  font-family:'Unbounded',sans-serif; font-size:0.55rem; letter-spacing:0.35em;
+  text-transform:uppercase; color:rgba(255,255,255,0.5); white-space:nowrap;
+}
+
+.badge-rotate {
+  position:absolute; bottom:3rem; right:-3rem;
+  width:120px; height:120px; z-index:10;
+  animation: spin 12s linear infinite;
+}
+
+/* ─── MARQUEE ─── */
+.marquee-wrap {
+  background:var(--ink); overflow:hidden; padding:0.9rem 0;
+  border-top:3px solid var(--rust); border-bottom:3px solid var(--rust);
+}
+.marquee-inner {
+  display:flex; gap:0; width:max-content;
+  animation: marquee 18s linear infinite;
+}
+.marquee-item {
+  font-family:'Unbounded',sans-serif; font-size:0.65rem; font-weight:700;
+  letter-spacing:0.3em; text-transform:uppercase; color:var(--cream);
+  white-space:nowrap; padding:0 2.5rem;
+  display:flex; align-items:center; gap:2.5rem;
+}
+.marquee-dot { color:var(--rust); font-size:1.2rem; line-height:0; }
+
+/* ─── SECTION COMMONS ─── */
+.sec { padding:7rem 0; }
+.sec-inner { max-width:1300px; margin:0 auto; padding:0 5vw; }
+.sec-tag {
+  display:inline-flex; align-items:center; gap:0.5rem;
+  font-family:'Unbounded',sans-serif; font-size:0.55rem; font-weight:700;
+  letter-spacing:0.3em; text-transform:uppercase; color:var(--rust);
+  margin-bottom:1.2rem;
+}
+.sec-tag::before { content:'◆'; font-size:0.45rem; }
+.sec-title {
+  font-family:'Tajawal',sans-serif; font-weight:900;
+  font-size:clamp(2.5rem,5vw,4.5rem); line-height:1; color:var(--ink);
+  margin-bottom:1rem;
+}
+.sec-title em { font-style:italic; color:var(--rust); }
+
+/* ─── ABOUT ─── */
+#about { background:var(--cream); }
+.about-grid { display:grid; grid-template-columns:1fr 1.2fr; gap:5rem; align-items:center; }
+.about-left { position:relative; }
+
+.about-big-num {
+  font-family:'Fraunces',serif; font-size:clamp(8rem,15vw,14rem);
+  font-weight:700; line-height:0.8; color:var(--sand);
+  position:absolute; top:-2rem; right:-2rem; z-index:0; pointer-events:none;
+  user-select:none;
+}
+.about-card {
+  position:relative; z-index:2;
+  background:var(--sand); border:2px solid var(--ink);
+  padding:3rem; overflow:hidden;
+}
+.about-card::before {
+  content:'';
+  position:absolute; top:0; left:0;
+  width:5px; height:100%; background:var(--rust);
+}
+.about-card h3 {
+  font-family:'Tajawal',sans-serif; font-weight:900; font-size:1.6rem;
+  margin-bottom:0.75rem; color:var(--ink);
+}
+.about-card p { font-size:0.95rem; line-height:1.8; color:rgba(17,16,8,0.65); }
+
+.about-pills { display:flex; flex-wrap:wrap; gap:0.6rem; margin-top:1.5rem; }
+.pill {
+  background:var(--ink); color:var(--cream);
+  font-family:'Unbounded',sans-serif; font-size:0.55rem; font-weight:400;
+  letter-spacing:0.15em; text-transform:uppercase;
+  padding:0.4rem 0.9rem;
+}
+.pill.outline { background:transparent; color:var(--ink); border:1.5px solid var(--ink); }
+
+.about-right-content p {
+  font-size:1.05rem; line-height:1.85; color:rgba(17,16,8,0.65);
+  margin-bottom:1.2rem;
+}
+
+.feat-tiles { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-top:2.5rem; }
+.feat-tile {
+  background:var(--sand); border:2px solid var(--ink);
+  padding:1.5rem; transition: background 0.25s, transform 0.25s;
+  position:relative; overflow:hidden;
+}
+.feat-tile:hover { background:var(--teal); transform:translateY(-3px); }
+.feat-tile:hover .ft-title, .feat-tile:hover .ft-body { color:white; }
+.feat-tile-accent {
+  position:absolute; top:-12px; right:-12px;
+  width:48px; height:48px; border-radius:50%;
+  background:var(--rust); opacity:0.15;
+}
+.ft-icon { font-size:1.6rem; margin-bottom:0.6rem; }
+.ft-title {
+  font-family:'Tajawal',sans-serif; font-weight:800; font-size:1rem;
+  color:var(--ink); margin-bottom:0.3rem; transition:color 0.25s;
+}
+.ft-body { font-size:0.8rem; color:rgba(17,16,8,0.6); line-height:1.6; transition:color 0.25s; }
+
+/* ─── CATALOGUE ─── */
+#catalogue { background:var(--ink); }
+#catalogue .sec-title { color:var(--cream); }
+#catalogue .sec-tag { color:var(--mustard); }
+
+.cat-header { display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:4rem; }
+.cat-header p { font-size:0.95rem; line-height:1.8; color:rgba(253,250,243,0.55); margin-top:1rem; }
+
+.cat-masonry {
+  display:grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap:4px;
+}
+.cat-item {
+  position:relative; overflow:hidden; cursor:pointer;
+  text-decoration:none;
+  transition: transform 0.4s;
+}
+.cat-item:hover .cat-inner { transform:scale(1.04); }
+.cat-item:hover .cat-overlay { opacity:1; }
+.cat-item:nth-child(1) { grid-column: span 2; min-height:480px; background:var(--rust); }
+.cat-item:nth-child(2) { min-height:232px; background:#1B4F4F; }
+.cat-item:nth-child(3) { min-height:232px; background:#9B3520; }
+.cat-item:nth-child(4) { min-height:220px; background:#2A5C5C; }
+.cat-item:nth-child(5) { min-height:220px; background:#6B2D1A; }
+.cat-item:nth-child(6) { min-height:220px; background:#3A7A7A; }
+
+.cat-inner {
+  position:absolute; inset:0;
+  display:flex; align-items:center; justify-content:center;
+  transition: transform 0.6s cubic-bezier(0.16,1,0.3,1);
+}
+.cat-bg-pattern {
+  position:absolute; inset:0; opacity:0.06;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.5) 0px,rgba(255,255,255,0.5) 1px,transparent 1px,transparent 40px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.5) 0px,rgba(255,255,255,0.5) 1px,transparent 1px,transparent 40px);
+}
+.cat-overlay {
+  position:absolute; inset:0;
+  background:rgba(0,0,0,0.25);
+  opacity:0; transition:opacity 0.4s;
+  display:flex; align-items:center; justify-content:center;
+  z-index:5;
+}
+.cat-overlay-btn {
+  font-family:'Unbounded',sans-serif; font-size:0.6rem; font-weight:700;
+  letter-spacing:0.2em; text-transform:uppercase;
+  background:white; color:var(--ink); padding:0.9rem 1.8rem;
+  transform:translateY(10px); transition:transform 0.4s;
+}
+.cat-item:hover .cat-overlay-btn { transform:translateY(0); }
+
+.cat-art { position:relative; z-index:2; }
+.cat-info {
+  position:absolute; bottom:0; left:0; right:0; z-index:3;
+  padding:1.5rem;
+  background:linear-gradient(to top, rgba(0,0,0,0.6), transparent);
+}
+.cat-info h3 {
+  font-family:'Tajawal',sans-serif; font-weight:800;
+  color:white; margin-bottom:0.15rem;
+  font-size:1.2rem;
+}
+.cat-item:nth-child(1) .cat-info h3 { font-size:1.8rem; }
+.cat-info span {
+  font-family:'Unbounded',sans-serif; font-size:0.52rem;
+  color:rgba(255,255,255,0.6); letter-spacing:0.25em; text-transform:uppercase;
+}
+
+/* ─── PROCESS ─── */
+#process { background:var(--sand); }
+.process-steps { display:grid; grid-template-columns:repeat(4,1fr); gap:0; margin-top:4rem; position:relative; }
+.process-steps::before {
+  content:''; position:absolute; top:36px; right:12.5%; left:12.5%;
+  height:1px; background:var(--ink); z-index:0;
+}
+.step { text-align:center; padding:0 1rem; position:relative; z-index:2; }
+.step-num {
+  width:72px; height:72px; border-radius:50%;
+  border:2px solid var(--ink); margin:0 auto 1.5rem;
+  display:flex; align-items:center; justify-content:center;
+  font-family:'Fraunces',serif; font-size:1.6rem; font-weight:700; color:var(--ink);
+  background:var(--sand); transition: background 0.3s, color 0.3s, border-color 0.3s;
+  cursor:default;
+}
+.step:hover .step-num { background:var(--rust); color:white; border-color:var(--rust); }
+.step h4 { font-family:'Tajawal',sans-serif; font-weight:800; font-size:1.05rem; margin-bottom:0.5rem; }
+.step p { font-size:0.82rem; line-height:1.7; color:rgba(17,16,8,0.6); }
+
+/* ─── TESTIMONIALS ─── */
+#testimonials { background:var(--cream); }
+.test-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:1.5rem; margin-top:4rem; }
+.test-card {
+  border:2px solid var(--ink); padding:2.5rem;
+  position:relative; overflow:hidden;
+  transition: transform 0.3s, background 0.3s;
+}
+.test-card:hover { transform:translateY(-6px); background:var(--teal); }
+.test-card:hover .t-quote,.test-card:hover blockquote,.test-card:hover .test-name,.test-card:hover .test-city { color:white; }
+.test-card:nth-child(2) { background:var(--rust); }
+.test-card:nth-child(2) .t-quote,.test-card:nth-child(2) blockquote { color:rgba(255,255,255,0.9); }
+.test-card:nth-child(2) .test-name { color:white; }
+.test-card:nth-child(2) .test-city { color:rgba(255,255,255,0.6); }
+.t-quote {
+  font-family:'Fraunces',serif; font-size:6rem; font-weight:700; line-height:0.7;
+  color:rgba(17,16,8,0.06); position:absolute; top:1rem; right:1.5rem;
+}
+blockquote {
+  font-family:'Tajawal',sans-serif; font-size:1rem; line-height:1.75;
+  color:var(--ink); margin-bottom:1.5rem; position:relative; z-index:1;
+  font-weight:500;
+}
+.test-author { display:flex; align-items:center; gap:0.75rem; }
+.test-av {
+  width:44px; height:44px; border-radius:50%;
+  background:var(--ink); color:white;
+  display:flex; align-items:center; justify-content:center;
+  font-family:'Tajawal',sans-serif; font-weight:800; font-size:1rem;
+  flex-shrink:0;
+}
+.test-card:nth-child(2) .test-av { background:white; color:var(--rust); }
+.test-name { font-weight:800; font-size:0.9rem; color:var(--ink); }
+.test-city { font-size:0.75rem; color:rgba(17,16,8,0.5); }
+
+/* ─── CTA ─── */
+#cta-banner {
+  background:var(--rust);
+  padding:6rem 5vw;
+  text-align:center;
+  position:relative; overflow:hidden;
+}
+#cta-banner::before {
+  content:'العماري';
+  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  font-family:'Tajawal',sans-serif; font-size:18vw; font-weight:900;
+  color:rgba(255,255,255,0.06); white-space:nowrap; pointer-events:none;
+}
+#cta-banner h2 {
+  font-family:'Tajawal',sans-serif; font-weight:900; font-size:clamp(2.5rem,5vw,5rem);
+  color:white; line-height:1.05; margin-bottom:1.5rem; position:relative; z-index:2;
+}
+#cta-banner p { font-size:1.05rem; color:rgba(255,255,255,0.75); margin-bottom:2.5rem; position:relative; z-index:2; }
+.cta-actions { display:flex; gap:1rem; justify-content:center; flex-wrap:wrap; position:relative; z-index:2; }
+.btn-white {
+  font-family:'Unbounded',sans-serif; font-weight:700; font-size:0.62rem;
+  letter-spacing:0.1em; text-transform:uppercase;
+  background:white; color:var(--rust);
+  padding:1rem 2.5rem; text-decoration:none; cursor:pointer; border:none;
+  transition: transform 0.2s; display:inline-block;
+}
+.btn-white:hover { transform:translateY(-2px); }
+.btn-border-white {
+  font-family:'Unbounded',sans-serif; font-weight:400; font-size:0.62rem;
+  letter-spacing:0.1em; text-transform:uppercase;
+  background:transparent; color:white; border:2px solid white;
+  padding:1rem 2.5rem; text-decoration:none; cursor:pointer;
+  transition: background 0.25s, transform 0.2s; display:inline-block;
+}
+.btn-border-white:hover { background:rgba(255,255,255,0.1); transform:translateY(-2px); }
+
+/* ─── CONTACT ─── */
+#contact { background:var(--sand); }
+.contact-layout { display:grid; grid-template-columns:1fr 1.4fr; gap:6rem; align-items:start; }
+.contact-left p { font-size:1rem; line-height:1.8; color:rgba(17,16,8,0.65); margin-top:1rem; margin-bottom:2rem; }
+.c-detail {
+  display:flex; align-items:flex-start; gap:1rem; margin-bottom:1.5rem; padding-bottom:1.5rem;
+  border-bottom:1px solid rgba(17,16,8,0.12);
+}
+.c-detail:last-child { border-bottom:none; }
+.c-icon {
+  width:42px; height:42px; background:var(--rust); flex-shrink:0;
+  display:flex; align-items:center; justify-content:center;
+}
+.c-label { font-family:'Unbounded',sans-serif; font-size:0.52rem; letter-spacing:0.25em; text-transform:uppercase; color:var(--rust); display:block; margin-bottom:3px; }
+.c-value { font-size:0.95rem; color:var(--ink); font-weight:500; }
+
+.contact-form { display:flex; flex-direction:column; gap:1rem; }
+.cf-row { display:grid; grid-template-columns:1fr 1fr; gap:1rem; }
+.cf-group { display:flex; flex-direction:column; gap:0.4rem; }
+.cf-group label {
+  font-family:'Unbounded',sans-serif; font-size:0.52rem;
+  letter-spacing:0.25em; text-transform:uppercase; color:var(--rust);
+}
+.cf-group input, .cf-group select, .cf-group textarea {
+  background:white; border:2px solid var(--ink);
+  padding:0.85rem 1rem; font-size:0.95rem;
+  font-family:'Tajawal',sans-serif; color:var(--ink);
+  outline:none; width:100%;
+  transition: border-color 0.25s;
+}
+.cf-group input:focus, .cf-group select:focus, .cf-group textarea:focus { border-color:var(--rust); }
+.cf-group textarea { min-height:130px; resize:vertical; }
+.cf-group select option { background:white; }
+
+/* ─── FOOTER ─── */
+footer {
+  background:var(--ink);
+  padding:5rem 5vw 2.5rem;
+}
+.footer-top {
+  display:grid; grid-template-columns:1.6fr 1fr 1fr 1fr;
+  gap:3rem; max-width:1300px; margin:0 auto 3.5rem;
+  padding-bottom:3.5rem; border-bottom:1px solid rgba(253,250,243,0.1);
+}
+.f-brand .name {
+  font-family:'Tajawal',sans-serif; font-weight:900; font-size:2rem;
+  color:var(--cream); display:block; line-height:1; margin-bottom:0.3rem;
+}
+.f-brand .sub {
+  font-family:'Unbounded',sans-serif; font-size:0.52rem; letter-spacing:0.35em;
+  text-transform:uppercase; color:var(--rust);
+}
+.f-brand p { font-size:0.85rem; line-height:1.8; color:rgba(253,250,243,0.4); margin-top:1.2rem; }
+.f-col h4 {
+  font-family:'Unbounded',sans-serif; font-size:0.6rem; letter-spacing:0.3em;
+  text-transform:uppercase; color:var(--mustard); margin-bottom:1.5rem;
+}
+.f-col ul { list-style:none; }
+.f-col ul li { margin-bottom:0.75rem; }
+.f-col ul li a { font-size:0.88rem; color:rgba(253,250,243,0.45); text-decoration:none; transition:color 0.25s; }
+.f-col ul li a:hover { color:var(--cream); }
+
+.footer-bottom {
+  max-width:1300px; margin:0 auto;
+  display:flex; align-items:center; justify-content:space-between;
+}
+.footer-bottom p { font-size:0.78rem; color:rgba(253,250,243,0.3); }
+.socials { display:flex; gap:0.75rem; }
+.soc {
+  width:38px; height:38px; border:1px solid rgba(253,250,243,0.15);
+  display:flex; align-items:center; justify-content:center;
+  font-family:'Unbounded',sans-serif; font-size:0.55rem; font-weight:700;
+  color:rgba(253,250,243,0.35); text-decoration:none;
+  transition: border-color 0.25s, color 0.25s, background 0.25s;
+}
+.soc:hover { border-color:var(--rust); color:white; background:var(--rust); }
+
+/* ─── ANIMATIONS ─── */
+@keyframes slideIn { from{opacity:0;transform:translateX(20px);}to{opacity:1;transform:translateX(0);} }
+@keyframes heroUp { from{opacity:0;transform:translateY(40px);}to{opacity:1;transform:translateY(0);} }
+@keyframes fadeIn { from{opacity:0;}to{opacity:1;} }
+@keyframes pulse { 0%,100%{transform:scale(1);}50%{transform:scale(1.5);} }
+@keyframes floatY { 0%,100%{transform:translateY(0);}50%{transform:translateY(-18px);} }
+@keyframes spin { from{transform:rotate(0deg);}to{transform:rotate(360deg);} }
+@keyframes marquee { from{transform:translateX(0);}to{transform:translateX(-50%);} }
+
+.reveal { opacity:0; transform:translateY(36px); transition:opacity 0.7s ease, transform 0.7s ease; }
+.reveal.on { opacity:1; transform:translateY(0); }
+.reveal-d1 { transition-delay:0.1s; }
+.reveal-d2 { transition-delay:0.2s; }
+.reveal-d3 { transition-delay:0.3s; }
+.reveal-d4 { transition-delay:0.4s; }
+
+/* ─── RESPONSIVE ─── */
+@media(max-width:1024px){
+  #hero{grid-template-columns:1fr;min-height:auto;}
+  .hero-right{min-height:400px;}
+  .about-grid,.contact-layout{grid-template-columns:1fr;gap:3rem;}
+  .test-grid{grid-template-columns:1fr 1fr;}
+  .footer-top{grid-template-columns:1fr 1fr;}
+  .cat-masonry{grid-template-columns:1fr 1fr;}
+  .cat-item:nth-child(1){grid-column:span 2;}
+}
+@media(max-width:768px){
+  .nav-links{display:none;}
+  .process-steps{grid-template-columns:1fr 1fr;gap:2rem;}
+  .process-steps::before{display:none;}
+  .test-grid{grid-template-columns:1fr;}
+  .cat-masonry{grid-template-columns:1fr;}
+  .cat-item:nth-child(1){grid-column:span 1;}
+  .cat-header{flex-direction:column;align-items:flex-start;gap:1.5rem;}
+  .feat-tiles{grid-template-columns:1fr;}
+  .cf-row{grid-template-columns:1fr;}
+  .footer-top{grid-template-columns:1fr;}
+  .hero-numbers{flex-wrap:wrap;gap:1.5rem;}
+  .about-big-num{font-size:8rem;}
+}
+</style>
+</head>
+<body>
+
+<div class="cursor" id="cursor"></div>
+
+<!-- NAV -->
+<nav id="nav">
+  <a href="#hero" class="nav-brand">
+    <span class="ar">العماري</span>
+    <span class="en">AL-AMMARY FURNITURE</span>
+  </a>
+  <ul class="nav-links">
+    <li><a href="#about">من نحن</a></li>
+    <li><a href="#catalogue">الكتالوج</a></li>
+    <li><a href="#process">كيف نعمل</a></li>
+    <li><a href="#testimonials">آراء العملاء</a></li>
+  </ul>
+  <a href="#contact" class="nav-btn">اطلب الآن ←</a>
+</nav>
+
+<!-- HERO -->
+<section id="hero">
+  <div class="hero-left">
+    <div class="hero-tag">أثاث فاخر صنع في مصر</div>
+    <h1 class="hero-title">
+      <span class="color-text">العماري</span><br>
+      <span class="stroke-text">للأثاث</span>
+    </h1>
+    <div class="hero-subtitle-row">
+      <p class="hero-desc">نصنع أثاثاً يجمع بين الجودة العالية والتصميم الراقي — لأن بيتك يستحق الأجمل</p>
+    </div>
+    <div class="hero-actions">
+      <a href="#catalogue" class="btn-solid">تصفح الكتالوج</a>
+      <a href="#contact" class="btn-outline">اطلب استشارة</a>
+    </div>
+    <div class="hero-numbers">
+      <div class="h-num"><span class="n">25+</span><span class="l">سنة خبرة</span></div>
+      <div class="h-num"><span class="n">5K+</span><span class="l">عميل سعيد</span></div>
+      <div class="h-num"><span class="n">200+</span><span class="l">تصميم متاح</span></div>
+    </div>
+  </div>
+  <div class="hero-right">
+    <div class="hero-right-inner">
+      <svg class="hero-furniture-art" viewBox="0 0 420 380" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="40" y="180" width="340" height="130" rx="12" fill="white" fill-opacity="0.12"/>
+        <rect x="40" y="180" width="340" height="130" rx="12" stroke="white" stroke-width="2.5"/>
+        <rect x="55" y="155" width="140" height="60" rx="10" fill="white" fill-opacity="0.15" stroke="white" stroke-width="2"/>
+        <rect x="225" y="155" width="140" height="60" rx="10" fill="white" fill-opacity="0.15" stroke="white" stroke-width="2"/>
+        <rect x="55" y="195" width="140" height="90" rx="8" fill="white" fill-opacity="0.1" stroke="white" stroke-width="1.5"/>
+        <rect x="225" y="195" width="140" height="90" rx="8" fill="white" fill-opacity="0.1" stroke="white" stroke-width="1.5"/>
+        <rect x="22" y="170" width="38" height="140" rx="8" fill="white" fill-opacity="0.18" stroke="white" stroke-width="2"/>
+        <rect x="360" y="170" width="38" height="140" rx="8" fill="white" fill-opacity="0.18" stroke="white" stroke-width="2"/>
+        <rect x="60" y="305" width="18" height="35" rx="4" fill="white" fill-opacity="0.25" stroke="white" stroke-width="1.5"/>
+        <rect x="160" y="305" width="18" height="35" rx="4" fill="white" fill-opacity="0.25" stroke="white" stroke-width="1.5"/>
+        <rect x="242" y="305" width="18" height="35" rx="4" fill="white" fill-opacity="0.25" stroke="white" stroke-width="1.5"/>
+        <rect x="342" y="305" width="18" height="35" rx="4" fill="white" fill-opacity="0.25" stroke="white" stroke-width="1.5"/>
+        <circle cx="130" cy="183" r="4" fill="white" fill-opacity="0.4"/>
+        <circle cx="150" cy="183" r="4" fill="white" fill-opacity="0.4"/>
+        <circle cx="300" cy="183" r="4" fill="white" fill-opacity="0.4"/>
+        <circle cx="320" cy="183" r="4" fill="white" fill-opacity="0.4"/>
+        <rect x="170" y="230" width="80" height="80" rx="4" fill="white" fill-opacity="0.08" stroke="white" stroke-opacity="0.4" stroke-width="1"/>
+        <rect x="200" y="225" width="20" height="10" rx="3" fill="white" fill-opacity="0.2"/>
+        <circle cx="210" cy="210" r="22" fill="none" stroke="rgba(139,175,139,0.7)" stroke-width="2"/>
+        <line x1="210" y1="210" x2="210" y2="232" stroke="rgba(139,175,139,0.6)" stroke-width="2"/>
+        <ellipse cx="200" cy="198" rx="12" ry="8" fill="rgba(139,175,139,0.3)" stroke="rgba(139,175,139,0.6)" stroke-width="1.5"/>
+        <ellipse cx="220" cy="202" rx="10" ry="7" fill="rgba(139,175,139,0.3)" stroke="rgba(139,175,139,0.6)" stroke-width="1.5"/>
+        <path d="M60 120 L63 113 L66 120 L73 123 L66 126 L63 133 L60 126 L53 123 Z" fill="rgba(212,160,23,0.6)"/>
+        <path d="M340 90 L342.5 85 L345 90 L350 92.5 L345 95 L342.5 100 L340 95 L335 92.5 Z" fill="rgba(212,160,23,0.5)"/>
+        <circle cx="355" cy="140" r="5" fill="rgba(255,255,255,0.2)"/>
+        <circle cx="75" cy="160" r="3" fill="rgba(255,255,255,0.2)"/>
+        <rect x="145" y="50" width="130" height="48" rx="6" fill="rgba(201,75,42,0.85)"/>
+        <text x="210" y="72" text-anchor="middle" font-family="Tajawal,sans-serif" font-size="11" fill="white" font-weight="700">LUXURY DESIGN</text>
+        <text x="210" y="88" text-anchor="middle" font-family="Tajawal,sans-serif" font-size="9" fill="rgba(255,255,255,0.75)">AL-AMMARY COLLECTION</text>
+        <line x1="210" y1="98" x2="210" y2="155" stroke="rgba(255,255,255,0.3)" stroke-width="1" stroke-dasharray="4 3"/>
+      </svg>
+    </div>
+    <svg class="badge-rotate" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="60" cy="60" r="56" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
+      <path id="tc" d="M 60,60 m -48,0 a 48,48 0 1,1 96,0 a 48,48 0 1,1 -96,0" fill="none"/>
+      <text font-family="sans-serif" font-size="11.5" fill="rgba(255,255,255,0.7)" font-weight="600" letter-spacing="3.5">
+        <textPath href="#tc">العماري للأثاث • جودة • فن • أصالة •</textPath>
+      </text>
+      <circle cx="60" cy="60" r="18" fill="rgba(255,255,255,0.15)" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
+      <text x="60" y="65" text-anchor="middle" font-size="18" fill="white">✦</text>
+    </svg>
+    <p class="hero-right-label">تصميم راقي · صنع محلي · جودة عالمية</p>
+  </div>
+</section>
+
+<!-- MARQUEE -->
+<div class="marquee-wrap">
+  <div class="marquee-inner">
+    <div class="marquee-item">غرف النوم <span class="marquee-dot">◆</span></div>
+    <div class="marquee-item">غرف الشباب <span class="marquee-dot">◆</span></div>
+    <div class="marquee-item">الصالونات <span class="marquee-dot">◆</span></div>
+    <div class="marquee-item">غرف السفرة <span class="marquee-dot">◆</span></div>
+    <div class="marquee-item">الانتريه <span class="marquee-dot">◆</span></div>
+    <div class="marquee-item">الركنة <span class="marquee-dot">◆</span></div>
+    <div class="marquee-item">المرايا <span class="marquee-dot">◆</span></div>
+    <div class="marquee-item">ترابيزات التليفزيون <span class="marquee-dot">◆</span></div>
+    <div class="marquee-item">غرف النوم <span class="marquee-dot">◆</span></div>
+    <div class="marquee-item">غرف الشباب <span class="marquee-dot">◆</span></div>
+    <div class="marquee-item">الصالونات <span class="marquee-dot">◆</span></div>
+    <div class="marquee-item">غرف السفرة <span class="marquee-dot">◆</span></div>
+    <div class="marquee-item">الانتريه <span class="marquee-dot">◆</span></div>
+    <div class="marquee-item">الركنة <span class="marquee-dot">◆</span></div>
+    <div class="marquee-item">المرايا <span class="marquee-dot">◆</span></div>
+    <div class="marquee-item">ترابيزات التليفزيون <span class="marquee-dot">◆</span></div>
+  </div>
+</div>
+
+<!-- ABOUT -->
+<section class="sec" id="about">
+  <div class="sec-inner">
+    <div class="about-grid">
+      <div class="about-left reveal">
+        <div class="about-big-num">25</div>
+        <div class="about-card">
+          <div style="margin-bottom:2rem;">
+            <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+              <rect x="8" y="30" width="64" height="42" rx="4" stroke="#C94B2A" stroke-width="2"/>
+              <rect x="4" y="26" width="72" height="10" rx="3" stroke="#C94B2A" stroke-width="2"/>
+              <line x1="20" y1="72" x2="20" y2="80" stroke="#C94B2A" stroke-width="2"/>
+              <line x1="60" y1="72" x2="60" y2="80" stroke="#C94B2A" stroke-width="2"/>
+              <rect x="28" y="38" width="24" height="18" rx="2" stroke="#1B7C7C" stroke-width="1.5"/>
+              <rect x="14" y="6" width="18" height="20" rx="2" stroke="#C94B2A" stroke-width="1.5"/>
+              <rect x="48" y="6" width="18" height="20" rx="2" stroke="#C94B2A" stroke-width="1.5"/>
+            </svg>
+          </div>
+          <h3>علامة تُبنى على الثقة</h3>
+          <p>منذ أكثر من ٢٥ عاماً ونحن نصنع الأثاث الذي يزيّن بيوت المصريين — بجودة لا تُساوم وتصاميم لا تُنسى.</p>
+          <div class="about-pills">
+            <span class="pill">خشب طبيعي</span>
+            <span class="pill outline">تشطيب يدوي</span>
+            <span class="pill">تصميم حسب الطلب</span>
+          </div>
+        </div>
+      </div>
+      <div class="reveal reveal-d2">
+        <div class="sec-tag">من نحن</div>
+        <h2 class="sec-title">حرفيون يصنعون<br><em>الجمال</em></h2>
+        <div class="about-right-content" style="margin-top:1.5rem;">
+          <p>نحن في العماري لا نبيع أثاثاً فقط — نقدم قطعاً فنية تعيش معك لأجيال. كل تفصيلة مدروسة، وكل خامة مختارة بعناية.</p>
+          <p>بدأنا بورشة صغيرة وحلم كبير، واليوم أصبحنا من أبرز علامات الأثاث الفاخر في مصر. سر نجاحنا؟ عميلنا دائماً في قلب كل قرار.</p>
+        </div>
+        <div class="feat-tiles">
+          <div class="feat-tile reveal reveal-d1">
+            <div class="feat-tile-accent"></div>
+            <div class="ft-icon">🪵</div>
+            <div class="ft-title">جودة الخامات</div>
+            <div class="ft-body">أجود أنواع الخشب الطبيعي والأقمشة المستوردة</div>
+          </div>
+          <div class="feat-tile reveal reveal-d2">
+            <div class="feat-tile-accent"></div>
+            <div class="ft-icon">✦</div>
+            <div class="ft-title">تصميم مخصص</div>
+            <div class="ft-body">نصمم حسب طلبك وألوان منزلك بالضبط</div>
+          </div>
+          <div class="feat-tile reveal reveal-d3">
+            <div class="feat-tile-accent"></div>
+            <div class="ft-icon">🚚</div>
+            <div class="ft-title">تسليم في الموعد</div>
+            <div class="ft-body">نلتزم بالمواعيد ونوصل لأي مكان في مصر</div>
+          </div>
+          <div class="feat-tile reveal reveal-d4">
+            <div class="feat-tile-accent"></div>
+            <div class="ft-icon">🛡</div>
+            <div class="ft-title">ضمان شامل</div>
+            <div class="ft-body">ضمان على جميع المنتجات ضد عيوب الصنع</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CATALOGUE -->
+<section class="sec" id="catalogue" style="padding-bottom:5rem;">
+  <div class="sec-inner">
+    <div class="cat-header">
+      <div>
+        <div class="sec-tag">كتالوجنا</div>
+        <h2 class="sec-title reveal">كل ما يحتاجه<br><em>منزلك</em></h2>
+        <p class="reveal">تشكيلة واسعة من الأثاث الراقي تناسب كل الأذواق والميزانيات</p>
+      </div>
+      <a href="#contact" class="btn-solid reveal" style="background:var(--rust);align-self:flex-end;">اطلب الكتالوج ←</a>
+    </div>
+  </div>
+  <div style="padding:0 5vw;max-width:1300px;margin:0 auto;">
+    <div class="cat-masonry reveal">
+      <a href="#contact" class="cat-item">
+        <div class="cat-bg-pattern"></div>
+        <div class="cat-inner">
+          <svg width="240" height="240" viewBox="0 0 240 240" fill="none">
+            <rect x="30" y="110" width="180" height="100" rx="8" stroke="white" stroke-width="2" stroke-opacity="0.5"/>
+            <rect x="20" y="102" width="200" height="16" rx="6" stroke="white" stroke-width="2" stroke-opacity="0.5"/>
+            <line x1="55" y1="210" x2="55" y2="235" stroke="white" stroke-width="2" stroke-opacity="0.4"/>
+            <line x1="185" y1="210" x2="185" y2="235" stroke="white" stroke-width="2" stroke-opacity="0.4"/>
+            <rect x="55" y="124" width="58" height="70" rx="4" stroke="white" stroke-width="1.5" stroke-opacity="0.4"/>
+            <rect x="127" y="124" width="58" height="70" rx="4" stroke="white" stroke-width="1.5" stroke-opacity="0.4"/>
+            <rect x="75" y="40" width="40" height="60" rx="3" stroke="white" stroke-width="1.5" stroke-opacity="0.35"/>
+            <rect x="125" y="40" width="40" height="60" rx="3" stroke="white" stroke-width="1.5" stroke-opacity="0.35"/>
+          </svg>
+        </div>
+        <div class="cat-overlay"><div class="cat-overlay-btn">اكتشف المزيد →</div></div>
+        <div class="cat-info">
+          <h3>غرفة النوم</h3>
+          <span>سرير · دولاب · تسريحة · كمود · شماعة</span>
+        </div>
+      </a>
+      <a href="#contact" class="cat-item">
+        <div class="cat-bg-pattern"></div>
+        <div class="cat-inner">
+          <svg width="130" height="130" viewBox="0 0 130 130" fill="none">
+            <rect x="10" y="55" width="110" height="60" rx="6" stroke="white" stroke-width="2" stroke-opacity="0.5"/>
+            <path d="M10 55 Q65 30 120 55" stroke="white" stroke-width="2" stroke-opacity="0.5" fill="none"/>
+            <line x1="22" y1="115" x2="22" y2="128" stroke="white" stroke-width="2" stroke-opacity="0.4"/>
+            <line x1="108" y1="115" x2="108" y2="128" stroke="white" stroke-width="2" stroke-opacity="0.4"/>
+            <rect x="5" y="60" width="22" height="55" rx="5" stroke="white" stroke-width="1.5" stroke-opacity="0.35"/>
+            <rect x="103" y="60" width="22" height="55" rx="5" stroke="white" stroke-width="1.5" stroke-opacity="0.35"/>
+          </svg>
+        </div>
+        <div class="cat-overlay"><div class="cat-overlay-btn">اكتشف →</div></div>
+        <div class="cat-info"><h3>غرفة الصالون</h3><span>أثاث استقبال فاخر</span></div>
+      </a>
+      <a href="#contact" class="cat-item">
+        <div class="cat-bg-pattern"></div>
+        <div class="cat-inner">
+          <svg width="130" height="130" viewBox="0 0 130 130" fill="none">
+            <rect x="10" y="8" width="110" height="100" rx="4" stroke="white" stroke-width="2" stroke-opacity="0.5"/>
+            <line x1="37" y1="8" x2="37" y2="108" stroke="white" stroke-width="1" stroke-opacity="0.3"/>
+            <line x1="65" y1="8" x2="65" y2="108" stroke="white" stroke-width="1" stroke-opacity="0.3"/>
+            <line x1="93" y1="8" x2="93" y2="108" stroke="white" stroke-width="1" stroke-opacity="0.3"/>
+            <rect x="16" y="16" width="16" height="14" rx="2" stroke="white" stroke-width="1" stroke-opacity="0.4"/>
+            <rect x="44" y="16" width="16" height="14" rx="2" stroke="white" stroke-width="1" stroke-opacity="0.4"/>
+          </svg>
+        </div>
+        <div class="cat-overlay"><div class="cat-overlay-btn">اكتشف →</div></div>
+        <div class="cat-info"><h3>الدواليب</h3><span>دريسنج · دواليب متعددة</span></div>
+      </a>
+      <a href="#contact" class="cat-item">
+        <div class="cat-bg-pattern"></div>
+        <div class="cat-inner">
+          <svg width="130" height="130" viewBox="0 0 130 130" fill="none">
+            <rect x="15" y="45" width="100" height="70" rx="4" stroke="white" stroke-width="2" stroke-opacity="0.5"/>
+            <rect x="25" y="70" width="80" height="30" stroke="white" stroke-width="1.5" stroke-opacity="0.4"/>
+            <circle cx="65" cy="57" r="8" stroke="white" stroke-width="1.5" stroke-opacity="0.45"/>
+            <line x1="25" y1="115" x2="25" y2="126" stroke="white" stroke-width="1.5" stroke-opacity="0.4"/>
+            <line x1="105" y1="115" x2="105" y2="126" stroke="white" stroke-width="1.5" stroke-opacity="0.4"/>
+          </svg>
+        </div>
+        <div class="cat-overlay"><div class="cat-overlay-btn">اكتشف →</div></div>
+        <div class="cat-info"><h3>غرفة السفرة</h3><span>طاولات وكراسي طعام</span></div>
+      </a>
+      <a href="#contact" class="cat-item">
+        <div class="cat-bg-pattern"></div>
+        <div class="cat-inner">
+          <svg width="130" height="130" viewBox="0 0 130 130" fill="none">
+            <rect x="18" y="25" width="94" height="80" rx="4" stroke="white" stroke-width="2" stroke-opacity="0.5"/>
+            <ellipse cx="65" cy="65" rx="36" ry="36" stroke="white" stroke-width="1.5" stroke-opacity="0.4"/>
+            <line x1="29" y1="105" x2="26" y2="118" stroke="white" stroke-width="1.5" stroke-opacity="0.4"/>
+            <line x1="101" y1="105" x2="104" y2="118" stroke="white" stroke-width="1.5" stroke-opacity="0.4"/>
+          </svg>
+        </div>
+        <div class="cat-overlay"><div class="cat-overlay-btn">اكتشف →</div></div>
+        <div class="cat-info"><h3>المرايا</h3><span>مرايا وإطارات فاخرة</span></div>
+      </a>
+      <a href="#contact" class="cat-item">
+        <div class="cat-bg-pattern"></div>
+        <div class="cat-inner">
+          <svg width="130" height="130" viewBox="0 0 130 130" fill="none">
+            <rect x="8" y="55" width="114" height="55" rx="8" stroke="white" stroke-width="2" stroke-opacity="0.5"/>
+            <path d="M8 55 Q15 35 28 55" fill="none" stroke="white" stroke-width="2" stroke-opacity="0.5"/>
+            <path d="M102 55 Q115 35 122 55" fill="none" stroke="white" stroke-width="2" stroke-opacity="0.5"/>
+            <line x1="20" y1="110" x2="20" y2="124" stroke="white" stroke-width="2" stroke-opacity="0.4"/>
+            <line x1="110" y1="110" x2="110" y2="124" stroke="white" stroke-width="2" stroke-opacity="0.4"/>
+          </svg>
+        </div>
+        <div class="cat-overlay"><div class="cat-overlay-btn">اكتشف →</div></div>
+        <div class="cat-info"><h3>الركنة والجلسات</h3><span>ركنة · جذامة · بانكيت</span></div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- PROCESS -->
+<section class="sec" id="process">
+  <div class="sec-inner">
+    <div style="text-align:center;margin-bottom:1rem;">
+      <div class="sec-tag" style="justify-content:center;">كيف نعمل</div>
+      <h2 class="sec-title reveal">من الفكرة<br><em>إلى بيتك</em></h2>
+      <p class="reveal" style="color:rgba(17,16,8,0.55);max-width:420px;margin:1rem auto 0;font-size:0.95rem;line-height:1.8;">رحلة بسيطة وشفافة نضمن لك من خلالها الحصول على أثاثك المثالي</p>
+    </div>
+    <div class="process-steps">
+      <div class="step reveal reveal-d1">
+        <div class="step-num">١</div>
+        <h4>التواصل والاستشارة</h4>
+        <p>تواصل معنا وأخبرنا باحتياجاتك وميزانيتك وستايل منزلك</p>
+      </div>
+      <div class="step reveal reveal-d2">
+        <div class="step-num">٢</div>
+        <h4>اختيار التصميم</h4>
+        <p>نعرض عليك مجموعة من التصاميم المناسبة ونعدّل حسب طلبك</p>
+      </div>
+      <div class="step reveal reveal-d3">
+        <div class="step-num">٣</div>
+        <h4>بدء التصنيع</h4>
+        <p>حرفيون متخصصون يصنعون أثاثك بأعلى معايير الجودة</p>
+      </div>
+      <div class="step reveal reveal-d4">
+        <div class="step-num">٤</div>
+        <h4>التسليم والتركيب</h4>
+        <p>نوصل ونركّب في بيتك في الموعد المتفق عليه تماماً</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TESTIMONIALS -->
+<section class="sec" id="testimonials">
+  <div class="sec-inner">
+    <div style="text-align:center;margin-bottom:1rem;">
+      <div class="sec-tag" style="justify-content:center;">آراء عملائنا</div>
+      <h2 class="sec-title reveal">ماذا يقول<br><em>عملاؤنا</em></h2>
+    </div>
+    <div class="test-grid">
+      <div class="test-card reveal reveal-d1">
+        <div class="t-quote">"</div>
+        <blockquote>أثاث من أعلى مستوى، التشطيب رائع جداً والخامات ممتازة. غرفة النوم طلعت أحسن بكتير من توقعاتي وكل اللي شافوها بيمدحوها.</blockquote>
+        <div class="test-author">
+          <div class="test-av">م</div>
+          <div><div class="test-name">محمد العبدالله</div><div class="test-city">القاهرة</div></div>
+        </div>
+      </div>
+      <div class="test-card reveal reveal-d2">
+        <div class="t-quote" style="color:rgba(255,255,255,0.1);">"</div>
+        <blockquote>خدمة ممتازة وسرعة في التسليم. الركنة حلوة جداً وتناسب الصالون تماماً. أنصح الكل بالتعامل مع العماري، ناس أمانة ومحترفين.</blockquote>
+        <div class="test-author">
+          <div class="test-av" style="background:white;color:var(--rust);">ن</div>
+          <div><div class="test-name">نور إبراهيم</div><div class="test-city" style="color:rgba(255,255,255,0.6);">الإسكندرية</div></div>
+        </div>
+      </div>
+      <div class="test-card reveal reveal-d3">
+        <div class="t-quote">"</div>
+        <blockquote>تعاملت معهم في غرفة السفرة والانتريه وكانت التجربة ممتازة بكل المقاييس. الأسعار معقولة والجودة عالمية. هجيب باقي الأوض منهم.</blockquote>
+        <div class="test-author">
+          <div class="test-av">أ</div>
+          <div><div class="test-name">أحمد سامي</div><div class="test-city">الجيزة</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA BANNER -->
+<section id="cta-banner">
+  <h2 class="reveal">هل أنت جاهز لتجديد<br>منزلك؟</h2>
+  <p class="reveal">تواصل معنا اليوم واحصل على استشارة مجانية من متخصصينا</p>
+  <div class="cta-actions reveal">
+    <a href="#contact" class="btn-white">ابدأ الآن ←</a>
+    <a href="#contact" class="btn-border-white">اتصل بنا</a>
+  </div>
+</section>
+
+<!-- CONTACT -->
+<section class="sec" id="contact">
+  <div class="sec-inner">
+    <div class="contact-layout">
+      <div>
+        <div class="sec-tag">تواصل معنا</div>
+        <h2 class="sec-title reveal">نحن هنا<br><em>لخدمتك</em></h2>
+        <p class="reveal">فريقنا جاهز للرد على استفساراتك وتقديم أفضل المقترحات لاحتياجاتك.</p>
+        <div style="margin-top:2.5rem;">
+          <div class="c-detail reveal">
+            <div class="c-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81a19.79 19.79 0 01-3.07-8.63A2 2 0 012 .18h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 7.91a16 16 0 006.18 6.18l1.3-1.3a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7a2 2 0 011.69 2.02z"/></svg>
+            </div>
+            <div><span class="c-label">هاتف / واتساب</span><span class="c-value">متاح عبر نموذج التواصل</span></div>
+          </div>
+          <div class="c-detail reveal">
+            <div class="c-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            </div>
+            <div><span class="c-label">الموقع</span><span class="c-value">مصر — نخدم جميع المحافظات</span></div>
+          </div>
+          <div class="c-detail reveal">
+            <div class="c-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+            </div>
+            <div><span class="c-label">ساعات العمل</span><span class="c-value">السبت – الخميس: ١٠ص – ١٠م</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="contact-form reveal">
+        <div class="cf-row">
+          <div class="cf-group"><label>الاسم الكريم</label><input type="text" placeholder="اسمك"></div>
+          <div class="cf-group"><label>رقم الهاتف</label><input type="tel" placeholder="01XXXXXXXXX"></div>
+        </div>
+        <div class="cf-group"><label>البريد الإلكتروني</label><input type="email" placeholder="email@example.com"></div>
+        <div class="cf-group">
+          <label>المنتج المطلوب</label>
+          <select>
+            <option value="">اختر الفئة...</option>
+            <option>غرفة نوم</option><option>غرفة شباب</option><option>غرفة صالون</option>
+            <option>غرفة سفرة</option><option>انتريه</option><option>ركنة</option>
+            <option>مرايا</option><option>ترابيزة تليفزيون</option><option>أخرى</option>
+          </select>
+        </div>
+        <div class="cf-group"><label>تفاصيل طلبك</label><textarea placeholder="اكتب تفاصيل طلبك أو استفساراتك هنا..."></textarea></div>
+        <button class="btn-solid" style="border:none;width:fit-content;" onclick="submitForm(event)">إرسال الطلب ←</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-top">
+    <div class="f-brand">
+      <span class="name">العماري</span>
+      <span class="sub">AL-AMMARY FURNITURE · SINCE 1999</span>
+      <p>علامة مصرية راسخة في عالم المفروشات الراقية — نجمع بين الأصالة والحداثة لنقدم أثاثاً يليق بمنزلك ويدوم لأجيال.</p>
+    </div>
+    <div class="f-col">
+      <h4>الكتالوج</h4>
+      <ul>
+        <li><a href="#catalogue">غرفة النوم</a></li>
+        <li><a href="#catalogue">غرفة الشباب</a></li>
+        <li><a href="#catalogue">غرفة الصالون</a></li>
+        <li><a href="#catalogue">غرفة السفرة</a></li>
+        <li><a href="#catalogue">الانتريه</a></li>
+      </ul>
+    </div>
+    <div class="f-col">
+      <h4>المنتجات</h4>
+      <ul>
+        <li><a href="#catalogue">الركنة</a></li>
+        <li><a href="#catalogue">الجذامة</a></li>
+        <li><a href="#catalogue">البانكيت</a></li>
+        <li><a href="#catalogue">المرايا</a></li>
+        <li><a href="#catalogue">ترابيزة تليفزيون</a></li>
+      </ul>
+    </div>
+    <div class="f-col">
+      <h4>معلومات</h4>
+      <ul>
+        <li><a href="#about">من نحن</a></li>
+        <li><a href="#process">كيف نعمل</a></li>
+        <li><a href="#testimonials">آراء العملاء</a></li>
+        <li><a href="#contact">تواصل معنا</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <p>© 2025 العماري للأثاث. جميع الحقوق محفوظة.</p>
+    <div class="socials">
+      <a href="#" class="soc">f</a>
+      <a href="#" class="soc">ig</a>
+      <a href="#" class="soc">yt</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+const cursor = document.getElementById('cursor');
+document.addEventListener('mousemove', e => {
+  cursor.style.left = e.clientX + 'px';
+  cursor.style.top  = e.clientY + 'px';
+});
+document.querySelectorAll('a,button,.cat-item,.feat-tile,.step').forEach(el => {
+  el.addEventListener('mouseenter', () => cursor.classList.add('big'));
+  el.addEventListener('mouseleave', () => cursor.classList.remove('big'));
+});
+
+let lastY = 0;
+const nav = document.getElementById('nav');
+window.addEventListener('scroll', () => {
+  const y = window.scrollY;
+  nav.classList.toggle('hide', y > lastY && y > 120);
+  lastY = y;
+});
+
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(e => { if(e.isIntersecting){ e.target.classList.add('on'); obs.unobserve(e.target); } });
+}, { threshold: 0.12, rootMargin: '0px 0px -30px 0px' });
+document.querySelectorAll('.reveal').forEach(el => obs.observe(el));
+
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', e => {
+    const t = document.querySelector(a.getAttribute('href'));
+    if(t){ e.preventDefault(); t.scrollIntoView({ behavior:'smooth' }); }
+  });
+});
+
+function submitForm(e) {
+  e.preventDefault();
+  const btn = e.target;
+  btn.textContent = 'تم الإرسال بنجاح ✓';
+  btn.style.background = '#1B7C7C';
+  setTimeout(() => { btn.textContent = 'إرسال الطلب ←'; btn.style.background = ''; }, 3000);
+}
+</script>
+</body>
+</html>

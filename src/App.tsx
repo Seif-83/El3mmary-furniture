@@ -396,6 +396,11 @@ export default function App() {
       setUserLoggedIn(true);
       setFormData({ ...formData, name: '', phone: '' });
       toast.success(lang === 'ar' ? "تم التسجيل بنجاح" : "Login logged successfully");
+      
+      // Redirect to the catalog page after a brief delay
+      setTimeout(() => {
+        window.location.href = '/alammary-furniture.html';
+      }, 1500);
     } catch (error: any) {
       console.error(error);
       toast.error(error.message);
