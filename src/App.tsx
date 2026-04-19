@@ -36,6 +36,7 @@ import {
   collection, 
   addDoc, 
   getDocs, 
+  onSnapshot,
   deleteDoc, 
   doc, 
   query, 
@@ -184,47 +185,60 @@ export default function App() {
   });
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    let unsubscribeLogins: (() => void) | undefined;
+    let unsubscribeCatalogs: (() => void) | undefined;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
       setIsAuthChecking(false);
+      
       if (user && user.email === ADMIN_EMAIL) {
-        fetchRecords();
+        // Real-time Logins
+        const qLogins = query(collection(db, 'logins'), orderBy('loginAt', 'desc'));
+        unsubscribeLogins = onSnapshot(qLogins, (snapshot) => {
+          const records = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          })) as LoginRecord[];
+          setLoginRecords(records);
+        }, (error) => {
+          console.error("Logins snapshot error:", error);
+        });
+
+        // Real-time Catalogs
+        const qCatalogs = query(collection(db, 'catalogs'), orderBy('createdAt', 'desc'));
+        unsubscribeCatalogs = onSnapshot(qCatalogs, (snapshot) => {
+          const catalogSheets = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          })) as CatalogSheet[];
+          
+          setCatalogs(catalogSheets);
+          
+          // Auto-select newest sheet if none selected
+          if (catalogSheets.length > 0 && !selectedSheet) {
+            setSelectedSheet(catalogSheets[0]);
+          }
+        }, (error) => {
+          console.error("Catalogs snapshot error:", error);
+        });
+      } else {
+        if (unsubscribeLogins) unsubscribeLogins();
+        if (unsubscribeCatalogs) unsubscribeCatalogs();
+        setLoginRecords([]);
+        setCatalogs([]);
+        setSelectedSheet(null);
       }
     });
-    return () => unsubscribe();
+
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeLogins) unsubscribeLogins();
+      if (unsubscribeCatalogs) unsubscribeCatalogs();
+    };
   }, []);
 
-  const fetchRecords = async () => {
-    try {
-      const q = query(collection(db, 'logins'), orderBy('loginAt', 'desc'));
-      const querySnapshot = await getDocs(q);
-      const records = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as LoginRecord[];
-      setLoginRecords(records);
-      fetchCatalogs(); // Fetch catalogs whenever we fetch records
-    } catch (error) {
-      console.error("Error fetching records:", error);
-    }
-  };
-
-  const fetchCatalogs = async () => {
-    try {
-      const q = query(collection(db, 'catalogs'), orderBy('createdAt', 'desc'));
-      const querySnapshot = await getDocs(q);
-      const catalogSheets = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as CatalogSheet[];
-      setCatalogs(catalogSheets);
-      if (catalogSheets.length > 0 && !selectedSheet) {
-        setSelectedSheet(catalogSheets[0]);
-      }
-    } catch (error) {
-      console.error("Error fetching catalogs:", error);
-    }
-  };
+  // Removed fetchRecords and fetchCatalogs as we now use onSnapshot
 
   const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -254,7 +268,6 @@ export default function App() {
         });
         
         toast.success(lang === 'ar' ? "تم النشر بنجاح" : "Sheet published successfully");
-        fetchCatalogs();
       } catch (error) {
         console.error("Excel import error:", error);
         toast.error("Failed to parse Excel file");

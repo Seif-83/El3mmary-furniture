@@ -9,6 +9,11 @@ service cloud.firestore {
       allow list, get, update, delete: if request.auth != null && request.auth.token.email == "admin@gmail.com";
     }
 
+    match /catalogs/{catalogId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.token.email == "admin@gmail.com";
+    }
+
     // Default deny for everything else
     match /{document=**} {
       allow read, write: if false;
