@@ -196,11 +196,17 @@ nav.hide { transform: translateY(-100%); }
   display:flex; align-items:center; justify-content:center;
   animation: fadeIn 1.2s ease 0.2s both;
 }
+@media(max-width: 768px) {
+  .hero-right { padding: 1rem; }
+}
 .hero-image-frame {
   width: 100%; height: 85vh; border-radius: 40px;
   overflow: hidden; position: relative;
   box-shadow: 0 40px 100px -30px rgba(0,0,0,0.15);
   border: 1px solid rgba(0,0,0,0.05);
+}
+@media(max-width: 768px) {
+  .hero-image-frame { height: 70vh; border-radius: 30px; }
 }
 .hero-img {
   width: 100%; height: 100%; object-fit: cover;
@@ -655,7 +661,6 @@ footer {
         <textPath href="#tc">العماري للأثاث • فخامة • إبداع • مودة •</textPath>
       </text>
     </svg>
-    <p class="hero-right-label" style="color: black;">تصميم راقي · صنع محلي · جودة عالمية</p>
   </div>
 </section>
 
