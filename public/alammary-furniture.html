@@ -9,12 +9,12 @@
 :root {
   --sand:    #F5EDD8;
   --cream:   #FDFAF3;
-  --rust:    #C94B2A;
+  --rust:    #3d3d3d;
   --rust-lt: #E8674A;
   --teal:    #1B7C7C;
   --teal-lt: #2AADAD;
-  --ink:     #111008;
-  --mustard: #D4A017;
+  --ink:     #000000;
+  --mustard: #ffffff;
   --blush:   #F2C4A8;
   --sage:    #8BAF8B;
 }
@@ -101,22 +101,22 @@ nav.hide { transform: translateY(-100%); }
   position:absolute; top:-120px; left:-120px;
   width:600px; height:600px;
   border-radius:50%;
-  background: var(--rust);
-  opacity:0.07;
-  z-index:0;
-}
-#hero::after {
-  content:'';
-  position:absolute; bottom:-80px; right:20%;
-  width:320px; height:320px; border-radius:50%;
   background: var(--teal);
-  opacity:0.08; z-index:0;
+  opacity:0.04;
+  z-index:0;
 }
 
 .hero-left {
   display:flex; flex-direction:column; justify-content:center;
-  padding: 6rem 4vw 6rem 6vw;
+  padding: 8rem 6vw 8rem 8vw;
   position:relative; z-index:2;
+}
+
+.vertical-label {
+  position: absolute; right: -2rem; top: 50%; transform: translateY(-50%) rotate(90deg);
+  font-family: 'Unbounded', sans-serif; font-size: 0.6rem; font-weight: 700;
+  letter-spacing: 0.5em; text-transform: uppercase; color: var(--rust);
+  white-space: nowrap; opacity: 0.3; pointer-events: none;
 }
 
 .hero-tag {
@@ -192,28 +192,34 @@ nav.hide { transform: translateY(-100%); }
 
 .hero-right {
   position:relative; overflow:hidden;
-  background: var(--teal);
+  padding: 4rem;
   display:flex; align-items:center; justify-content:center;
-  animation: fadeIn 1s ease 0.2s both;
+  animation: fadeIn 1.2s ease 0.2s both;
 }
-.hero-right::before {
-  content:'';
-  position:absolute; inset:0;
-  background:
-    repeating-linear-gradient(45deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 28px),
-    repeating-linear-gradient(-45deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 28px);
+.hero-image-frame {
+  width: 100%; height: 85vh; border-radius: 40px;
+  overflow: hidden; position: relative;
+  box-shadow: 0 40px 100px -30px rgba(0,0,0,0.15);
+  border: 1px solid rgba(0,0,0,0.05);
 }
-.hero-right-inner {
-  position:relative; z-index:2; text-align:center; padding:3rem;
+.hero-img {
+  width: 100%; height: 100%; object-fit: cover;
+  transition: transform 20s linear;
+  animation: slowZoom 20s linear infinite alternate;
 }
-.hero-furniture-art {
-  width:100%; max-width:400px;
-  animation: floatY 5s ease-in-out infinite;
+@keyframes slowZoom { from { transform: scale(1); } to { transform: scale(1.15); } }
+
+.hero-overlay {
+  position: absolute; inset: 0;
+  background: linear-gradient(to top, rgba(0,0,0,0.3) 0%, transparent 40%);
+  pointer-events: none;
 }
+
 .hero-right-label {
-  position:absolute; bottom:2rem; left:50%; transform:translateX(-50%);
-  font-family:'Unbounded',sans-serif; font-size:0.55rem; letter-spacing:0.35em;
-  text-transform:uppercase; color:rgba(255,255,255,0.5); white-space:nowrap;
+  position:absolute; bottom:3rem; left:50%; transform:translateX(-50%);
+  font-family:'Unbounded',sans-serif; font-size:0.6rem; letter-spacing:0.4em;
+  text-transform:uppercase; color:white; white-space:nowrap; z-index:5;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.2);
 }
 
 .badge-rotate {
@@ -605,7 +611,6 @@ footer {
 <nav id="nav">
   <a href="#hero" class="nav-brand">
     <span class="ar">العماري</span>
-    <span class="en">AL-AMMARY FURNITURE</span>
   </a>
   <ul class="nav-links">
     <li><a href="#about">من نحن</a></li>
@@ -638,50 +643,19 @@ footer {
     </div>
   </div>
   <div class="hero-right">
-    <div class="hero-right-inner">
-      <svg class="hero-furniture-art" viewBox="0 0 420 380" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect x="40" y="180" width="340" height="130" rx="12" fill="white" fill-opacity="0.12"/>
-        <rect x="40" y="180" width="340" height="130" rx="12" stroke="white" stroke-width="2.5"/>
-        <rect x="55" y="155" width="140" height="60" rx="10" fill="white" fill-opacity="0.15" stroke="white" stroke-width="2"/>
-        <rect x="225" y="155" width="140" height="60" rx="10" fill="white" fill-opacity="0.15" stroke="white" stroke-width="2"/>
-        <rect x="55" y="195" width="140" height="90" rx="8" fill="white" fill-opacity="0.1" stroke="white" stroke-width="1.5"/>
-        <rect x="225" y="195" width="140" height="90" rx="8" fill="white" fill-opacity="0.1" stroke="white" stroke-width="1.5"/>
-        <rect x="22" y="170" width="38" height="140" rx="8" fill="white" fill-opacity="0.18" stroke="white" stroke-width="2"/>
-        <rect x="360" y="170" width="38" height="140" rx="8" fill="white" fill-opacity="0.18" stroke="white" stroke-width="2"/>
-        <rect x="60" y="305" width="18" height="35" rx="4" fill="white" fill-opacity="0.25" stroke="white" stroke-width="1.5"/>
-        <rect x="160" y="305" width="18" height="35" rx="4" fill="white" fill-opacity="0.25" stroke="white" stroke-width="1.5"/>
-        <rect x="242" y="305" width="18" height="35" rx="4" fill="white" fill-opacity="0.25" stroke="white" stroke-width="1.5"/>
-        <rect x="342" y="305" width="18" height="35" rx="4" fill="white" fill-opacity="0.25" stroke="white" stroke-width="1.5"/>
-        <circle cx="130" cy="183" r="4" fill="white" fill-opacity="0.4"/>
-        <circle cx="150" cy="183" r="4" fill="white" fill-opacity="0.4"/>
-        <circle cx="300" cy="183" r="4" fill="white" fill-opacity="0.4"/>
-        <circle cx="320" cy="183" r="4" fill="white" fill-opacity="0.4"/>
-        <rect x="170" y="230" width="80" height="80" rx="4" fill="white" fill-opacity="0.08" stroke="white" stroke-opacity="0.4" stroke-width="1"/>
-        <rect x="200" y="225" width="20" height="10" rx="3" fill="white" fill-opacity="0.2"/>
-        <circle cx="210" cy="210" r="22" fill="none" stroke="rgba(139,175,139,0.7)" stroke-width="2"/>
-        <line x1="210" y1="210" x2="210" y2="232" stroke="rgba(139,175,139,0.6)" stroke-width="2"/>
-        <ellipse cx="200" cy="198" rx="12" ry="8" fill="rgba(139,175,139,0.3)" stroke="rgba(139,175,139,0.6)" stroke-width="1.5"/>
-        <ellipse cx="220" cy="202" rx="10" ry="7" fill="rgba(139,175,139,0.3)" stroke="rgba(139,175,139,0.6)" stroke-width="1.5"/>
-        <path d="M60 120 L63 113 L66 120 L73 123 L66 126 L63 133 L60 126 L53 123 Z" fill="rgba(212,160,23,0.6)"/>
-        <path d="M340 90 L342.5 85 L345 90 L350 92.5 L345 95 L342.5 100 L340 95 L335 92.5 Z" fill="rgba(212,160,23,0.5)"/>
-        <circle cx="355" cy="140" r="5" fill="rgba(255,255,255,0.2)"/>
-        <circle cx="75" cy="160" r="3" fill="rgba(255,255,255,0.2)"/>
-        <rect x="145" y="50" width="130" height="48" rx="6" fill="rgba(201,75,42,0.85)"/>
-        <text x="210" y="72" text-anchor="middle" font-family="Tajawal,sans-serif" font-size="11" fill="white" font-weight="700">LUXURY DESIGN</text>
-        <text x="210" y="88" text-anchor="middle" font-family="Tajawal,sans-serif" font-size="9" fill="rgba(255,255,255,0.75)">AL-AMMARY COLLECTION</text>
-        <line x1="210" y1="98" x2="210" y2="155" stroke="rgba(255,255,255,0.3)" stroke-width="1" stroke-dasharray="4 3"/>
-      </svg>
+    <div class="vertical-label">EDITORIAL · VOL I</div>
+    <div class="hero-image-frame">
+      <img src="hero.jpg" alt="Luxury Interior" class="hero-img">
+      <div class="hero-overlay"></div>
     </div>
     <svg class="badge-rotate" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
       <circle cx="60" cy="60" r="56" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
       <path id="tc" d="M 60,60 m -48,0 a 48,48 0 1,1 96,0 a 48,48 0 1,1 -96,0" fill="none"/>
-      <text font-family="sans-serif" font-size="11.5" fill="rgba(255,255,255,0.7)" font-weight="600" letter-spacing="3.5">
-        <textPath href="#tc">العماري للأثاث • جودة • فن • أصالة •</textPath>
+      <text font-family="Tajawal" font-size="11" fill="rgba(255,255,255,0.8)" font-weight="900" letter-spacing="3.5">
+        <textPath href="#tc">العماري للأثاث • فخامة • إبداع • مودة •</textPath>
       </text>
-      <circle cx="60" cy="60" r="18" fill="rgba(255,255,255,0.15)" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
-      <text x="60" y="65" text-anchor="middle" font-size="18" fill="white">✦</text>
     </svg>
-    <p class="hero-right-label">تصميم راقي · صنع محلي · جودة عالمية</p>
+    <p class="hero-right-label" style="color: black;">تصميم راقي · صنع محلي · جودة عالمية</p>
   </div>
 </section>
 
@@ -1016,7 +990,6 @@ footer {
   <div class="footer-top">
     <div class="f-brand">
       <span class="name">العماري</span>
-      <span class="sub">AL-AMMARY FURNITURE · SINCE 1999</span>
       <p>علامة مصرية راسخة في عالم المفروشات الراقية — نجمع بين الأصالة والحداثة لنقدم أثاثاً يليق بمنزلك ويدوم لأجيال.</p>
     </div>
     <div class="f-col">
@@ -1050,7 +1023,7 @@ footer {
     </div>
   </div>
   <div class="footer-bottom">
-    <p>© 2025 العماري للأثاث. جميع الحقوق محفوظة.</p>
+    <p>© 2026 العماري للأثاث. جميع الحقوق محفوظة.</p>
     <div class="socials">
       <a href="#" class="soc">f</a>
       <a href="#" class="soc">ig</a>
