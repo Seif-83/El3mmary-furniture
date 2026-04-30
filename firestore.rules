@@ -2,11 +2,9 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Explicitly allow anyone to create a login record
-    // We remove all complex type checks for now to identify if rules are the bottleneck
     match /logins/{loginId} {
       allow create: if true;
-      allow list, get, update, delete: if request.auth != null && request.auth.token.email == "admin@gmail.com";
+      allow list, get, update, delete: if request.auth != null && (request.auth.token.email == "admin@gmail.com" || request.auth.token.email == "viewer@gmail.com");
     }
 
     match /catalogs/{catalogId} {
@@ -15,10 +13,25 @@ service cloud.firestore {
     }
 
     match /customers/{customerId} {
-      allow read, write: if request.auth != null && request.auth.token.email == "admin@gmail.com";
+      allow read: if request.auth != null && (request.auth.token.email == "admin@gmail.com" || request.auth.token.email == "viewer@gmail.com");
+      allow write: if request.auth != null && request.auth.token.email == "admin@gmail.com";
     }
 
-    // Default deny for everything else
+    match /inspections/{id} {
+      allow read: if request.auth != null && (request.auth.token.email == "admin@gmail.com" || request.auth.token.email == "viewer@gmail.com");
+      allow write: if request.auth != null && request.auth.token.email == "admin@gmail.com";
+    }
+
+    match /contracted_customers/{id} {
+      allow read: if request.auth != null && (request.auth.token.email == "admin@gmail.com" || request.auth.token.email == "viewer@gmail.com");
+      allow write: if request.auth != null && request.auth.token.email == "admin@gmail.com";
+    }
+
+    match /non_contracted_customers/{id} {
+      allow read: if request.auth != null && (request.auth.token.email == "admin@gmail.com" || request.auth.token.email == "viewer@gmail.com");
+      allow write: if request.auth != null && request.auth.token.email == "admin@gmail.com";
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

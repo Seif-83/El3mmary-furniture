@@ -21,13 +21,40 @@
 }
 
 body {
+  position: relative;
   background-color: var(--background);
   background-image: 
     radial-gradient(at 0% 0%, #d4a37333 0px, transparent 50%), 
-    radial-gradient(at 100% 100%, #a5a58d33 0px, transparent 50%);
+    radial-gradient(at 100% 100%, #a5a58d33 0px, transparent 50%),
+    repeating-linear-gradient(135deg, rgba(255,255,255,0.08) 0, rgba(255,255,255,0.08) 1px, transparent 1px, transparent 12px);
+  background-size: auto, auto, 14px 14px;
   color: var(--foreground);
   font-family: var(--font-sans);
   min-height: 100vh;
+}
+
+.heading-accent {
+  position: relative;
+  display: inline-block;
+}
+
+.heading-accent::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -0.85rem;
+  transform: translateX(-50%);
+  width: 0;
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(212, 164, 115, 0.95);
+  box-shadow: 0 0 16px rgba(212, 164, 115, 0.22);
+  animation: accent-grow 0.9s ease-out forwards;
+}
+
+@keyframes accent-grow {
+  from { width: 0; }
+  to { width: 78px; }
 }
 
 .glass {
@@ -42,4 +69,21 @@ body {
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border: 1px solid var(--color-glass-border);
+}
+
+.login-panel {
+  position: relative;
+  overflow: hidden;
+}
+
+.login-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    radial-gradient(circle at 20% 20%, rgba(212, 164, 115, 0.16), transparent 30%),
+    radial-gradient(circle at 80% 30%, rgba(165, 165, 141, 0.12), transparent 28%),
+    radial-gradient(circle at 50% 60%, rgba(255, 255, 255, 0.18), transparent 35%);
+  filter: blur(20px);
 }
