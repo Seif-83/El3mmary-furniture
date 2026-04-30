@@ -45,13 +45,6 @@ import { auth, db } from './lib/firebase';
 import toast, { Toaster } from 'react-hot-toast';
 import { format } from 'date-fns';
 
-interface LoginRecord {
-  id: string;
-  name: string;
-  phone: string;
-  loginAt: Timestamp;
-}
-
 interface CatalogSheet {
   id: string;
   title: string;
@@ -171,12 +164,9 @@ export default function App() {
   const [lang, setLang] = useState<'en' | 'ar'>('ar');
   const t = translations[lang];
   
-  const [activeTab, setActiveTab] = useState<'user' | 'employee'>('user');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
-  const [loginRecords, setLoginRecords] = useState<LoginRecord[]>([]);
-  const [userLoggedIn, setUserLoggedIn] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
   
@@ -184,32 +174,12 @@ export default function App() {
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   const [editingId, setEditingId] = useState<string | null>(null);
   
-  const [adminSubView, setAdminSubView] = useState<'logins' | 'catalogs' | 'customers'>('logins');
+  const [adminSubView, setAdminSubView] = useState<'customers' | 'catalogs'>('customers');
   const [catalogs, setCatalogs] = useState<CatalogSheet[]>([]);
   const [customerRecords, setCustomerRecords] = useState<CustomerRecord[]>([]);
   const [selectedSheetId, setSelectedSheetId] = useState<string | null>(null);
   
   const selectedSheet = catalogs.find(c => c.id === selectedSheetId);
-
-  const displayRecords = loginRecords.reduce((acc, record) => {
-    const recordPhone = normalizePhone(record.phone);
-    if (!recordPhone) {
-      acc.push(record);
-      return acc;
-    }
-    const existingIndex = acc.findIndex(r => normalizePhone(r.phone) === recordPhone);
-    if (existingIndex === -1) {
-      acc.push(record);
-    } else {
-      const existing = acc[existingIndex];
-      const existingTime = existing.loginAt?.toMillis() || 0;
-      const currentTime = record.loginAt?.toMillis() || 0;
-      if (currentTime < existingTime) {
-        acc[existingIndex] = record;
-      }
-    }
-    return acc;
-  }, [] as LoginRecord[]).sort((a, b) => (b.loginAt?.toMillis() || 0) - (a.loginAt?.toMillis() || 0));
 
   const [formData, setFormData] = useState({
     username: '', 
@@ -219,7 +189,6 @@ export default function App() {
   });
 
   useEffect(() => {
-    let unsubscribeLogins: (() => void) | undefined;
     let unsubscribeCatalogs: (() => void) | undefined;
     let unsubscribeCustomers: (() => void) | undefined;
 
@@ -228,12 +197,6 @@ export default function App() {
       setIsAuthChecking(false);
       
       if (user && user.email === ADMIN_EMAIL) {
-        const qLogins = query(collection(db, 'logins'), orderBy('loginAt', 'desc'));
-        unsubscribeLogins = onSnapshot(qLogins, (snapshot) => {
-          const records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as LoginRecord[];
-          setLoginRecords(records);
-        });
-
         const qCatalogs = query(collection(db, 'catalogs'), orderBy('createdAt', 'desc'));
         unsubscribeCatalogs = onSnapshot(qCatalogs, (snapshot) => {
           const sheets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as CatalogSheet[];
@@ -251,7 +214,6 @@ export default function App() {
 
     return () => {
       unsubscribeAuth();
-      if (unsubscribeLogins) unsubscribeLogins();
       if (unsubscribeCatalogs) unsubscribeCatalogs();
       if (unsubscribeCustomers) unsubscribeCustomers();
     };
@@ -290,17 +252,6 @@ export default function App() {
     } catch { toast.error("Failed to delete"); }
   };
 
-  const handleExportExcel = () => {
-    try {
-      const data = loginRecords.map(rc => ({ [t.userName]: rc.name, [t.phoneNumber]: rc.phone, [t.loginDate]: rc.loginAt ? format(rc.loginAt.toDate(), 'yyyy-MM-dd HH:mm') : '' }));
-      const ws = XLSX.utils.json_to_sheet(data);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Logins");
-      XLSX.writeFile(wb, "El3mmary_User_Logins.xlsx");
-      toast.success(lang === 'ar' ? "تم تصدير الملف" : "Excel file exported");
-    } catch { toast.error("Export failed"); }
-  };
-
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -320,52 +271,6 @@ export default function App() {
     setIsLoading(false);
   };
 
-  const handleUserLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.name.trim() || !formData.phone.trim()) return toast.error(lang === 'ar' ? "يرجى إدخال البيانات" : "Please enter your data");
-    const digits = formData.phone.replace(/\D/g, '');
-    if (digits.length < 10 || digits.length > 11) return toast.error(t.phoneError);
-    setIsLoading(true);
-    try {
-      await addDoc(collection(db, 'logins'), { name: formData.name.trim(), phone: formData.phone.trim(), loginAt: serverTimestamp() });
-      setUserLoggedIn(true);
-      setFormData({ ...formData, name: '', phone: '' });
-      toast.success(lang === 'ar' ? "تم التسجيل" : "Login logged successfully");
-      setTimeout(() => { window.location.href = '/alammary-furniture.html'; }, 1500);
-    } catch (error: any) { toast.error(error.message); }
-    setIsLoading(false);
-  };
-
-  const handleCleanupDuplicates = async () => {
-    if (!confirm(lang === 'ar' ? "هل تريد حذف جميع السجلات المكررة؟" : "Do you want to delete all duplicate records?")) return;
-    setIsLoading(true);
-    try {
-      const seen = new Map<string, string>();
-      const toDelete: string[] = [];
-      const sorted = [...loginRecords].sort((a, b) => (a.loginAt?.toMillis() || 0) - (b.loginAt?.toMillis() || 0));
-      for (const record of sorted) {
-        const phone = normalizePhone(record.phone);
-        if (!phone) continue;
-        if (seen.has(phone)) toDelete.push(record.id);
-        else seen.set(phone, record.id);
-      }
-      if (toDelete.length === 0) toast.success(lang === 'ar' ? "لا توجد مكررات" : "No duplicates found");
-      else {
-        for (const id of toDelete) await deleteDoc(doc(db, 'logins', id));
-        toast.success(lang === 'ar' ? `تم حذف ${toDelete.length} مكرر` : `Deleted ${toDelete.length} duplicates`);
-      }
-    } catch { toast.error("Cleanup failed"); }
-    setIsLoading(false);
-  };
-
-  const handleDeleteRecord = async (id: string) => {
-    if (!confirm(lang === 'ar' ? "هل أنت متأكد؟" : "Are you sure?")) return;
-    try {
-      await deleteDoc(doc(db, 'logins', id));
-      toast.success(lang === 'ar' ? "تم الحذف" : "Record removed");
-    } catch { toast.error("Unauthorized"); }
-  };
-
   const handleDeleteCustomer = async (id: string) => {
     if (!confirm(lang === 'ar' ? "هل أنت متأكد؟" : "Are you sure?")) return;
     try {
@@ -374,7 +279,7 @@ export default function App() {
     } catch { toast.error("Unauthorized"); }
   };
 
-  const handleLogout = () => { signOut(auth); setUserLoggedIn(false); toast.success("Logged out"); };
+  const handleLogout = () => { signOut(auth); toast.success("Logged out"); };
 
   const handleOpenAddModal = () => { setFormData({ ...formData, name: '', phone: '' }); setModalMode('add'); setIsModalOpen(true); };
 
@@ -385,12 +290,12 @@ export default function App() {
     if (!formData.name.trim() || !formData.phone.trim()) return toast.error("Please enter data");
     setIsLoading(true);
     try {
-      const target = adminSubView === 'customers' ? 'customers' : 'logins';
+      const target = 'customers';
       if (modalMode === 'add') {
         const q = query(collection(db, target), where('phone', '==', formData.phone.trim()), limit(1));
         const snap = await getDocs(q);
         if (!snap.empty) { toast.error("Already registered"); setIsLoading(false); return; }
-        await addDoc(collection(db, target), { name: formData.name.trim(), phone: formData.phone.trim(), [adminSubView === 'customers' ? 'createdAt' : 'loginAt']: serverTimestamp() });
+        await addDoc(collection(db, target), { name: formData.name.trim(), phone: formData.phone.trim(), createdAt: serverTimestamp() });
         toast.success("Added success");
       } else {
         await updateDoc(doc(db, target, editingId!), { name: formData.name.trim(), phone: formData.phone.trim() });
@@ -436,9 +341,6 @@ export default function App() {
               <nav className="flex flex-col gap-4 flex-1">
                 {currentUser && currentUser.email === ADMIN_EMAIL ? (
                   <>
-                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'logins' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'}`} onClick={() => setAdminSubView('logins')}>
-                      <Users className="w-4 h-4" /> {t.logins}
-                    </div>
                     <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'customers' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'}`} onClick={() => setAdminSubView('customers')}>
                       <UserIcon className="w-4 h-4" /> {t.customers}
                     </div>
@@ -446,11 +348,7 @@ export default function App() {
                       <FileSpreadsheet className="w-4 h-4" /> {t.publishedSheets}
                     </div>
                   </>
-                ) : (
-                  <div className={`px-4 py-3 rounded-xl text-sm font-semibold glass transition-all cursor-pointer ${activeTab === 'user' ? 'text-zinc-900 shadow-sm' : 'text-zinc-500 opacity-70'}`} onClick={() => !currentUser && !userLoggedIn && setActiveTab('user')}>
-                    {t.userDatabase}
-                  </div>
-                )}
+                ) : null}
                 {currentUser && (
                   <button onClick={handleLogout} className="mt-auto flex items-center gap-2 text-sm font-bold uppercase text-danger pt-4">
                     <LogOut className="w-4 h-4" /> {t.signOut}
@@ -466,25 +364,17 @@ export default function App() {
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
                       <div>
                         <span className="text-[10px] font-bold bg-zinc-800 text-white px-2 py-1 rounded inline-block uppercase tracking-wider mb-1">{t.masterAdmin}</span>
-                        <h1 className="text-3xl md:text-4xl font-light">{adminSubView === 'logins' ? t.userManagement : adminSubView === 'customers' ? t.customers : t.publishedSheets}</h1>
+                        <h1 className="text-3xl md:text-4xl font-light">{adminSubView === 'customers' ? t.customers : t.publishedSheets}</h1>
                       </div>
                       <div className="flex flex-wrap gap-4">
                         {adminSubView !== 'catalogs' ? (
-                          <>
-                            <button onClick={handleOpenAddModal} className="glass px-6 py-4 rounded-2xl flex items-center gap-3 font-bold text-xs uppercase"><Plus className="w-4 h-4" /> {adminSubView === 'customers' ? t.addCustomerBtn : t.addCustomer}</button>
-                            {adminSubView === 'logins' && (
-                              <>
-                                <button onClick={handleExportExcel} className="glass px-6 py-4 rounded-2xl flex items-center gap-3 font-bold text-xs uppercase text-[#d4a373]"><Download className="w-4 h-4" /> {t.exportExcel}</button>
-                                <button onClick={handleCleanupDuplicates} className="glass px-6 py-4 rounded-2xl flex items-center gap-3 font-bold text-xs uppercase text-danger"><Trash2 className="w-4 h-4" /> {lang === 'ar' ? 'تنظيف المكررات' : 'Cleanup Duplicates'}</button>
-                              </>
-                            )}
-                          </>
+                          <button onClick={handleOpenAddModal} className="glass px-6 py-4 rounded-2xl flex items-center gap-3 font-bold text-xs uppercase"><Plus className="w-4 h-4" /> {t.addCustomerBtn}</button>
                         ) : (
                           <label className="glass px-6 py-4 rounded-2xl flex items-center gap-3 font-bold text-xs uppercase cursor-pointer"><Upload className="w-4 h-4" /> {t.uploadNew} <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleImportExcel} /></label>
                         )}
                         <div className="glass p-5 rounded-2xl min-w-[140px]">
-                          <div className="text-[11px] uppercase font-bold text-zinc-400 mb-1">{adminSubView === 'customers' ? t.totalCustomers : t.totalUsers}</div>
-                          <div className="text-3xl font-semibold">{adminSubView === 'customers' ? customerRecords.length : displayRecords.length}</div>
+                          <div className="text-[11px] uppercase font-bold text-zinc-400 mb-1">{adminSubView === 'customers' ? t.totalCustomers : t.publishedSheets}</div>
+                          <div className="text-3xl font-semibold">{adminSubView === 'customers' ? customerRecords.length : catalogs.length}</div>
                         </div>
                       </div>
                     </div>
@@ -518,14 +408,14 @@ export default function App() {
                           <table className="w-full text-left">
                             <thead><tr className="border-b border-black/5"><th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[10px]">{t.userName}</th><th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[10px]">{t.phoneNumber}</th><th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[10px]">{t.loginDate}</th><th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[10px] text-right">{t.actions}</th></tr></thead>
                             <tbody className="divide-y divide-black/5">
-                              {(adminSubView === 'customers' ? customerRecords : displayRecords).length > 0 ? (adminSubView === 'customers' ? customerRecords : displayRecords).map(r => (
+                              {customerRecords.length > 0 ? customerRecords.map(r => (
                                 <tr key={r.id} className="hover:bg-black/5 transition-colors">
                                   <td className="px-4 py-6 font-semibold">{r.name}</td>
                                   <td className="px-4 py-6"><span className="bg-black/5 px-2 py-1 rounded font-mono text-sm">{r.phone}</span></td>
-                                  <td className="px-4 py-6 text-sm text-zinc-500 font-mono">{(adminSubView === 'customers' ? (r as CustomerRecord).createdAt : (r as LoginRecord).loginAt) ? format((adminSubView === 'customers' ? (r as CustomerRecord).createdAt : (r as LoginRecord).loginAt).toDate(), 'yyyy/MM/dd HH:mm') : '...'}</td>
+                                  <td className="px-4 py-6 text-sm text-zinc-500 font-mono">{r.createdAt ? format(r.createdAt.toDate(), 'yyyy/MM/dd HH:mm') : '...'}</td>
                                   <td className="px-4 py-6 text-right flex gap-3 justify-end">
                                     <button onClick={() => handleOpenEditModal(r)} className="text-zinc-600 border border-zinc-200 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase flex items-center gap-1 hover:bg-zinc-800 hover:text-white transition-all"><Edit2 className="w-3 h-3" /> {lang === 'ar' ? 'تعديل' : 'Edit'}</button>
-                                    <button onClick={() => adminSubView === 'customers' ? handleDeleteCustomer(r.id) : handleDeleteRecord(r.id)} className="text-danger border border-danger/20 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase hover:bg-danger hover:text-white transition-all">{t.delete}</button>
+                                    <button onClick={() => handleDeleteCustomer(r.id)} className="text-danger border border-danger/20 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase hover:bg-danger hover:text-white transition-all">{t.delete}</button>
                                   </td>
                                 </tr>
                               )) : <tr><td colSpan={4} className="py-20 text-center italic text-zinc-400">{t.noRecords}</td></tr>}
@@ -535,36 +425,15 @@ export default function App() {
                       </div>
                     )}
                   </motion.div>
-                ) : userLoggedIn ? (
-                  <motion.div key="user-success" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="min-h-[70vh] flex flex-col items-center justify-center p-8 bg-success text-white rounded-[3rem] shadow-2xl space-y-6 text-center">
-                    <CheckCircle2 className="w-24 h-24" />
-                    <div><h1 className="text-3xl font-bold">{t.successMsg}</h1><p className="opacity-80 mt-2">{t.portalSoon}</p></div>
-                    <button onClick={() => setUserLoggedIn(false)} className="px-8 py-3 bg-white/20 rounded-2xl font-bold uppercase tracking-widest hover:bg-white/30 transition-all">{t.return}</button>
-                  </motion.div>
                 ) : (
-                  <div className="max-w-md mx-auto py-12">
-                    <div className="text-center mb-10"><Armchair className="w-12 h-12 text-accent-tan mx-auto mb-4" /><h2 className="text-3xl font-light">{t.welcome}</h2><p className="text-zinc-500 text-sm mt-1">{t.enterCreds}</p></div>
-                    <div className="glass rounded-[2rem] p-8 shadow-2xl">
-                      <div className="flex p-1.5 bg-black/5 rounded-2xl mb-8">
-                        <button onClick={() => setActiveTab('user')} className={`flex-1 py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeTab === 'user' ? 'bg-white shadow-md text-zinc-900' : 'text-zinc-400'}`}>{t.userLogin}</button>
-                        <button onClick={() => setActiveTab('employee')} className={`flex-1 py-3 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeTab === 'employee' ? 'bg-white shadow-md text-zinc-900' : 'text-zinc-400'}`}>{t.adminAccess}</button>
-                      </div>
-                      <AnimatePresence mode="wait">
-                        <motion.form key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} onSubmit={activeTab === 'user' ? handleUserLogin : handleAdminLogin} className="space-y-6">
-                          {activeTab === 'user' ? (
-                            <>
-                              <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.fullName}</label><input required className="w-full px-5 py-4 bg-white/50 border border-black/10 rounded-2xl focus:ring-4 focus:ring-accent-tan/10 transition-all" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} /></div>
-                              <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.phoneNumber}</label><input required type="tel" className="w-full px-5 py-4 bg-white/50 border border-black/10 rounded-2xl font-mono" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} /></div>
-                            </>
-                          ) : (
-                            <>
-                              <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.adminUser}</label><input required className="w-full px-5 py-4 bg-white/50 border border-black/10 rounded-2xl" value={formData.username} onChange={e => setFormData({ ...formData, username: e.target.value })} /></div>
-                              <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.passphrase}</label><div className="relative"><input required type={showPassword ? "text" : "password"} className="w-full ps-11 pe-5 py-4 bg-white/50 border border-black/10 rounded-2xl" value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400">{showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}</button></div></div>
-                            </>
-                          )}
-                          <button disabled={isLoading} type="submit" className="w-full bg-zinc-900 text-white py-4 rounded-2xl font-bold uppercase tracking-widest shadow-xl flex items-center justify-center gap-2 group">{isLoading ? t.authenticating : activeTab === 'user' ? t.enterPortal : t.adminAccess} <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-1" /></button>
-                        </motion.form>
-                      </AnimatePresence>
+                  <div className="max-w-3xl mx-auto py-16 px-4 sm:px-6 lg:px-8">
+                    <div className="text-center mb-12"><Armchair className="w-14 h-14 text-accent-tan mx-auto mb-5" /><h2 className="text-4xl md:text-5xl font-light">{t.welcome}</h2><p className="text-zinc-500 text-base md:text-lg mt-3 max-w-2xl mx-auto">{t.enterCreds}</p></div>
+                    <div className="glass rounded-[2.5rem] p-10 md:p-12 shadow-2xl">
+                      <motion.form initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} onSubmit={handleAdminLogin} className="space-y-8">
+                        <div className="space-y-2"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1 tracking-[0.2em]">{t.adminUser}</label><input required className="w-full px-6 py-5 text-base md:text-lg bg-white/60 border border-black/10 rounded-3xl shadow-sm" value={formData.username} onChange={e => setFormData({ ...formData, username: e.target.value })} /></div>
+                        <div className="space-y-2"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1 tracking-[0.2em]">{t.passphrase}</label><div className="relative"><input required type={showPassword ? "text" : "password"} className="w-full ps-12 pe-5 py-5 text-base md:text-lg bg-white/60 border border-black/10 rounded-3xl shadow-sm" value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400">{showPassword ? <EyeOff className="w-6 h-6" /> : <Eye className="w-6 h-6" />}</button></div></div>
+                        <button disabled={isLoading} type="submit" className="w-full bg-zinc-900 text-white py-5 rounded-3xl font-bold uppercase tracking-widest shadow-2xl flex items-center justify-center gap-3 group text-lg">{isLoading ? t.authenticating : t.adminAccess} <ChevronRight className="w-5 h-5 transition-transform group-hover:translate-x-1" /></button>
+                      </motion.form>
                     </div>
                   </div>
                 )}
