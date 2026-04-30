@@ -168,7 +168,7 @@ const normalizePhone = (p: any) => {
 };
 
 export default function App() {
-  const [lang, setLang] = useState<'en' | 'ar'>('en');
+  const [lang, setLang] = useState<'en' | 'ar'>('ar');
   const t = translations[lang];
   
   const [activeTab, setActiveTab] = useState<'user' | 'employee'>('user');
