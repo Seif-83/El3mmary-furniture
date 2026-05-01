@@ -62,6 +62,7 @@ interface CustomerRecord {
 interface FurniturePiece {
   name: string;
   price: number;
+  quantity: number;
 }
 
 interface Inspection {
@@ -86,8 +87,10 @@ const ADMIN_EMAIL = "admin@gmail.com";
 const VIEWER_EMAIL = "viewer@gmail.com";
 
 const FURNITURE_OPTIONS = [
-  "Sofa (كنبة)", "Bed (سرير)", "Wardrobe (دولاب)", "Table (ترابيزة)", 
-  "Chair (كرسي)", "Dressing (دريسنج)", "Kitchen (مطبخ)", "Office (مكتب)"
+  "سرير كبير", "دولاب", "كومود", "سراحة", "شفونيرة",
+  "سرير أطفال", "دولاب أطفال", "كومود أطفال",
+  "ترابيزة سفرة", "كرسي سفرة", "بوفيه", "نيش",
+  "مطبخ", "كنبة", "ركنة", "صالون"
 ];
 
 const translations = {
@@ -224,6 +227,7 @@ const translations = {
     contractImg: "صورة العقد",
     viewOnly: "مشاهد فقط",
     editor: "مسؤول (صلاحية كاملة)",
+    quantity: "العدد",
   }
 };
 
@@ -249,7 +253,7 @@ export default function App() {
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   const [editingId, setEditingId] = useState<string | null>(null);
   
-  const [adminSubView, setAdminSubView] = useState<'customers' | 'catalogs' | 'inspections' | 'contracted' | 'not-contracted'>('customers');
+  const [adminSubView, setAdminSubView] = useState<'customers' | 'catalogs' | 'contracted' | 'not-contracted'>('customers');
   const [catalogs, setCatalogs] = useState<CatalogSheet[]>([]);
   const [customerRecords, setCustomerRecords] = useState<CustomerRecord[]>([]);
   const [inspections, setInspections] = useState<Inspection[]>([]);
@@ -392,22 +396,32 @@ export default function App() {
 
   const handleLogout = () => { signOut(auth); toast.success("Logged out"); };
 
-  const handleInspectionSubmit = async (e: React.FormEvent) => {
+   const handleInspectionSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (inspectionStep < 3) {
+      // If we are in Step 1 and have an editingId (lead), update the lead info too
+      if (inspectionStep === 1 && editingId) {
+        try {
+          await updateDoc(doc(db, 'customers', editingId), {
+            name: inspectionFormData.customerName?.trim(),
+            phone: inspectionFormData.phone?.trim()
+          });
+        } catch (err) { console.error("Failed to update lead info", err); }
+      }
       setInspectionStep(prev => prev + 1);
       return;
     }
     
     setIsLoading(true);
     try {
+      const { id: _, ...rest } = inspectionFormData;
       const data = {
-        ...inspectionFormData,
+        ...rest,
         createdAt: serverTimestamp()
       };
       
       if (inspectionFormData.id) {
-        // Update existing inspection (e.g. finalizing from Step 2/3)
+        // Update existing inspection
         await updateDoc(doc(db, 'inspections', inspectionFormData.id), data);
       } else {
         // New inspection
@@ -417,6 +431,7 @@ export default function App() {
       toast.success(lang === 'ar' ? "تم حفظ المعاينة" : "Inspection saved");
       setIsInspectionModalOpen(false);
       setInspectionStep(1);
+      setEditingId(null);
       setInspectionFormData({ customerName: '', address: '', phone: '', visitDate: '', notes: '', rooms: 0, pieces: [], totalAmount: 0 });
     } catch (err: any) { toast.error(err.message); }
     setIsLoading(false);
@@ -426,8 +441,9 @@ export default function App() {
     setIsLoading(true);
     try {
       const collectionName = status === 'contracted' ? 'contracted_customers' : 'non_contracted_customers';
+      const { id: _, ...rest } = inspectionFormData;
       const data = {
-        ...inspectionFormData,
+        ...rest,
         status,
         finalizedAt: serverTimestamp(),
         createdAt: inspectionFormData.createdAt || serverTimestamp()
@@ -435,9 +451,13 @@ export default function App() {
       
       await addDoc(collection(db, collectionName), data);
       
+      // If this was a pending inspection, remove it
       if (inspectionFormData.id) {
         await deleteDoc(doc(db, 'inspections', inspectionFormData.id));
       }
+
+      // Important: If we are finalizing, we might want to mark the original customer record too, 
+      // but the user wants them in the specialized tables, so we'll keep the current move logic.
       
       toast.success(lang === 'ar' ? "تمت العملية بنجاح" : "Process completed");
       setIsInspectionModalOpen(false);
@@ -466,8 +486,15 @@ export default function App() {
   };
 
   const addPiece = (name: string) => {
-    const pieces = [...(inspectionFormData.pieces || []), { name, price: 0 }];
+    const pieces = [...(inspectionFormData.pieces || []), { name, price: 0, quantity: 1 }];
     setInspectionFormData({ ...inspectionFormData, pieces });
+  };
+
+  const updatePiece = (index: number, field: string, value: any) => {
+    const pieces = [...(inspectionFormData.pieces || [])];
+    pieces[index] = { ...pieces[index], [field]: value };
+    const total = pieces.reduce((sum, p) => sum + (Number(p.price) * Number(p.quantity || 1)), 0);
+    setInspectionFormData({ ...inspectionFormData, pieces, totalAmount: total });
   };
 
   const updatePiecePrice = (index: number, price: number) => {
@@ -546,9 +573,6 @@ export default function App() {
                     <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'customers' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'}`} onClick={() => setAdminSubView('customers')}>
                       <UserIcon className="w-4 h-4" /> {t.customers}
                     </div>
-                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'inspections' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'}`} onClick={() => setAdminSubView('inspections')}>
-                      <Eye className="w-4 h-4" /> {t.inspections}
-                    </div>
                     <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'contracted' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'}`} onClick={() => setAdminSubView('contracted')}>
                       <CheckCircle2 className="w-4 h-4" /> {t.contracted}
                     </div>
@@ -579,7 +603,6 @@ export default function App() {
                         </span>
                         <h1 className="text-3xl md:text-4xl font-light">
                           {adminSubView === 'customers' ? t.customers : 
-                           adminSubView === 'inspections' ? t.inspections :
                            adminSubView === 'contracted' ? t.contracted :
                            adminSubView === 'not-contracted' ? t.notContracted :
                            t.publishedSheets}
@@ -638,28 +661,76 @@ export default function App() {
                         ) : <div className="glass rounded-[2rem] p-20 text-center text-zinc-400 italic">{t.noSheets}</div>}
                       </div>
                     ) : adminSubView === 'customers' ? (
-                      <div className="glass rounded-3xl overflow-hidden p-4 md:p-8">
+                    <div className="space-y-8">
+                      {adminSubView === 'customers' && inspections.length > 0 && (
+                        <div className="space-y-4">
+                          <h3 className="text-xs font-bold uppercase text-zinc-400 tracking-widest px-1">{t.inspections} ({inspections.length})</h3>
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {inspections.map(ins => (
+                              <div key={ins.id} className="glass p-6 rounded-3xl flex flex-col gap-4 border border-zinc-200/50">
+                                <div className="flex justify-between items-start">
+                                  <div>
+                                    <h4 className="font-bold text-zinc-900">{ins.customerName}</h4>
+                                    <p className="text-xs text-zinc-500">{ins.phone}</p>
+                                  </div>
+                                  <span className="bg-zinc-100 text-zinc-600 px-2 py-1 rounded text-[10px] font-bold uppercase">{ins.visitDate}</span>
+                                </div>
+                                <div className="flex gap-2">
+                                  <button onClick={() => { setInspectionFormData(ins); setInspectionStep(2); setIsInspectionModalOpen(true); }} className="flex-1 bg-zinc-900 text-white py-2 rounded-xl text-xs font-bold uppercase hover:bg-zinc-800 transition-all">{t.step2}</button>
+                                  <button onClick={() => { setSelectedRecord(ins); setIsDetailModalOpen(true); }} className="p-2 border border-zinc-200 rounded-xl hover:bg-zinc-50 transition-all"><Eye className="w-4 h-4 text-zinc-400" /></button>
+                                  <button onClick={async () => { if(confirm(t.delete)) await deleteDoc(doc(db, 'inspections', ins.id)); }} className="p-2 border border-red-100 rounded-xl hover:bg-red-50 transition-all"><Trash2 className="w-4 h-4 text-red-400" /></button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="glass rounded-[2.5rem] overflow-hidden p-6 md:p-10 shadow-xl border border-white/40">
                         <div className="overflow-x-auto">
                           <table className="w-full text-left">
-                            <thead><tr className="border-b border-black/5"><th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[10px]">{t.userName}</th><th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[10px]">{t.phoneNumber}</th><th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[10px]">{t.loginDate}</th>{currentUser?.email === ADMIN_EMAIL && <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[10px] text-right">{t.actions}</th>}</tr></thead>
+                            <thead>
+                              <tr className="border-b border-black/5 text-[10px] font-bold uppercase text-zinc-400 tracking-widest">
+                                <th className="px-4 py-5">{t.userName}</th>
+                                <th className="px-4 py-5">{t.phoneNumber}</th>
+                                <th className="px-4 py-5">{t.loginDate}</th>
+                                <th className="px-4 py-5 text-right">{t.actions}</th>
+                              </tr>
+                            </thead>
                             <tbody className="divide-y divide-black/5">
-                              {customerRecords.length > 0 ? customerRecords.map(r => (
-                                <tr key={r.id} className="hover:bg-black/5 transition-colors">
-                                  <td className="px-4 py-6 font-semibold">{r.name}</td>
-                                  <td className="px-4 py-6"><span className="bg-black/5 px-2 py-1 rounded font-mono text-sm">{r.phone}</span></td>
+                              {customerRecords.map((r) => (
+                                <tr key={r.id} className="group hover:bg-black/5 transition-colors">
+                                  <td className="px-4 py-6 font-bold text-zinc-900">{r.name}</td>
+                                  <td className="px-4 py-6">
+                                    <span className="bg-zinc-100 px-3 py-1.5 rounded-xl font-mono text-xs text-zinc-600 group-hover:bg-white transition-colors">{r.phone}</span>
+                                  </td>
                                   <td className="px-4 py-6 text-sm text-zinc-500 font-mono">{r.createdAt ? format(r.createdAt.toDate(), 'yyyy/MM/dd HH:mm') : '...'}</td>
                                   {currentUser?.email === ADMIN_EMAIL && (
                                     <td className="px-4 py-6 text-right flex gap-3 justify-end">
-                                      <button onClick={() => handleOpenEditModal(r)} className="text-zinc-600 border border-zinc-200 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase flex items-center gap-1 hover:bg-zinc-800 hover:text-white transition-all"><Edit2 className="w-3 h-3" /> {lang === 'ar' ? 'تعديل' : 'Edit'}</button>
+                                      <button onClick={() => {
+                                        setInspectionFormData({ 
+                                          customerName: r.name, 
+                                          phone: r.phone,
+                                          id: undefined, // ensure it's treated as a new inspection if started from lead
+                                          address: '', visitDate: '', notes: '', rooms: 0, pieces: [], totalAmount: 0 
+                                        });
+                                        setEditingId(r.id); // Track which lead we are inspecting/editing
+                                        setInspectionStep(1);
+                                        setIsInspectionModalOpen(true);
+                                      }} className="bg-accent-tan/10 text-accent-tan border border-accent-tan/20 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase hover:bg-accent-tan hover:text-white transition-all flex items-center gap-2">
+                                        <Eye className="w-3 h-3" /> {lang === 'ar' ? 'معاينة / تعديل' : 'Inspect / Edit'}
+                                      </button>
                                       <button onClick={() => handleDeleteCustomer(r.id)} className="text-danger border border-danger/20 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase hover:bg-danger hover:text-white transition-all">{t.delete}</button>
                                     </td>
                                   )}
                                 </tr>
-                              )) : <tr><td colSpan={4} className="py-20 text-center italic text-zinc-400">{t.noRecords}</td></tr>}
+                              ))}
+                              {customerRecords.length === 0 && <tr><td colSpan={4} className="py-20 text-center italic text-zinc-400">{t.noRecords}</td></tr>}
                             </tbody>
                           </table>
                         </div>
                       </div>
+                    </div>
                     ) : (
                       <div className="glass rounded-3xl overflow-hidden p-4 md:p-8">
                         <div className="overflow-x-auto">
@@ -770,15 +841,22 @@ export default function App() {
                         {inspectionFormData.pieces?.map((p, idx) => (
                           <div key={idx} className="flex items-center gap-4 bg-black/5 p-4 rounded-2xl">
                             <div className="flex-1 font-semibold">{p.name}</div>
-                            <div className="w-32"><input required type="number" placeholder={t.price} className="w-full px-3 py-2 bg-white rounded-xl text-sm" value={p.price || ''} onChange={e => updatePiecePrice(idx, parseFloat(e.target.value))} /></div>
-                            <button type="button" onClick={() => removePiece(idx)} className="text-danger"><Trash2 className="w-4 h-4" /></button>
+                            <div className="flex gap-2 w-48">
+                              <input required type="number" placeholder={lang === 'ar' ? 'العدد' : 'Qty'} className="w-16 px-3 py-2 bg-white rounded-xl text-sm" value={p.quantity || 1} onChange={e => updatePiece(idx, 'quantity', Number(e.target.value))} />
+                              <input required type="number" placeholder={t.price} className="flex-1 px-3 py-2 bg-white rounded-xl text-sm" value={p.price || ''} onChange={e => updatePiece(idx, 'price', Number(e.target.value))} />
+                            </div>
+                            <button type="button" onClick={() => {
+                              const pieces = inspectionFormData.pieces?.filter((_, i) => i !== idx);
+                              const total = pieces?.reduce((sum, p) => sum + (Number(p.price) * (p.quantity || 1)), 0);
+                              setInspectionFormData({ ...inspectionFormData, pieces, totalAmount: total });
+                            }} className="text-danger"><Trash2 className="w-4 h-4" /></button>
                           </div>
                         ))}
                       </div>
                       
                       <div className="pt-4 border-t border-black/5 flex justify-between items-center">
                         <span className="font-bold text-lg">{t.total}:</span>
-                        <span className="text-2xl font-bold text-accent-tan">{inspectionFormData.totalAmount?.toLocaleString()} EGP</span>
+                        <span className="text-2xl font-bold text-accent-tan">{(inspectionFormData.totalAmount || 0).toLocaleString()} EGP</span>
                       </div>
                     </div>
                   </div>
@@ -832,6 +910,7 @@ export default function App() {
 
       <AnimatePresence>
         {isDetailModalOpen && selectedRecord && (
+          // ... (existing detail modal)
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsDetailModalOpen(false)} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white rounded-[2.5rem] w-full max-w-xl p-8 md:p-12 shadow-2xl relative z-10 overflow-hidden max-h-[90vh] overflow-y-auto">
@@ -856,8 +935,8 @@ export default function App() {
                     <div className="mt-2 space-y-2">
                       {selectedRecord.pieces.map((p: any, i: number) => (
                         <div key={i} className="flex justify-between bg-black/5 px-4 py-2 rounded-xl text-sm">
-                          <span>{p.name}</span>
-                          <span className="font-bold">{p.price.toLocaleString()} EGP</span>
+                          <span>{p.name} {p.quantity > 1 ? `(x${p.quantity})` : ''}</span>
+                          <span className="font-bold">{(p.price * (p.quantity || 1)).toLocaleString()} EGP</span>
                         </div>
                       ))}
                     </div>
@@ -870,7 +949,7 @@ export default function App() {
                     <div className="mt-2 flex items-center gap-4 bg-black/5 p-4 rounded-2xl">
                       <FileSpreadsheet className="w-6 h-6 text-zinc-400" />
                       <div className="flex-1 truncate text-sm font-semibold">{selectedRecord.portfolio}</div>
-                      <a href={selectedRecord.portfolio} target="_blank" rel="noreferrer" className="bg-zinc-900 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase flex items-center gap-2"><Download className="w-4 h-4" /> {lang === 'ar' ? 'تحميل' : 'View'}</a>
+                      <a href={selectedRecord.portfolio} target="_blank" rel="noreferrer" className="bg-zinc-900 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase flex items-center gap-2"><Download className="w-4 h-4" /> {lang === 'ar' ? 'مشاهدة' : 'View'}</a>
                     </div>
                   </div>
                 )}
@@ -880,6 +959,23 @@ export default function App() {
                   <p className="text-sm text-zinc-600 italic">{selectedRecord.notes || 'No notes'}</p>
                 </div>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsModalOpen(false)} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white rounded-[2.5rem] w-full max-w-md p-8 md:p-12 shadow-2xl relative z-10 overflow-hidden">
+              <button onClick={() => setIsModalOpen(false)} className="absolute top-8 right-8 text-zinc-400 hover:text-zinc-600"><X className="w-6 h-6" /></button>
+              <h2 className="text-3xl font-light mb-8">{modalMode === 'add' ? t.addCustomer : t.editCustomer}</h2>
+              <form onSubmit={handleSaveRecord} className="space-y-6">
+                <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.fullName}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} /></div>
+                <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.phoneNumber}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={formData.phone || ''} onChange={e => setFormData({ ...formData, phone: e.target.value })} /></div>
+                <button disabled={isLoading} type="submit" className="w-full bg-zinc-900 text-white py-5 rounded-3xl font-bold uppercase tracking-widest shadow-2xl">{isLoading ? t.processing : t.save}</button>
+              </form>
             </motion.div>
           </div>
         )}
