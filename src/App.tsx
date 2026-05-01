@@ -754,21 +754,27 @@ export default function App() {
                                   </td>
                                   <td className="px-4 py-6 text-sm text-zinc-500 font-mono">{r.createdAt ? format(r.createdAt.toDate(), 'yyyy/MM/dd HH:mm') : '...'}</td>
                                   {currentUser?.email === ADMIN_EMAIL && (
-                                    <td className="px-4 py-6 text-right flex gap-3 justify-end">
-                                      <button onClick={() => {
-                                        setInspectionFormData({ 
-                                          customerName: r.name, 
-                                          phone: r.phone,
-                                          id: undefined, // ensure it's treated as a new inspection if started from lead
-                                          address: '', visitDate: '', visitDateTo: '', notes: '', rooms: 0, pieces: [], totalAmount: 0 
-                                        });
-                                        setEditingId(r.id); // Track which lead we are inspecting/editing
-                                        setInspectionStep(1);
-                                        setIsInspectionModalOpen(true);
-                                      }} className="bg-accent-tan/10 text-accent-tan border border-accent-tan/20 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase hover:bg-accent-tan hover:text-white transition-all flex items-center gap-2">
-                                        <Eye className="w-3 h-3" /> {lang === 'ar' ? 'معاينة / تعديل' : 'Inspect / Edit'}
-                                      </button>
-                                      <button onClick={() => handleDeleteCustomer(r.id)} className="text-danger border border-danger/20 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase hover:bg-danger hover:text-white transition-all">{t.delete}</button>
+                                    <td className="px-4 py-4 text-right">
+                                      <div className="flex gap-2 justify-end">
+                                        <button onClick={() => {
+                                          setInspectionFormData({ 
+                                            customerName: r.name, 
+                                            phone: r.phone,
+                                            id: undefined,
+                                            address: '', visitDate: '', visitDateTo: '', notes: '', rooms: 0, pieces: [], totalAmount: 0 
+                                          });
+                                          setEditingId(r.id);
+                                          setInspectionStep(1);
+                                          setIsInspectionModalOpen(true);
+                                        }} className="flex items-center gap-2 bg-zinc-900 text-white px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-zinc-700 active:scale-95 transition-all duration-200 shadow-md shadow-zinc-200 hover:shadow-lg">
+                                          <Eye className="w-4 h-4" />
+                                          <span>{lang === 'ar' ? 'معاينة / تعديل' : 'Inspect / Edit'}</span>
+                                        </button>
+                                        <button onClick={() => handleDeleteCustomer(r.id)} className="flex items-center gap-2 bg-red-50 text-red-500 border border-red-100 px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-red-500 hover:text-white active:scale-95 transition-all duration-200 hover:shadow-lg hover:shadow-red-100">
+                                          <Trash2 className="w-4 h-4" />
+                                          <span>{t.delete}</span>
+                                        </button>
+                                      </div>
                                     </td>
                                   )}
                                 </tr>
