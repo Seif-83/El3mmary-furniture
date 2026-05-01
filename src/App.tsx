@@ -139,7 +139,7 @@ const translations = {
     customers: "Customers",
     totalCustomers: "Total Customers",
     addCustomerBtn: "Add Customer",
-    inspections: "Contracts",
+    inspections: "Inspections",
     contracted: "Contracted Customers",
     notContracted: "Non-Contracted Customers",
     addInspection: "New Inspection",
@@ -207,7 +207,7 @@ const translations = {
     customers: "العملاء",
     totalCustomers: "إجمالي العملاء",
     addCustomerBtn: "إضافة عميل",
-    inspections: "التعاقدات",
+    inspections: "المعاينات",
     contracted: "العملاء المتعاقدين",
     notContracted: "عملاء غير متعاقدين",
     addInspection: "معاينة جديدة",
@@ -429,11 +429,17 @@ export default function App() {
         // Update existing inspection
         await updateDoc(doc(db, 'inspections', inspectionFormData.id), data);
       } else {
-        // New inspection
+        // New inspection - save to inspections collection
         await addDoc(collection(db, 'inspections'), { ...data, status: 'pending' });
+        // If this was started from a customer record, remove them from customers
+        if (editingId) {
+          try {
+            await deleteDoc(doc(db, 'customers', editingId));
+          } catch (err) { console.error("Failed to remove customer after creating inspection", err); }
+        }
       }
       
-      toast.success(lang === 'ar' ? "تم حفظ المعاينة" : "Inspection saved");
+      toast.success(lang === 'ar' ? "تم نقل العميل إلى التعاقدات" : "Customer moved to Contracts");
       setIsInspectionModalOpen(false);
       setInspectionStep(1);
       setEditingId(null);
@@ -844,7 +850,9 @@ export default function App() {
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsInspectionModalOpen(false)} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white rounded-[2.5rem] w-full max-w-2xl p-8 md:p-12 shadow-2xl relative z-10 overflow-hidden max-h-[90vh] overflow-y-auto">
-              <button onClick={() => setIsInspectionModalOpen(false)} className="absolute top-8 right-8 text-zinc-400 hover:text-zinc-600"><X className="w-6 h-6" /></button>
+              <button onClick={() => setIsInspectionModalOpen(false)} className="absolute top-6 right-6 w-10 h-10 flex items-center justify-center rounded-2xl bg-zinc-100 hover:bg-zinc-900 text-zinc-400 hover:text-white transition-all duration-300 hover:rotate-90 hover:scale-110 shadow-sm group">
+                <X className="w-4 h-4 transition-transform duration-300" />
+              </button>
               
               <div className="flex gap-4 mb-8">
                 {[1, 2, 3].map(s => (
@@ -953,7 +961,9 @@ export default function App() {
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsDetailModalOpen(false)} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white rounded-[2.5rem] w-full max-w-xl p-8 md:p-12 shadow-2xl relative z-10 overflow-hidden max-h-[90vh] overflow-y-auto">
-              <button onClick={() => setIsDetailModalOpen(false)} className="absolute top-8 right-8 text-zinc-400 hover:text-zinc-600"><X className="w-6 h-6" /></button>
+              <button onClick={() => setIsDetailModalOpen(false)} className="absolute top-6 right-6 w-10 h-10 flex items-center justify-center rounded-2xl bg-zinc-100 hover:bg-zinc-900 text-zinc-400 hover:text-white transition-all duration-300 hover:rotate-90 hover:scale-110 shadow-sm">
+                <X className="w-4 h-4 transition-transform duration-300" />
+              </button>
               
               <h2 className="text-3xl font-light mb-8">{selectedRecord.customerName || selectedRecord.name}</h2>
               
