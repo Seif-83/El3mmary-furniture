@@ -754,8 +754,8 @@ export default function App() {
                                   </td>
                                   <td className="px-4 py-6 text-sm text-zinc-500 font-mono">{r.createdAt ? format(r.createdAt.toDate(), 'yyyy/MM/dd HH:mm') : '...'}</td>
                                   {currentUser?.email === ADMIN_EMAIL && (
-                                    <td className="px-4 py-4 text-right">
-                                      <div className="flex gap-2 justify-end">
+                                    <td className="px-4 py-4">
+                                      <div className="flex gap-4 justify-between items-center w-full">
                                         <button onClick={() => {
                                           setInspectionFormData({ 
                                             customerName: r.name, 
