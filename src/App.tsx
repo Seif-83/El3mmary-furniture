@@ -18,7 +18,8 @@ import {
   FileSpreadsheet,
   Upload,
   ClipboardList,
-  Calendar
+  Calendar,
+  Search
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { 
@@ -281,6 +282,7 @@ export default function App() {
 
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<any>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   
   const selectedSheet = catalogs.find(c => c.id === selectedSheetId);
 
@@ -638,6 +640,28 @@ export default function App() {
                           <button onClick={handleOpenAddModal} className="glass px-6 py-4 rounded-2xl flex items-center gap-3 font-bold text-xs uppercase"><Plus className="w-4 h-4" /> {t.addCustomerBtn}</button>
                         )}
 
+                        {adminSubView !== 'catalogs' && (
+                          <div className="relative flex items-center">
+                            <div className="relative group">
+                              <Search className="absolute top-1/2 -translate-y-1/2 right-4 w-4 h-4 text-zinc-400 group-focus-within:text-zinc-700 transition-colors pointer-events-none z-10" />
+                              <input
+                                type="text"
+                                placeholder={lang === 'ar' ? 'بحث بالاسم أو الهاتف...' : 'Search by name or phone...'}
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                                className="bg-white/70 backdrop-blur-md border border-white/80 shadow-md pr-11 pl-10 py-3.5 rounded-2xl text-sm font-medium outline-none w-56 focus:w-72 focus:shadow-xl focus:border-zinc-300 transition-all duration-300 placeholder:text-zinc-400 text-zinc-800"
+                              />
+                              {searchQuery && (
+                                <button
+                                  onClick={() => setSearchQuery('')}
+                                  className="absolute top-1/2 -translate-y-1/2 left-3 w-5 h-5 flex items-center justify-center rounded-full bg-zinc-200 hover:bg-zinc-300 text-zinc-500 transition-all"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
                         {adminSubView === 'catalogs' && currentUser?.email === ADMIN_EMAIL && (
                           <label className="glass px-6 py-4 rounded-2xl flex items-center gap-3 font-bold text-xs uppercase cursor-pointer"><Upload className="w-4 h-4" /> {t.uploadNew} <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleImportExcel} /></label>
                         )}
@@ -685,10 +709,10 @@ export default function App() {
                       </div>
                     ) : adminSubView === 'inspections' ? (
                     <div className="space-y-8">
-                      {inspections.length > 0 ? (
+                      {inspections.filter(ins => !searchQuery || ins.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) || ins.phone?.includes(searchQuery)).length > 0 ? (
                         <div className="space-y-4">
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {inspections.map(ins => (
+                            {inspections.filter(ins => !searchQuery || ins.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) || ins.phone?.includes(searchQuery)).map(ins => (
                               <div key={ins.id} className="bg-white/80 backdrop-blur-xl p-8 rounded-[2.5rem] flex flex-col gap-6 border border-white/50 shadow-xl hover:shadow-2xl transition-all group relative overflow-hidden">
                                 <div className="absolute top-0 right-0 w-32 h-32 bg-accent-tan/5 rounded-full -mr-16 -mt-16 blur-3xl group-hover:bg-accent-tan/10 transition-colors" />
                                 
@@ -746,7 +770,7 @@ export default function App() {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-black/5">
-                              {customerRecords.map((r) => (
+                              {customerRecords.filter(r => !searchQuery || r.name?.toLowerCase().includes(searchQuery.toLowerCase()) || r.phone?.includes(searchQuery)).map((r) => (
                                 <tr key={r.id} className="group hover:bg-black/5 transition-colors">
                                   <td className="px-4 py-6 font-bold text-zinc-900">{r.name}</td>
                                   <td className="px-4 py-6">
@@ -801,7 +825,7 @@ export default function App() {
                             <tbody className="divide-y divide-black/5">
                               {(adminSubView === 'inspections' ? inspections : 
                                 adminSubView === 'contracted' ? contractedCustomers : 
-                                notContractedCustomers).map(r => (
+                                notContractedCustomers).filter(r => !searchQuery || r.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) || r.phone?.includes(searchQuery)).map(r => (
                                 <tr key={r.id} className="hover:bg-black/5 transition-colors">
                                   <td className="px-4 py-6 font-semibold">{r.customerName}</td>
                                   <td className="px-4 py-6"><span className="bg-black/5 px-2 py-1 rounded font-mono text-sm">{r.phone}</span></td>
@@ -874,7 +898,7 @@ export default function App() {
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.customerName}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.customerName} onChange={e => setInspectionFormData({ ...inspectionFormData, customerName: e.target.value })} /></div>
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.address}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.address} onChange={e => setInspectionFormData({ ...inspectionFormData, address: e.target.value })} /></div>
                     <div className="flex gap-4">
-                      <div className="flex-1 space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.phoneNumber}</label><input required type="tel" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.phone} onChange={e => setInspectionFormData({ ...inspectionFormData, phone: e.target.value })} /></div>
+                      <div className="flex-1 space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.phoneNumber}</label><input required type="tel" minLength={11} maxLength={11} pattern="[0-9]{11}" title={lang === 'ar' ? 'يجب أن يكون رقم الهاتف 11 رقماً بالضبط' : 'Phone number must be exactly 11 digits'} className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.phone} onChange={e => setInspectionFormData({ ...inspectionFormData, phone: e.target.value })} /></div>
                       <div className="flex-1 space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.visitDate}</label><input required type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.visitDate} onChange={e => setInspectionFormData({ ...inspectionFormData, visitDate: e.target.value })} /></div>
                       <div className="flex-1 space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.visitDateTo}</label><input required type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.visitDateTo || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, visitDateTo: e.target.value })} /></div>
                     </div>
@@ -1028,7 +1052,7 @@ export default function App() {
               <h2 className="text-3xl font-light mb-8">{modalMode === 'add' ? t.addCustomer : t.editCustomer}</h2>
               <form onSubmit={handleSaveRecord} className="space-y-6">
                 <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.fullName}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} /></div>
-                <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.phoneNumber}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={formData.phone || ''} onChange={e => setFormData({ ...formData, phone: e.target.value })} /></div>
+                <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.phoneNumber}</label><input required type="tel" minLength={11} maxLength={11} pattern="[0-9]{11}" title={lang === 'ar' ? 'يجب أن يكون رقم الهاتف 11 رقماً بالضبط' : 'Phone number must be exactly 11 digits'} className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={formData.phone || ''} onChange={e => setFormData({ ...formData, phone: e.target.value })} /></div>
                 <button disabled={isLoading} type="submit" className="w-full bg-zinc-900 text-white py-5 rounded-3xl font-bold uppercase tracking-widest shadow-2xl">{isLoading ? t.processing : t.save}</button>
               </form>
             </motion.div>
