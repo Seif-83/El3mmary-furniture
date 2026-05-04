@@ -696,11 +696,23 @@ export default function App() {
                             {selectedSheet && (
                               <div className="glass rounded-3xl overflow-hidden p-6 space-y-4">
                                 <div className="flex justify-between items-center"><div className="text-xs text-zinc-500">{format(selectedSheet.createdAt.toDate(), 'yyyy-MM-dd HH:mm')}</div>{currentUser?.email === ADMIN_EMAIL && <button onClick={() => deleteCatalogSection(selectedSheet.id)} className="text-danger flex items-center gap-2 font-bold text-[10px] uppercase"><Trash2 className="w-4 h-4" /> {t.deleteSheet}</button>}</div>
-                                <div className="overflow-x-auto">
+                                <div className="hidden md:block overflow-x-auto">
                                   <table className="w-full text-left text-sm">
                                     <thead><tr className="border-b border-black/5">{selectedSheet.data.length > 0 && Object.keys(selectedSheet.data[0]).map(h => <th key={h} className="px-4 py-4 font-bold text-zinc-500 uppercase text-[10px]">{h}</th>)}</tr></thead>
                                     <tbody className="divide-y divide-black/5">{selectedSheet.data.map((row, i) => <tr key={i} className="hover:bg-black/5 transition-colors">{Object.values(row).map((v: any, j) => <td key={j} className="px-4 py-4 text-zinc-700">{v?.toString()}</td>)}</tr>)}</tbody>
                                   </table>
+                                </div>
+                                <div className="grid grid-cols-1 gap-4 md:hidden">
+                                  {selectedSheet.data.map((row, i) => (
+                                    <div key={i} className="bg-white/60 p-5 rounded-[2rem] space-y-3 border border-black/5 shadow-sm">
+                                      {Object.entries(row).map(([key, value]) => (
+                                        <div key={key} className="flex justify-between items-center text-sm">
+                                          <span className="font-bold text-zinc-500 text-[10px] uppercase">{key}:</span>
+                                          <span className="text-zinc-800 font-medium">{value?.toString()}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ))}
                                 </div>
                               </div>
                             )}
@@ -758,7 +770,7 @@ export default function App() {
                     </div>
                     ) : adminSubView === 'customers' ? (
                     <div className="space-y-8">
-                      <div className="glass rounded-[2.5rem] overflow-hidden p-6 md:p-10 shadow-xl border border-white/40">
+                      <div className="hidden md:block glass rounded-[2.5rem] overflow-hidden p-6 md:p-10 shadow-xl border border-white/40">
                         <div className="overflow-x-auto">
                           <table className="w-full text-left">
                             <thead>
@@ -808,51 +820,128 @@ export default function App() {
                           </table>
                         </div>
                       </div>
+
+                      <div className="grid grid-cols-1 gap-4 md:hidden">
+                        {customerRecords.filter(r => !searchQuery || r.name?.toLowerCase().includes(searchQuery.toLowerCase()) || r.phone?.includes(searchQuery)).map((r) => (
+                          <div key={r.id} className="bg-white/80 backdrop-blur-xl p-6 rounded-[2rem] flex flex-col gap-4 border border-white/50 shadow-lg relative overflow-hidden group">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <h4 className="text-xl font-bold text-zinc-900 mb-1">{r.name}</h4>
+                                <p className="text-zinc-500 font-mono">{r.phone}</p>
+                              </div>
+                              <span className="text-[10px] text-zinc-400 font-mono">{r.createdAt ? format(r.createdAt.toDate(), 'yyyy/MM/dd HH:mm') : '...'}</span>
+                            </div>
+                            {currentUser?.email === ADMIN_EMAIL && (
+                              <div className="flex gap-2 pt-4 border-t border-zinc-100">
+                                <button onClick={() => {
+                                  setInspectionFormData({ 
+                                    customerName: r.name, 
+                                    phone: r.phone,
+                                    id: undefined,
+                                    address: '', visitDate: '', visitDateTo: '', notes: '', rooms: 0, pieces: [], totalAmount: 0 
+                                  });
+                                  setEditingId(r.id);
+                                  setInspectionStep(1);
+                                  setIsInspectionModalOpen(true);
+                                }} className="flex-1 flex items-center justify-center gap-2 bg-zinc-900 text-white px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-zinc-700 active:scale-95 transition-all shadow-md">
+                                  <Eye className="w-4 h-4" />
+                                  <span>{lang === 'ar' ? 'معاينة / تعديل' : 'Inspect / Edit'}</span>
+                                </button>
+                                <button onClick={() => handleDeleteCustomer(r.id)} className="flex items-center justify-center gap-2 bg-red-50 text-red-500 border border-red-100 px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-red-500 hover:text-white active:scale-95 transition-all shadow-md">
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                        {customerRecords.length === 0 && <div className="py-20 text-center italic text-zinc-400">{t.noRecords}</div>}
+                      </div>
                     </div>
                     ) : (
-                      <div className="glass rounded-3xl overflow-hidden p-4 md:p-8">
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left">
-                            <thead>
-                              <tr className="border-b border-black/5">
-                                <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[10px]">{t.customerName}</th>
-                                <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[10px]">{t.phoneNumber}</th>
-                                {adminSubView === 'contracted' && <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[10px]">{t.deliveryDate}</th>}
-                                {adminSubView === 'inspections' && <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[10px]">{t.visitDate}</th>}
-                                <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[10px] text-right">{t.actions}</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-black/5">
-                              {(adminSubView === 'inspections' ? inspections : 
-                                adminSubView === 'contracted' ? contractedCustomers : 
-                                notContractedCustomers).filter(r => !searchQuery || r.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) || r.phone?.includes(searchQuery)).map(r => (
-                                <tr key={r.id} className="hover:bg-black/5 transition-colors">
-                                  <td className="px-4 py-6 font-semibold">{r.customerName}</td>
-                                  <td className="px-4 py-6"><span className="bg-black/5 px-2 py-1 rounded font-mono text-sm">{r.phone}</span></td>
-                                  {adminSubView === 'contracted' && <td className="px-4 py-6 text-sm text-zinc-500">{r.deliveryDate}</td>}
-                                  {adminSubView === 'inspections' && <td className="px-4 py-6 text-sm text-zinc-500">{r.visitDate}</td>}
-                                  <td className="px-4 py-6 text-right flex gap-3 justify-end">
-                                    {adminSubView === 'inspections' && currentUser?.email === ADMIN_EMAIL && (
-                                      <button onClick={() => { setInspectionFormData(r); setInspectionStep(2); setIsInspectionModalOpen(true); }} className="text-zinc-600 border border-zinc-200 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all">{t.step2}</button>
-                                    )}
-                                    <button onClick={() => { setSelectedRecord(r); setIsDetailModalOpen(true); }} className="text-zinc-400 border border-zinc-200 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all"><Eye className="w-3 h-3" /></button>
-                                    {currentUser?.email === ADMIN_EMAIL && (
-                                      <button onClick={() => {
-                                        if (adminSubView === 'contracted') handleDeleteContracted(r.id);
-                                        else if (adminSubView === 'not-contracted') handleDeleteNonContracted(r.id);
-                                        else if (adminSubView === 'inspections') deleteDoc(doc(db, 'inspections', r.id));
-                                      }} className="text-red-500 border border-red-200 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase hover:bg-red-600 hover:text-white transition-all shadow-sm">
-                                        <Trash2 className="w-4 h-4" />
-                                      </button>
-                                    )}
-                                  </td>
+                      <div className="space-y-4">
+                        <div className="hidden md:block glass rounded-3xl overflow-hidden p-4 md:p-8">
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left">
+                              <thead>
+                                <tr className="border-b border-black/5">
+                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[10px]">{t.customerName}</th>
+                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[10px]">{t.phoneNumber}</th>
+                                  {adminSubView === 'contracted' && <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[10px]">{t.deliveryDate}</th>}
+                                  {adminSubView === 'inspections' && <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[10px]">{t.visitDate}</th>}
+                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[10px] text-right">{t.actions}</th>
                                 </tr>
-                              ))}
-                              {(adminSubView === 'inspections' ? inspections : adminSubView === 'contracted' ? contractedCustomers : notContractedCustomers).length === 0 && (
-                                <tr><td colSpan={5} className="py-20 text-center italic text-zinc-400">{t.noRecords}</td></tr>
-                              )}
-                            </tbody>
-                          </table>
+                              </thead>
+                              <tbody className="divide-y divide-black/5">
+                                {(adminSubView === 'inspections' ? inspections : 
+                                  adminSubView === 'contracted' ? contractedCustomers : 
+                                  notContractedCustomers).filter(r => !searchQuery || r.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) || r.phone?.includes(searchQuery)).map(r => (
+                                  <tr key={r.id} className="hover:bg-black/5 transition-colors">
+                                    <td className="px-4 py-6 font-semibold">{r.customerName}</td>
+                                    <td className="px-4 py-6"><span className="bg-black/5 px-2 py-1 rounded font-mono text-sm">{r.phone}</span></td>
+                                    {adminSubView === 'contracted' && <td className="px-4 py-6 text-sm text-zinc-500">{r.deliveryDate}</td>}
+                                    {adminSubView === 'inspections' && <td className="px-4 py-6 text-sm text-zinc-500">{r.visitDate}</td>}
+                                    <td className="px-4 py-6 text-right flex gap-3 justify-end">
+                                      {adminSubView === 'inspections' && currentUser?.email === ADMIN_EMAIL && (
+                                        <button onClick={() => { setInspectionFormData(r); setInspectionStep(2); setIsInspectionModalOpen(true); }} className="text-zinc-600 border border-zinc-200 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all">{t.step2}</button>
+                                      )}
+                                      <button onClick={() => { setSelectedRecord(r); setIsDetailModalOpen(true); }} className="text-zinc-400 border border-zinc-200 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all"><Eye className="w-3 h-3" /></button>
+                                      {currentUser?.email === ADMIN_EMAIL && (
+                                        <button onClick={() => {
+                                          if (adminSubView === 'contracted') handleDeleteContracted(r.id);
+                                          else if (adminSubView === 'not-contracted') handleDeleteNonContracted(r.id);
+                                          else if (adminSubView === 'inspections') deleteDoc(doc(db, 'inspections', r.id));
+                                        }} className="text-red-500 border border-red-200 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase hover:bg-red-600 hover:text-white transition-all shadow-sm">
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                                {(adminSubView === 'inspections' ? inspections : adminSubView === 'contracted' ? contractedCustomers : notContractedCustomers).length === 0 && (
+                                  <tr><td colSpan={5} className="py-20 text-center italic text-zinc-400">{t.noRecords}</td></tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-4 md:hidden">
+                          {(adminSubView === 'inspections' ? inspections : 
+                            adminSubView === 'contracted' ? contractedCustomers : 
+                            notContractedCustomers).filter(r => !searchQuery || r.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) || r.phone?.includes(searchQuery)).map(r => (
+                            <div key={r.id} className="bg-white/80 backdrop-blur-xl p-6 rounded-[2rem] flex flex-col gap-4 border border-white/50 shadow-lg relative overflow-hidden group">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <h4 className="text-xl font-bold text-zinc-900 mb-1">{r.customerName}</h4>
+                                  <p className="text-zinc-500 font-mono text-sm">{r.phone}</p>
+                                </div>
+                                <div className="text-right">
+                                  {adminSubView === 'contracted' && <span className="text-[10px] text-zinc-400 font-mono block mb-1">{t.deliveryDate}</span>}
+                                  {adminSubView === 'contracted' && <span className="text-xs font-bold text-zinc-600">{r.deliveryDate}</span>}
+                                  {adminSubView === 'inspections' && <span className="text-[10px] text-zinc-400 font-mono block mb-1">{t.visitDate}</span>}
+                                  {adminSubView === 'inspections' && <span className="text-xs font-bold text-zinc-600">{r.visitDate}</span>}
+                                </div>
+                              </div>
+                              <div className="flex gap-2 pt-4 border-t border-zinc-100 justify-end">
+                                {adminSubView === 'inspections' && currentUser?.email === ADMIN_EMAIL && (
+                                  <button onClick={() => { setInspectionFormData(r); setInspectionStep(2); setIsInspectionModalOpen(true); }} className="flex-1 flex items-center justify-center text-zinc-600 border border-zinc-200 px-4 py-3 rounded-2xl text-[10px] font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all shadow-sm">{t.step2}</button>
+                                )}
+                                <button onClick={() => { setSelectedRecord(r); setIsDetailModalOpen(true); }} className="flex-1 flex items-center justify-center gap-2 bg-zinc-100 text-zinc-600 px-4 py-3 rounded-2xl text-[10px] font-bold uppercase hover:bg-zinc-200 transition-all shadow-sm"><Eye className="w-4 h-4" /> {lang === 'ar' ? 'عرض' : 'View'}</button>
+                                {currentUser?.email === ADMIN_EMAIL && (
+                                  <button onClick={() => {
+                                    if (adminSubView === 'contracted') handleDeleteContracted(r.id);
+                                    else if (adminSubView === 'not-contracted') handleDeleteNonContracted(r.id);
+                                    else if (adminSubView === 'inspections') deleteDoc(doc(db, 'inspections', r.id));
+                                  }} className="flex items-center justify-center gap-2 bg-red-50 text-red-500 border border-red-100 px-4 py-3 rounded-2xl text-[10px] font-bold uppercase hover:bg-red-500 hover:text-white transition-all shadow-sm">
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                          {(adminSubView === 'inspections' ? inspections : adminSubView === 'contracted' ? contractedCustomers : notContractedCustomers).length === 0 && (
+                            <div className="py-20 text-center italic text-zinc-400">{t.noRecords}</div>
+                          )}
                         </div>
                       </div>
                     )}
@@ -880,7 +969,7 @@ export default function App() {
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsInspectionModalOpen(false)} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white rounded-[2.5rem] w-full max-w-2xl p-8 md:p-12 shadow-2xl relative z-10 overflow-hidden max-h-[90vh] overflow-y-auto">
-              <button onClick={() => setIsInspectionModalOpen(false)} className="absolute top-6 right-6 w-10 h-10 flex items-center justify-center rounded-2xl bg-zinc-100 hover:bg-zinc-900 text-zinc-400 hover:text-white transition-all duration-300 hover:rotate-90 hover:scale-110 shadow-sm group">
+              <button onClick={() => setIsInspectionModalOpen(false)} className="absolute top-6 right-6 rtl:right-auto rtl:left-6 w-10 h-10 flex items-center justify-center rounded-2xl bg-zinc-100 hover:bg-zinc-900 text-zinc-400 hover:text-white transition-all duration-300 hover:rotate-90 hover:scale-110 shadow-sm group">
                 <X className="w-4 h-4 transition-transform duration-300" />
               </button>
               
@@ -890,17 +979,17 @@ export default function App() {
                 ))}
               </div>
 
-              <h2 className="text-3xl font-light mb-8">{inspectionStep === 1 ? t.step1 : inspectionStep === 2 ? t.step2 : t.step3}</h2>
+              <h2 className="text-3xl font-light mb-8 pe-12 rtl:pe-0 rtl:ps-12">{inspectionStep === 1 ? t.step1 : inspectionStep === 2 ? t.step2 : t.step3}</h2>
 
               <form onSubmit={handleInspectionSubmit} className="space-y-6">
                 {inspectionStep === 1 && (
                   <div className="space-y-4">
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.customerName}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.customerName} onChange={e => setInspectionFormData({ ...inspectionFormData, customerName: e.target.value })} /></div>
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.address}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.address} onChange={e => setInspectionFormData({ ...inspectionFormData, address: e.target.value })} /></div>
-                    <div className="flex gap-4">
-                      <div className="flex-1 space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.phoneNumber}</label><input required type="tel" minLength={11} maxLength={11} pattern="[0-9]{11}" title={lang === 'ar' ? 'يجب أن يكون رقم الهاتف 11 رقماً بالضبط' : 'Phone number must be exactly 11 digits'} className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.phone} onChange={e => setInspectionFormData({ ...inspectionFormData, phone: e.target.value })} /></div>
-                      <div className="flex-1 space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.visitDate}</label><input required type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.visitDate} onChange={e => setInspectionFormData({ ...inspectionFormData, visitDate: e.target.value })} /></div>
-                      <div className="flex-1 space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.visitDateTo}</label><input required type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.visitDateTo || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, visitDateTo: e.target.value })} /></div>
+                    <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.phoneNumber}</label><input required type="tel" minLength={11} maxLength={11} pattern="[0-9]{11}" title={lang === 'ar' ? 'يجب أن يكون رقم الهاتف 11 رقماً بالضبط' : 'Phone number must be exactly 11 digits'} className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.phone} onChange={e => setInspectionFormData({ ...inspectionFormData, phone: e.target.value })} /></div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.visitDate}</label><input required type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.visitDate} onChange={e => setInspectionFormData({ ...inspectionFormData, visitDate: e.target.value })} /></div>
+                      <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.visitDateTo}</label><input required type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.visitDateTo || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, visitDateTo: e.target.value })} /></div>
                     </div>
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.notes}</label><textarea className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" rows={3} value={inspectionFormData.notes} onChange={e => setInspectionFormData({ ...inspectionFormData, notes: e.target.value })} /></div>
                   </div>
@@ -956,8 +1045,8 @@ export default function App() {
                         <label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.portfolio} (Google Drive Link)</label>
                         <input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" placeholder="https://drive.google.com/..." value={inspectionFormData.portfolio || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, portfolio: e.target.value })} />
                       </div>
-                      <div className="flex gap-4">
-                        <div className="flex-1 space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.deliveryDate}</label><input required type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.deliveryDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, deliveryDate: e.target.value })} /></div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.deliveryDate}</label><input required type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.deliveryDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, deliveryDate: e.target.value })} /></div>
                         <div className="flex-1 space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{lang === 'ar' ? 'تاريخ العقد' : 'Contract Date'}</label><input required type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.contractDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, contractDate: e.target.value })} /></div>
                       </div>
                       <button disabled={isLoading} type="button" onClick={() => handleFinalizeInspection('contracted')} className="w-full bg-zinc-900 text-white py-5 rounded-3xl font-bold uppercase tracking-widest shadow-2xl flex items-center justify-center gap-3">
@@ -991,11 +1080,11 @@ export default function App() {
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsDetailModalOpen(false)} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white rounded-[2.5rem] w-full max-w-xl p-8 md:p-12 shadow-2xl relative z-10 overflow-hidden max-h-[90vh] overflow-y-auto">
-              <button onClick={() => setIsDetailModalOpen(false)} className="absolute top-6 right-6 w-10 h-10 flex items-center justify-center rounded-2xl bg-zinc-100 hover:bg-zinc-900 text-zinc-400 hover:text-white transition-all duration-300 hover:rotate-90 hover:scale-110 shadow-sm">
+              <button onClick={() => setIsDetailModalOpen(false)} className="absolute top-6 right-6 rtl:right-auto rtl:left-6 w-10 h-10 flex items-center justify-center rounded-2xl bg-zinc-100 hover:bg-zinc-900 text-zinc-400 hover:text-white transition-all duration-300 hover:rotate-90 hover:scale-110 shadow-sm">
                 <X className="w-4 h-4 transition-transform duration-300" />
               </button>
               
-              <h2 className="text-3xl font-light mb-8">{selectedRecord.customerName || selectedRecord.name}</h2>
+              <h2 className="text-3xl font-light mb-8 pe-12 rtl:pe-0 rtl:ps-12">{selectedRecord.customerName || selectedRecord.name}</h2>
               
               <div className="space-y-6">
                 <div className="grid grid-cols-2 gap-6">
@@ -1048,8 +1137,8 @@ export default function App() {
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsModalOpen(false)} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white rounded-[2.5rem] w-full max-w-md p-8 md:p-12 shadow-2xl relative z-10 overflow-hidden">
-              <button onClick={() => setIsModalOpen(false)} className="absolute top-8 right-8 text-zinc-400 hover:text-zinc-600"><X className="w-6 h-6" /></button>
-              <h2 className="text-3xl font-light mb-8">{modalMode === 'add' ? t.addCustomer : t.editCustomer}</h2>
+              <button onClick={() => setIsModalOpen(false)} className="absolute top-8 right-8 rtl:right-auto rtl:left-8 text-zinc-400 hover:text-zinc-600"><X className="w-6 h-6" /></button>
+              <h2 className="text-3xl font-light mb-8 pe-12 rtl:pe-0 rtl:ps-12">{modalMode === 'add' ? t.addCustomer : t.editCustomer}</h2>
               <form onSubmit={handleSaveRecord} className="space-y-6">
                 <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.fullName}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} /></div>
                 <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.phoneNumber}</label><input required type="tel" minLength={11} maxLength={11} pattern="[0-9]{11}" title={lang === 'ar' ? 'يجب أن يكون رقم الهاتف 11 رقماً بالضبط' : 'Phone number must be exactly 11 digits'} className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={formData.phone || ''} onChange={e => setFormData({ ...formData, phone: e.target.value })} /></div>
