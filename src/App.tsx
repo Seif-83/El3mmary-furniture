@@ -569,19 +569,27 @@ export default function App() {
   return (
     <div className={`min-h-screen bg-[#f2eee8] text-zinc-800 font-sans selection:bg-[#d4a373] selection:text-white flex flex-col w-full`} dir={lang === 'ar' ? 'rtl' : 'ltr'}>
       <Toaster position="bottom-center" />
+      
+      {/* Premium Background Decor */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10">
+        <div className="bg-blob bg-[#d4a373]/20 top-[-10%] left-[-5%]" style={{ animationDelay: '0s' }} />
+        <div className="bg-blob bg-[#a5a58d]/15 bottom-[5%] right-[-5%]" style={{ animationDelay: '-5s' }} />
+        <div className="bg-blob bg-white/30 top-[30%] right-[15%]" style={{ animationDelay: '-10s', width: '300px', height: '300px' }} />
+      </div>
+
       <AnimatePresence mode="wait">
         {showSplash ? (
           <motion.div key="splash" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, scale: 1.05, filter: "blur(10px)" }} className="min-h-screen flex items-center justify-center p-6 text-center space-y-12 w-full">
             <div className="max-w-2xl w-full">
               <div className="flex justify-center mb-8">
-                <button onClick={() => setLang(lang === 'en' ? 'ar' : 'en')} className="flex items-center gap-3 px-6 py-3 rounded-2xl glass hover:bg-white/40 transition-all text-sm font-bold shadow-sm">
+                <button onClick={() => setLang(lang === 'en' ? 'ar' : 'en')} className="flex items-center gap-3 px-6 py-3 rounded-2xl glass btn-3d btn-3d-glass hover:bg-white/40 transition-all text-sm font-bold shadow-sm">
                   <Languages className="w-4 h-4 text-accent-tan" /> {lang === 'en' ? 'العربية' : 'English'}
                 </button>
               </div>
               <Armchair className="w-20 h-20 text-accent-tan mx-auto mb-8 animate-pulse" />
               <h1 className="text-5xl md:text-7xl font-bold tracking-tighter text-zinc-900 mb-4">{t.brand}</h1>
               <p className="text-xl text-zinc-500 font-medium">{t.welcomeDesc}</p>
-              <motion.button onClick={() => setShowSplash(false)} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="mt-12 px-12 py-6 bg-zinc-900 text-white rounded-[2rem] text-xl font-bold uppercase tracking-[0.2em] shadow-2xl">
+              <motion.button onClick={() => setShowSplash(false)} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} className="mt-12 px-12 py-6 bg-zinc-900 text-white rounded-[2rem] text-xl font-bold uppercase tracking-[0.2em] btn-3d btn-3d-zinc">
                 {t.start}
               </motion.button>
             </div>
@@ -611,7 +619,7 @@ export default function App() {
                   </>
                 ) : null}
                 {currentUser && (
-                  <button onClick={handleLogout} className="mt-auto flex items-center gap-2 text-sm font-bold uppercase text-danger pt-4">
+                  <button onClick={handleLogout} className="mt-auto flex items-center gap-2 text-xs font-bold uppercase text-danger pt-4 btn-3d btn-3d-glass py-3 px-4 rounded-xl border-danger/20">
                     <LogOut className="w-4 h-4" /> {t.signOut}
                   </button>
                 )}
@@ -637,7 +645,7 @@ export default function App() {
                       </div>
                       <div className="flex flex-wrap gap-4">
                         {adminSubView === 'customers' && currentUser?.email === ADMIN_EMAIL && (
-                          <button onClick={handleOpenAddModal} className="glass px-6 py-4 rounded-2xl flex items-center gap-3 font-bold text-xs uppercase"><Plus className="w-4 h-4" /> {t.addCustomerBtn}</button>
+                          <button onClick={handleOpenAddModal} className="btn-3d btn-3d-glass px-6 py-4 rounded-2xl flex items-center gap-3 font-bold text-xs uppercase"><Plus className="w-4 h-4" /> {t.addCustomerBtn}</button>
                         )}
 
                         {adminSubView !== 'catalogs' && (
@@ -663,7 +671,7 @@ export default function App() {
                           </div>
                         )}
                         {adminSubView === 'catalogs' && currentUser?.email === ADMIN_EMAIL && (
-                          <label className="glass px-6 py-4 rounded-2xl flex items-center gap-3 font-bold text-xs uppercase cursor-pointer"><Upload className="w-4 h-4" /> {t.uploadNew} <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleImportExcel} /></label>
+                          <label className="btn-3d btn-3d-glass px-6 py-4 rounded-2xl flex items-center gap-3 font-bold text-xs uppercase cursor-pointer"><Upload className="w-4 h-4" /> {t.uploadNew} <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleImportExcel} /></label>
                         )}
                         <div className="glass p-5 rounded-2xl min-w-[140px]">
                           <div className="text-[11px] uppercase font-bold text-zinc-400 mb-1">
@@ -690,7 +698,7 @@ export default function App() {
                           <>
                             <div className="flex gap-2 p-1 bg-black/5 rounded-2xl overflow-x-auto">
                               {catalogs.map(s => (
-                                <button key={s.id} onClick={() => setSelectedSheetId(s.id)} className={`px-6 py-3 rounded-xl text-xs font-bold uppercase transition-all ${selectedSheetId === s.id ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-400'}`}>{s.title}</button>
+                                <button key={s.id} onClick={() => setSelectedSheetId(s.id)} className={`px-6 py-3 rounded-xl text-xs font-bold uppercase transition-all btn-3d ${selectedSheetId === s.id ? 'btn-3d-primary text-white shadow-sm' : 'text-zinc-400 bg-black/5 hover:bg-black/10'}`}>{s.title}</button>
                               ))}
                             </div>
                             {selectedSheet && (
@@ -745,11 +753,11 @@ export default function App() {
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-3 relative z-10">
-                                  <button onClick={() => { setInspectionFormData(ins); setInspectionStep(3); setIsInspectionModalOpen(true); }} className="flex flex-col items-center justify-center gap-2 bg-zinc-900 text-white p-4 rounded-3xl font-bold uppercase transition-all hover:scale-[1.02] active:scale-95 shadow-lg shadow-zinc-200">
+                                  <button onClick={() => { setInspectionFormData(ins); setInspectionStep(3); setIsInspectionModalOpen(true); }} className="btn-3d btn-3d-zinc flex flex-col items-center justify-center gap-2 bg-zinc-900 text-white p-4 rounded-3xl font-bold uppercase transition-all hover:scale-[1.02] active:scale-95 shadow-lg shadow-zinc-200">
                                     <CheckCircle2 className="w-5 h-5" />
                                     <span className="text-[11px] tracking-widest">{t.contractedBtn}</span>
                                   </button>
-                                  <button onClick={() => handleFinalizeInspection('refused', ins)} className="flex flex-col items-center justify-center gap-2 bg-white border border-zinc-100 text-zinc-400 p-4 rounded-3xl font-bold uppercase transition-all hover:scale-[1.02] active:scale-95 hover:text-danger hover:border-danger/20">
+                                  <button onClick={() => handleFinalizeInspection('refused', ins)} className="btn-3d btn-3d-glass flex flex-col items-center justify-center gap-2 bg-white border border-zinc-100 text-zinc-400 p-4 rounded-3xl font-bold uppercase transition-all hover:scale-[1.02] active:scale-95 hover:text-danger hover:border-danger/20">
                                     <X className="w-5 h-5" />
                                     <span className="text-[11px] tracking-widest">{t.refusedBtn}</span>
                                   </button>
@@ -806,7 +814,7 @@ export default function App() {
                                           <Eye className="w-4 h-4" />
                                           <span>{lang === 'ar' ? 'معاينة / تعديل' : 'Inspect / Edit'}</span>
                                         </button>
-                                        <button onClick={() => handleDeleteCustomer(r.id)} className="flex items-center gap-2 bg-red-50 text-red-500 border border-red-100 px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-red-500 hover:text-white active:scale-95 transition-all duration-200 hover:shadow-lg hover:shadow-red-100">
+                                        <button onClick={() => handleDeleteCustomer(r.id)} className="btn-3d btn-3d-danger flex items-center gap-2 bg-white-50 text-white-500 border border-white-100 px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-white-500 hover:text-white active:scale-95 transition-all duration-200 hover:shadow-lg hover:shadow-white-100">
                                           <Trash2 className="w-4 h-4" />
                                           <span>{t.delete}</span>
                                         </button>
@@ -926,7 +934,7 @@ export default function App() {
                                 {adminSubView === 'inspections' && currentUser?.email === ADMIN_EMAIL && (
                                   <button onClick={() => { setInspectionFormData(r); setInspectionStep(2); setIsInspectionModalOpen(true); }} className="flex-1 flex items-center justify-center text-zinc-600 border border-zinc-200 px-4 py-3 rounded-2xl text-[10px] font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all shadow-sm">{t.step2}</button>
                                 )}
-                                <button onClick={() => { setSelectedRecord(r); setIsDetailModalOpen(true); }} className="flex-1 flex items-center justify-center gap-2 bg-zinc-100 text-zinc-600 px-4 py-3 rounded-2xl text-[10px] font-bold uppercase hover:bg-zinc-200 transition-all shadow-sm"><Eye className="w-4 h-4" /> {lang === 'ar' ? 'عرض' : 'View'}</button>
+                                  <button onClick={() => { setSelectedRecord(r); setIsDetailModalOpen(true); }} className="flex-1 flex items-center justify-center gap-2 bg-zinc-100 text-zinc-600 px-4 py-3 rounded-2xl text-[10px] font-bold uppercase hover:bg-zinc-200 transition-all shadow-sm btn-3d btn-3d-glass"><Eye className="w-4 h-4" /> {lang === 'ar' ? 'عرض' : 'View'}</button>
                                 {currentUser?.email === ADMIN_EMAIL && (
                                   <button onClick={() => {
                                     if (adminSubView === 'contracted') handleDeleteContracted(r.id);
@@ -953,7 +961,7 @@ export default function App() {
                       <motion.form initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} onSubmit={handleAdminLogin} className="space-y-8">
                         <div className="space-y-2"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1 tracking-[0.2em]">{t.adminUser}</label><input required className="w-full px-6 py-5 text-base md:text-lg bg-white/60 border border-black/10 rounded-3xl shadow-sm" value={formData.username} onChange={e => setFormData({ ...formData, username: e.target.value })} /></div>
                         <div className="space-y-2"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1 tracking-[0.2em]">{t.passphrase}</label><div className="relative"><input required type={showPassword ? "text" : "password"} className="w-full ps-12 pe-5 py-5 text-base md:text-lg bg-white/60 border border-black/10 rounded-3xl shadow-sm" value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400">{showPassword ? <EyeOff className="w-6 h-6" /> : <Eye className="w-6 h-6" />}</button></div></div>
-                        <button disabled={isLoading} type="submit" className="w-full bg-zinc-900 text-white py-5 rounded-3xl font-bold uppercase tracking-widest shadow-2xl flex items-center justify-center gap-3 group text-lg">{isLoading ? t.authenticating : t.adminAccess} <ChevronRight className="w-5 h-5 transition-transform group-hover:translate-x-1" /></button>
+                        <button disabled={isLoading} type="submit" className="w-full bg-zinc-900 text-white py-5 rounded-3xl font-bold uppercase tracking-widest shadow-2xl flex items-center justify-center gap-3 group text-lg btn-3d btn-3d-zinc">{isLoading ? t.authenticating : t.adminAccess} <ChevronRight className="w-5 h-5 transition-transform group-hover:translate-x-1" /></button>
                       </motion.form>
                     </motion.div>
                   </div>
@@ -1003,7 +1011,7 @@ export default function App() {
                       <label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.pieces}</label>
                       <div className="flex flex-wrap gap-2">
                         {FURNITURE_OPTIONS.map(opt => (
-                          <button key={opt} type="button" onClick={() => addPiece(opt)} className="px-4 py-2 bg-zinc-100 hover:bg-zinc-200 rounded-xl text-xs font-bold transition-all">{opt}</button>
+                          <button key={opt} type="button" onClick={() => addPiece(opt)} className="px-4 py-2 bg-zinc-100 hover:bg-zinc-200 rounded-xl text-xs font-bold transition-all btn-3d btn-3d-glass">{opt}</button>
                         ))}
                       </div>
                       
@@ -1024,7 +1032,7 @@ export default function App() {
                                 const pieces = inspectionFormData.pieces?.filter((_, i) => i !== idx);
                                 const total = pieces?.reduce((sum, p) => sum + (Number(p.price) * (p.quantity || 1)), 0);
                                 setInspectionFormData({ ...inspectionFormData, pieces, totalAmount: total });
-                              }} className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-colors shadow-sm"><Trash2 className="w-5 h-5" /></button>
+                              }} className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-colors shadow-sm btn-3d btn-3d-danger"><Trash2 className="w-5 h-5" /></button>
                             </div>
                           </div>
                         ))}
@@ -1049,7 +1057,7 @@ export default function App() {
                         <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.deliveryDate}</label><input required type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.deliveryDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, deliveryDate: e.target.value })} /></div>
                         <div className="flex-1 space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{lang === 'ar' ? 'تاريخ العقد' : 'Contract Date'}</label><input required type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.contractDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, contractDate: e.target.value })} /></div>
                       </div>
-                      <button disabled={isLoading} type="button" onClick={() => handleFinalizeInspection('contracted')} className="w-full bg-zinc-900 text-white py-5 rounded-3xl font-bold uppercase tracking-widest shadow-2xl flex items-center justify-center gap-3">
+                      <button disabled={isLoading} type="button" onClick={() => handleFinalizeInspection('contracted')} className="w-full bg-zinc-900 text-white py-5 rounded-3xl font-bold uppercase tracking-widest shadow-2xl flex items-center justify-center gap-3 btn-3d btn-3d-zinc">
                         {t.save}
                       </button>
                     </div>
@@ -1059,12 +1067,12 @@ export default function App() {
                 {inspectionStep < 3 && (
                   <div className="flex gap-4 pt-4">
                     {inspectionStep === 2 && (
-                      <button type="button" onClick={() => setInspectionStep(prev => prev - 1)} className="flex-1 py-4 border border-zinc-200 rounded-2xl font-bold uppercase tracking-widest">{lang === 'ar' ? 'السابق' : 'Back'}</button>
+                      <button type="button" onClick={() => setInspectionStep(prev => prev - 1)} className="flex-1 py-4 border border-zinc-200 rounded-2xl font-bold uppercase tracking-widest btn-3d btn-3d-glass">{lang === 'ar' ? 'السابق' : 'Back'}</button>
                     )}
                     {inspectionStep === 1 ? (
-                      <button type="submit" className="flex-1 bg-zinc-900 text-white py-4 rounded-2xl font-bold uppercase tracking-widest shadow-xl">{lang === 'ar' ? 'التالي' : 'Next'}</button>
+                      <button type="submit" className="flex-1 bg-zinc-900 text-white py-4 rounded-2xl font-bold uppercase tracking-widest shadow-xl btn-3d btn-3d-zinc">{lang === 'ar' ? 'التالي' : 'Next'}</button>
                     ) : (
-                      <button type="submit" className="flex-1 bg-zinc-900 text-white py-4 rounded-2xl font-bold uppercase tracking-widest shadow-xl">{lang === 'ar' ? 'حفظ' : 'Save'}</button>
+                      <button type="submit" className="flex-1 bg-zinc-900 text-white py-4 rounded-2xl font-bold uppercase tracking-widest shadow-xl btn-3d btn-3d-zinc">{lang === 'ar' ? 'حفظ' : 'Save'}</button>
                     )}
                   </div>
                 )}
@@ -1142,7 +1150,7 @@ export default function App() {
               <form onSubmit={handleSaveRecord} className="space-y-6">
                 <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.fullName}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} /></div>
                 <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.phoneNumber}</label><input required type="tel" minLength={11} maxLength={11} pattern="[0-9]{11}" title={lang === 'ar' ? 'يجب أن يكون رقم الهاتف 11 رقماً بالضبط' : 'Phone number must be exactly 11 digits'} className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={formData.phone || ''} onChange={e => setFormData({ ...formData, phone: e.target.value })} /></div>
-                <button disabled={isLoading} type="submit" className="w-full bg-zinc-900 text-white py-5 rounded-3xl font-bold uppercase tracking-widest shadow-2xl">{isLoading ? t.processing : t.save}</button>
+                <button disabled={isLoading} type="submit" className="w-full bg-zinc-900 text-white py-5 rounded-3xl font-bold uppercase tracking-widest shadow-2xl btn-3d btn-3d-zinc">{isLoading ? t.processing : t.save}</button>
               </form>
             </motion.div>
           </div>

@@ -13,6 +13,10 @@
   --color-text-muted: #7a7a7a;
   --color-danger: #e07a5f;
   --color-success: #81b29a;
+
+  --shadow-3d-tan: 0 4px 0 #b07e4d;
+  --shadow-3d-zinc: 0 4px 0 #18181b;
+  --shadow-3d-glass: 0 4px 0 rgba(0, 0, 0, 0.1);
 }
 
 :root {
@@ -24,13 +28,84 @@ body {
   position: relative;
   background-color: var(--background);
   background-image: 
-    radial-gradient(at 0% 0%, #d4a37333 0px, transparent 50%), 
-    radial-gradient(at 100% 100%, #a5a58d33 0px, transparent 50%),
-    repeating-linear-gradient(135deg, rgba(255,255,255,0.08) 0, rgba(255,255,255,0.08) 1px, transparent 1px, transparent 12px);
-  background-size: auto, auto, 14px 14px;
+    radial-gradient(at 0% 0%, #d4a37322 0px, transparent 50%), 
+    radial-gradient(at 100% 100%, #a5a58d22 0px, transparent 50%),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3仿真%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  background-size: auto, auto, 100px 100px;
+  background-blend-mode: normal, normal, overlay;
   color: var(--foreground);
   font-family: var(--font-sans);
   min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* 3D Button System */
+.btn-3d {
+  transition: all 0.15s cubic-bezier(0.23, 1, 0.32, 1);
+  cursor: pointer;
+  user-select: none;
+}
+
+.btn-3d:hover {
+  transform: translateY(-2px);
+}
+
+.btn-3d:active {
+  transform: translateY(4px) !important;
+  box-shadow: 0 0 0 transparent !important;
+}
+
+.btn-3d-primary {
+  background: var(--color-accent-tan);
+  box-shadow: 0 5px 0 #b07e4d, 0 10px 20px rgba(212, 164, 115, 0.2);
+}
+.btn-3d-primary:hover {
+  box-shadow: 0 7px 0 #b07e4d, 0 12px 24px rgba(212, 164, 115, 0.25);
+}
+
+.btn-3d-zinc {
+  background: #18181b;
+  box-shadow: 0 5px 0 #000, 0 10px 20px rgba(0, 0, 0, 0.15);
+}
+.btn-3d-zinc:hover {
+  box-shadow: 0 7px 0 #000, 0 12px 24px rgba(0, 0, 0, 0.2);
+}
+
+.btn-3d-glass {
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.05), 0 10px 20px rgba(0, 0, 0, 0.05);
+}
+.btn-3d-glass:hover {
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: 0 7px 0 rgba(0, 0, 0, 0.05), 0 12px 24px rgba(0, 0, 0, 0.08);
+}
+
+.btn-3d-danger {
+  background: var(--color-danger);
+  box-shadow: 0 5px 0 #bc5c43, 0 10px 20px rgba(224, 122, 95, 0.2);
+}
+.btn-3d-danger:hover {
+  box-shadow: 0 7px 0 #bc5c43, 0 12px 24px rgba(224, 122, 95, 0.25);
+}
+
+/* Background Decor */
+.bg-blob {
+  position: fixed;
+  width: 500px;
+  height: 500px;
+  border-radius: 50%;
+  filter: blur(80px);
+  z-index: -1;
+  opacity: 0.4;
+  pointer-events: none;
+  animation: blob-float 20s infinite alternate ease-in-out;
+}
+
+@keyframes blob-float {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(100px, 50px) scale(1.1); }
 }
 
 .heading-accent {
@@ -62,6 +137,7 @@ body {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--color-glass-border);
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
 }
 
 .glass-dark {
