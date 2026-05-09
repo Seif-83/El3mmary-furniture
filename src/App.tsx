@@ -244,6 +244,24 @@ const normalizePhone = (p: any) => {
           .replace(/\D/g, '');
 };
 
+const formatCellValue = (v: any) => {
+  if (v === null || v === undefined) return "";
+  
+  // Handle Excel Serial Dates (approx range for 1900-2100)
+  if (typeof v === 'number' && v > 30000 && v < 60000) {
+    const date = new Date((v - 25569) * 86400 * 1000);
+    if (!isNaN(date.getTime())) {
+      return date.toLocaleDateString('ar-EG', { 
+        year: 'numeric', 
+        month: 'numeric', 
+        day: 'numeric' 
+      });
+    }
+  }
+  
+  return String(v);
+};
+
 export default function App() {
   const [lang, setLang] = useState<'en' | 'ar'>('ar');
   const t = translations[lang];
@@ -648,28 +666,26 @@ export default function App() {
                           <button onClick={handleOpenAddModal} className="btn-3d btn-3d-glass px-6 py-4 rounded-2xl flex items-center gap-3 font-bold text-xs uppercase"><Plus className="w-4 h-4" /> {t.addCustomerBtn}</button>
                         )}
 
-                        {adminSubView !== 'catalogs' && (
-                          <div className="relative flex items-center">
-                            <div className="relative group">
-                              <Search className="absolute top-1/2 -translate-y-1/2 right-4 w-4 h-4 text-zinc-400 group-focus-within:text-zinc-700 transition-colors pointer-events-none z-10" />
-                              <input
-                                type="text"
-                                placeholder={lang === 'ar' ? 'بحث بالاسم أو الهاتف...' : 'Search by name or phone...'}
-                                value={searchQuery}
-                                onChange={e => setSearchQuery(e.target.value)}
-                                className="bg-white/70 backdrop-blur-md border border-white/80 shadow-md pr-11 pl-10 py-3.5 rounded-2xl text-sm font-medium outline-none w-56 focus:w-72 focus:shadow-xl focus:border-zinc-300 transition-all duration-300 placeholder:text-zinc-400 text-zinc-800"
-                              />
-                              {searchQuery && (
-                                <button
-                                  onClick={() => setSearchQuery('')}
-                                  className="absolute top-1/2 -translate-y-1/2 left-3 w-5 h-5 flex items-center justify-center rounded-full bg-zinc-200 hover:bg-zinc-300 text-zinc-500 transition-all"
-                                >
-                                  <X className="w-3 h-3" />
-                                </button>
-                              )}
-                            </div>
+                        <div className="relative flex items-center">
+                          <div className="relative group">
+                            <Search className="absolute top-1/2 -translate-y-1/2 right-4 w-4 h-4 text-zinc-400 group-focus-within:text-zinc-700 transition-colors pointer-events-none z-10" />
+                            <input
+                              type="text"
+                              placeholder={lang === 'ar' ? 'بحث...' : 'Search...'}
+                              value={searchQuery}
+                              onChange={e => setSearchQuery(e.target.value)}
+                              className="bg-white/70 backdrop-blur-md border border-white/80 shadow-md pr-11 pl-10 py-3.5 rounded-2xl text-sm font-medium outline-none w-56 focus:w-72 focus:shadow-xl focus:border-zinc-300 transition-all duration-300 placeholder:text-zinc-400 text-zinc-800"
+                            />
+                            {searchQuery && (
+                              <button
+                                onClick={() => setSearchQuery('')}
+                                className="absolute top-1/2 -translate-y-1/2 left-3 w-5 h-5 flex items-center justify-center rounded-full bg-zinc-200 hover:bg-zinc-300 text-zinc-500 transition-all"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
                           </div>
-                        )}
+                        </div>
                         {adminSubView === 'catalogs' && currentUser?.email === ADMIN_EMAIL && (
                           <label className="btn-3d btn-3d-glass px-6 py-4 rounded-2xl flex items-center gap-3 font-bold text-xs uppercase cursor-pointer"><Upload className="w-4 h-4" /> {t.uploadNew} <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleImportExcel} /></label>
                         )}
@@ -701,29 +717,93 @@ export default function App() {
                                 <button key={s.id} onClick={() => setSelectedSheetId(s.id)} className={`px-6 py-3 rounded-xl text-xs font-bold uppercase transition-all btn-3d ${selectedSheetId === s.id ? 'btn-3d-primary text-white shadow-sm' : 'text-zinc-400 bg-black/5 hover:bg-black/10'}`}>{s.title}</button>
                               ))}
                             </div>
-                            {selectedSheet && (
-                              <div className="glass rounded-3xl overflow-hidden p-6 space-y-4">
-                                <div className="flex justify-between items-center"><div className="text-xs text-zinc-500">{format(selectedSheet.createdAt.toDate(), 'yyyy-MM-dd HH:mm')}</div>{currentUser?.email === ADMIN_EMAIL && <button onClick={() => deleteCatalogSection(selectedSheet.id)} className="text-danger flex items-center gap-2 font-bold text-[10px] uppercase"><Trash2 className="w-4 h-4" /> {t.deleteSheet}</button>}</div>
-                                <div className="hidden md:block overflow-x-auto">
-                                  <table className="w-full text-left text-sm">
-                                    <thead><tr className="border-b border-black/5">{selectedSheet.data.length > 0 && Object.keys(selectedSheet.data[0]).map(h => <th key={h} className="px-4 py-4 font-bold text-zinc-500 uppercase text-[10px]">{h}</th>)}</tr></thead>
-                                    <tbody className="divide-y divide-black/5">{selectedSheet.data.map((row, i) => <tr key={i} className="hover:bg-black/5 transition-colors">{Object.values(row).map((v: any, j) => <td key={j} className="px-4 py-4 text-zinc-700">{v?.toString()}</td>)}</tr>)}</tbody>
-                                  </table>
-                                </div>
-                                <div className="grid grid-cols-1 gap-4 md:hidden">
-                                  {selectedSheet.data.map((row, i) => (
-                                    <div key={i} className="bg-white/60 p-5 rounded-[2rem] space-y-3 border border-black/5 shadow-sm">
-                                      {Object.entries(row).map(([key, value]) => (
-                                        <div key={key} className="flex justify-between items-center text-sm">
-                                          <span className="font-bold text-zinc-500 text-[10px] uppercase">{key}:</span>
-                                          <span className="text-zinc-800 font-medium">{value?.toString()}</span>
-                                        </div>
-                                      ))}
+                            {selectedSheet && (() => {
+                              const filteredData = selectedSheet.data.filter(row => 
+                                !searchQuery || Object.values(row).some(v => 
+                                  String(v).toLowerCase().includes(searchQuery.toLowerCase())
+                                )
+                              );
+                              
+                              const allKeys = Array.from(new Set(selectedSheet.data.flatMap(row => Object.keys(row))))
+                                .filter(h => !h.startsWith('__EMPTY'));
+
+                              return (
+                                <div className="glass rounded-[2.5rem] overflow-hidden p-0 border border-white/40 shadow-2xl space-y-0">
+                                  <div className="p-8 border-b border-black/5 flex justify-between items-center bg-white/30 backdrop-blur-sm">
+                                    <div className="flex items-center gap-4">
+                                      <div className="w-12 h-12 rounded-2xl bg-accent-tan/10 flex items-center justify-center">
+                                        <FileSpreadsheet className="w-6 h-6 text-accent-tan" />
+                                      </div>
+                                      <div>
+                                        <h3 className="text-xl font-bold text-zinc-900">{selectedSheet.title}</h3>
+                                        <div className="text-xs text-zinc-500 font-mono">{format(selectedSheet.createdAt.toDate(), 'yyyy-MM-dd HH:mm')}</div>
+                                      </div>
                                     </div>
-                                  ))}
+                                    {currentUser?.email === ADMIN_EMAIL && (
+                                      <button 
+                                        onClick={() => deleteCatalogSection(selectedSheet.id)} 
+                                        className="btn-3d btn-3d-glass px-4 py-2.5 rounded-xl text-danger flex items-center gap-2 font-bold text-[10px] uppercase hover:bg-red-50 transition-colors"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" /> {t.deleteSheet}
+                                      </button>
+                                    )}
+                                  </div>
+
+                                  {filteredData.length > 0 ? (
+                                    <>
+                                      <div className="hidden md:block overflow-x-auto max-h-[600px] custom-scrollbar">
+                                        <table className="w-full text-right border-collapse">
+                                          <thead className="sticky top-0 z-10">
+                                            <tr className="bg-zinc-50/80 backdrop-blur-md border-b border-black/5">
+                                              {allKeys.map(h => (
+                                                <th key={h} className="px-6 py-5 font-bold text-zinc-500 uppercase text-[10px] tracking-widest border-l border-black/5 last:border-l-0 min-w-[120px]">
+                                                  {h}
+                                                </th>
+                                              ))}
+                                            </tr>
+                                          </thead>
+                                          <tbody className="divide-y divide-black/5 bg-white/20">
+                                            {filteredData.map((row, i) => (
+                                              <tr key={i} className="hover:bg-accent-tan/5 transition-colors group">
+                                                {allKeys.map((k, j) => (
+                                                  <td key={j} className="px-6 py-5 text-zinc-700 text-sm font-medium border-l border-black/5 last:border-l-0 group-hover:text-zinc-900">
+                                                    {formatCellValue(row[k])}
+                                                  </td>
+                                                ))}
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+
+                                      <div className="grid grid-cols-1 gap-6 p-6 md:hidden">
+                                        {filteredData.map((row, i) => (
+                                          <div key={i} className="bg-white/80 backdrop-blur-xl p-6 rounded-[2rem] space-y-4 border border-white/60 shadow-lg relative overflow-hidden group">
+                                            <div className="absolute top-0 right-0 w-24 h-24 bg-accent-tan/5 rounded-full -mr-12 -mt-12 blur-2xl group-hover:bg-accent-tan/10 transition-colors" />
+                                            {allKeys.map((key) => (
+                                              <div key={key} className="flex flex-col gap-1 relative z-10 border-b border-black/5 pb-3 last:border-0 last:pb-0">
+                                                <span className="font-bold text-zinc-400 text-[9px] uppercase tracking-widest">{key}</span>
+                                                <span className="text-zinc-800 font-bold text-sm">{formatCellValue(row[key])}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <div className="p-20 text-center text-zinc-400 italic">
+                                      {lang === 'ar' ? 'لا توجد نتائج تطابق بحثك' : 'No results matching your search'}
+                                    </div>
+                                  )}
+                                  
+                                  {selectedSheet.data.length === 0 && (
+                                    <div className="p-20 text-center text-zinc-400 italic">
+                                      {lang === 'ar' ? 'هذا الملف فارغ' : 'This sheet is empty'}
+                                    </div>
+                                  )}
                                 </div>
-                              </div>
-                            )}
+                              );
+                            })()}
                           </>
                         ) : <div className="glass rounded-[2rem] p-20 text-center text-zinc-400 italic">{t.noSheets}</div>}
                       </div>
