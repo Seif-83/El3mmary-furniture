@@ -302,6 +302,9 @@ export default function App() {
   const [selectedRecord, setSelectedRecord] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
   
+  const [isEditCatalogModalOpen, setIsEditCatalogModalOpen] = useState(false);
+  const [editingCatalogRow, setEditingCatalogRow] = useState<{sheetId: string, rowIndex: number, data: any} | null>(null);
+
   const selectedSheet = catalogs.find(c => c.id === selectedSheetId);
 
   const [formData, setFormData] = useState({
@@ -384,6 +387,33 @@ export default function App() {
       if (selectedSheetId === id) setSelectedSheetId(null);
       toast.success(lang === 'ar' ? "تم الحذف" : "Sheet deleted");
     } catch { toast.error("Failed to delete"); }
+  };
+
+  const handleEditCatalogRow = (sheetId: string, rowIndex: number, rowData: any) => {
+    setEditingCatalogRow({ sheetId, rowIndex, data: { ...rowData } });
+    setIsEditCatalogModalOpen(true);
+  };
+
+  const handleSaveCatalogRow = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCatalogRow) return;
+    
+    setIsLoading(true);
+    try {
+      const sheet = catalogs.find(c => c.id === editingCatalogRow.sheetId);
+      if (!sheet) throw new Error("Sheet not found");
+      
+      const newData = [...sheet.data];
+      newData[editingCatalogRow.rowIndex] = editingCatalogRow.data;
+      
+      await updateDoc(doc(db, 'catalogs', editingCatalogRow.sheetId), { data: newData });
+      toast.success(lang === 'ar' ? "تم تحديث البيانات" : "Data updated");
+      setIsEditCatalogModalOpen(false);
+      setEditingCatalogRow(null);
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+    setIsLoading(false);
   };
 
   const handleAdminLogin = async (e: React.FormEvent) => {
@@ -756,38 +786,62 @@ export default function App() {
                                           <thead className="sticky top-0 z-10">
                                             <tr className="bg-zinc-50/80 backdrop-blur-md border-b border-black/5">
                                               {allKeys.map(h => (
-                                                <th key={h} className="px-6 py-5 font-bold text-zinc-500 uppercase text-[10px] tracking-widest border-l border-black/5 last:border-l-0 min-w-[120px]">
+                                                <th key={h} className="px-6 py-5 font-bold text-zinc-500 uppercase text-[10px] tracking-widest border-l border-black/5 last:border-l-0 min-w-[200px]">
                                                   {h}
                                                 </th>
                                               ))}
                                             </tr>
                                           </thead>
                                           <tbody className="divide-y divide-black/5 bg-white/20">
-                                            {filteredData.map((row, i) => (
-                                              <tr key={i} className="hover:bg-accent-tan/5 transition-colors group">
-                                                {allKeys.map((k, j) => (
-                                                  <td key={j} className="px-6 py-5 text-zinc-700 text-sm font-medium border-l border-black/5 last:border-l-0 group-hover:text-zinc-900">
-                                                    {formatCellValue(row[k])}
+                                            {filteredData.map((row, i) => {
+                                              // Find original index for editing
+                                              const originalIndex = selectedSheet.data.indexOf(row);
+                                              return (
+                                                <tr key={i} className="hover:bg-accent-tan/5 transition-colors group">
+                                                  {allKeys.map((k, j) => (
+                                                    <td key={j} className="px-6 py-5 text-zinc-700 text-sm font-medium border-l border-black/5 last:border-l-0 group-hover:text-zinc-900">
+                                                      {formatCellValue(row[k])}
+                                                    </td>
+                                                  ))}
+                                                  <td className="px-4 py-5 text-left sticky left-0 bg-white/50 backdrop-blur-md group-hover:bg-white transition-colors">
+                                                    <button 
+                                                      onClick={() => handleEditCatalogRow(selectedSheet.id, originalIndex, row)}
+                                                      className="p-2 text-zinc-400 hover:text-accent-tan transition-all"
+                                                    >
+                                                      <Edit2 className="w-4 h-4" />
+                                                    </button>
                                                   </td>
-                                                ))}
-                                              </tr>
-                                            ))}
+                                                </tr>
+                                              );
+                                            })}
                                           </tbody>
                                         </table>
                                       </div>
 
                                       <div className="grid grid-cols-1 gap-6 p-6 md:hidden">
-                                        {filteredData.map((row, i) => (
-                                          <div key={i} className="bg-white/80 backdrop-blur-xl p-6 rounded-[2rem] space-y-4 border border-white/60 shadow-lg relative overflow-hidden group">
-                                            <div className="absolute top-0 right-0 w-24 h-24 bg-accent-tan/5 rounded-full -mr-12 -mt-12 blur-2xl group-hover:bg-accent-tan/10 transition-colors" />
-                                            {allKeys.map((key) => (
-                                              <div key={key} className="flex flex-col gap-1 relative z-10 border-b border-black/5 pb-3 last:border-0 last:pb-0">
-                                                <span className="font-bold text-zinc-400 text-[9px] uppercase tracking-widest">{key}</span>
-                                                <span className="text-zinc-800 font-bold text-sm">{formatCellValue(row[key])}</span>
+                                        {filteredData.map((row, i) => {
+                                          const originalIndex = selectedSheet.data.indexOf(row);
+                                          return (
+                                            <div key={i} className="bg-white/80 backdrop-blur-xl p-6 rounded-[2rem] space-y-4 border border-white/60 shadow-lg relative overflow-hidden group">
+                                              <div className="absolute top-0 right-0 w-24 h-24 bg-accent-tan/5 rounded-full -mr-12 -mt-12 blur-2xl group-hover:bg-accent-tan/10 transition-colors" />
+                                              <div className="flex justify-between items-center relative z-10">
+                                                <div className="w-10 h-10 rounded-xl bg-zinc-50 flex items-center justify-center text-zinc-300 font-bold">#{i+1}</div>
+                                                <button 
+                                                  onClick={() => handleEditCatalogRow(selectedSheet.id, originalIndex, row)}
+                                                  className="p-3 bg-white border border-zinc-100 rounded-2xl text-accent-tan shadow-sm hover:shadow-md transition-all"
+                                                >
+                                                  <Edit2 className="w-4 h-4" />
+                                                </button>
                                               </div>
-                                            ))}
-                                          </div>
-                                        ))}
+                                              {allKeys.map((key) => (
+                                                <div key={key} className="flex flex-col gap-1 relative z-10 border-b border-black/5 pb-3 last:border-0 last:pb-0">
+                                                  <span className="font-bold text-zinc-400 text-[9px] uppercase tracking-widest">{key}</span>
+                                                  <span className="text-zinc-800 font-bold text-sm">{formatCellValue(row[key])}</span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          );
+                                        })}
                                       </div>
                                     </>
                                   ) : (
@@ -1231,6 +1285,68 @@ export default function App() {
                 <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.fullName}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} /></div>
                 <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.phoneNumber}</label><input required type="tel" minLength={11} maxLength={11} pattern="[0-9]{11}" title={lang === 'ar' ? 'يجب أن يكون رقم الهاتف 11 رقماً بالضبط' : 'Phone number must be exactly 11 digits'} className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={formData.phone || ''} onChange={e => setFormData({ ...formData, phone: e.target.value })} /></div>
                 <button disabled={isLoading} type="submit" className="w-full bg-zinc-900 text-white py-5 rounded-3xl font-bold uppercase tracking-widest shadow-2xl btn-3d btn-3d-zinc">{isLoading ? t.processing : t.save}</button>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      {/* Edit Catalog Row Modal */}
+      <AnimatePresence>
+        {isEditCatalogModalOpen && editingCatalogRow && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-6">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsEditCatalogModalOpen(false)} className="absolute inset-0 bg-zinc-900/40 backdrop-blur-md" />
+            <motion.div initial={{ scale: 0.9, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0, y: 20 }} className="relative w-full max-w-2xl bg-white/90 backdrop-blur-2xl rounded-[2.5rem] shadow-2xl border border-white overflow-hidden flex flex-col max-h-[90vh]">
+              <div className="p-8 border-b border-zinc-100 flex justify-between items-center bg-white/50">
+                <div>
+                  <h2 className="text-2xl font-bold text-zinc-900">{lang === 'ar' ? 'تعديل السجل' : 'Edit Row'}</h2>
+                  <p className="text-sm text-zinc-500">{lang === 'ar' ? 'تعديل بيانات السجل المختار في الملف' : 'Update the data for the selected record'}</p>
+                </div>
+                <button onClick={() => setIsEditCatalogModalOpen(false)} className="p-3 bg-zinc-50 text-zinc-400 rounded-2xl hover:bg-zinc-100 transition-all"><X className="w-5 h-5" /></button>
+              </div>
+
+              <form onSubmit={handleSaveCatalogRow} className="p-8 space-y-6 overflow-y-auto custom-scrollbar flex-1">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {Object.keys(editingCatalogRow.data)
+                    .filter(k => !k.startsWith('__EMPTY'))
+                    .map(key => {
+                      const isLargeField = key === 'نوع الغرفة المطلوب تجديدها وعدد القطع' || key === 'العنوان الاستلام والتسليم';
+                      return (
+                        <div key={key} className={`space-y-2 ${isLargeField ? 'md:col-span-2' : ''}`}>
+                          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1">{key}</label>
+                          {isLargeField ? (
+                            <textarea
+                              rows={3}
+                              value={editingCatalogRow.data[key] || ''}
+                              onChange={(e) => setEditingCatalogRow({
+                                ...editingCatalogRow,
+                                data: { ...editingCatalogRow.data, [key]: e.target.value }
+                              })}
+                              className="w-full bg-zinc-50 border border-zinc-100 px-5 py-4 rounded-2xl text-sm font-medium focus:ring-2 focus:ring-accent-tan/20 focus:border-accent-tan outline-none transition-all placeholder:text-zinc-300 resize-none"
+                            />
+                          ) : (
+                            <input
+                              type="text"
+                              value={editingCatalogRow.data[key] || ''}
+                              onChange={(e) => setEditingCatalogRow({
+                                ...editingCatalogRow,
+                                data: { ...editingCatalogRow.data, [key]: e.target.value }
+                              })}
+                              className="w-full bg-zinc-50 border border-zinc-100 px-5 py-3.5 rounded-2xl text-sm font-medium focus:ring-2 focus:ring-accent-tan/20 focus:border-accent-tan outline-none transition-all placeholder:text-zinc-300"
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+                
+                <div className="pt-4 flex gap-4">
+                  <button type="submit" disabled={isLoading} className="flex-1 btn-3d btn-3d-zinc bg-zinc-900 text-white py-4 rounded-2xl font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-2">
+                    {isLoading ? t.processing : (lang === 'ar' ? 'حفظ التعديلات' : 'Save Changes')}
+                  </button>
+                  <button type="button" onClick={() => setIsEditCatalogModalOpen(false)} className="px-8 btn-3d btn-3d-glass bg-white py-4 rounded-2xl font-bold uppercase tracking-widest text-xs">
+                    {t.cancel}
+                  </button>
+                </div>
               </form>
             </motion.div>
           </div>
