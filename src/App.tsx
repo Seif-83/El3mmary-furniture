@@ -1389,45 +1389,115 @@ export default function App() {
               
               <h2 className="text-3xl font-light mb-8 pe-12 rtl:pe-0 rtl:ps-12">{selectedRecord.customerName || selectedRecord.name}</h2>
               
-              <div className="space-y-6">
-                <div className="grid grid-cols-2 gap-6">
-                  <div><label className="text-[10px] font-bold uppercase text-zinc-400">{t.phoneNumber}</label><p className="font-semibold">{selectedRecord.phone}</p></div>
-                  <div><label className="text-[10px] font-bold uppercase text-zinc-400">{t.address}</label><p className="font-semibold">{selectedRecord.address || '-'}</p></div>
+              <div className="space-y-8 pb-8">
+                {/* Section: Contact Information */}
+                <div className="bg-zinc-50/50 rounded-3xl p-6 border border-zinc-100/50">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-zinc-400 flex items-center gap-2">
+                        <UserIcon className="w-3 h-3" /> {t.userName}
+                      </label>
+                      <p className="text-lg font-bold text-zinc-900">{selectedRecord.customerName || selectedRecord.name}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-zinc-400 flex items-center gap-2">
+                        <Users className="w-3 h-3" /> {t.phoneNumber}
+                      </label>
+                      <p className="text-lg font-bold text-zinc-900 font-mono tracking-wider">{selectedRecord.phone}</p>
+                    </div>
+                  </div>
+                  <div className="mt-6 pt-6 border-t border-zinc-100">
+                    <label className="text-[10px] font-bold uppercase text-zinc-400 flex items-center gap-2 mb-2">
+                      <Languages className="w-3 h-3" /> {t.address}
+                    </label>
+                    <p className="text-zinc-700 leading-relaxed font-semibold">{selectedRecord.address || '-'}</p>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-6">
-                  <div><label className="text-[10px] font-bold uppercase text-zinc-400">{t.visitDate}</label><p className="font-semibold">{selectedRecord.visitDate || '-'}</p></div>
-                  <div><label className="text-[10px] font-bold uppercase text-zinc-400">{t.visitDateTo}</label><p className="font-semibold">{selectedRecord.visitDateTo || '-'}</p></div>
+                {/* Section: Dates & Inspection */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-white border border-zinc-100 rounded-3xl p-5 shadow-sm">
+                    <label className="text-[10px] font-bold uppercase text-zinc-400 mb-3 block">{t.visitDate}</label>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-accent-tan/10 flex items-center justify-center">
+                        <Calendar className="w-5 h-5 text-accent-tan" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-zinc-900">{selectedRecord.visitDate || '-'}</p>
+                        {selectedRecord.visitDateTo && <p className="text-[10px] text-zinc-400">إلى {selectedRecord.visitDateTo}</p>}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-white border border-zinc-100 rounded-3xl p-5 shadow-sm">
+                    <label className="text-[10px] font-bold uppercase text-zinc-400 mb-3 block">{t.rooms}</label>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-zinc-100 flex items-center justify-center">
+                        <Armchair className="w-5 h-5 text-zinc-500" />
+                      </div>
+                      <p className="text-xl font-bold text-zinc-900">{selectedRecord.rooms || 0}</p>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-6 pt-4 border-t border-black/5">
-                  <div><label className="text-[10px] font-bold uppercase text-zinc-400">{t.rooms}</label><p className="font-semibold">{selectedRecord.rooms || 0}</p></div>
-                  <div><label className="text-[10px] font-bold uppercase text-zinc-400">{t.deliveryDate}</label><p className="font-semibold">{selectedRecord.deliveryDate || '-'}</p></div>
-                  <div><label className="text-[10px] font-bold uppercase text-zinc-400">{t.pickupDate}</label><p className="font-semibold">{selectedRecord.pickupDate || '-'}</p></div>
+                {/* Section: Logistics & Financials */}
+                <div className="bg-zinc-900 text-white rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-16 -mt-16 blur-3xl" />
+                  <div className="relative z-10 space-y-8">
+                    <div className="grid grid-cols-2 gap-8">
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold uppercase text-zinc-400 tracking-widest">{t.deliveryDate}</label>
+                        <p className="font-bold text-lg">{selectedRecord.deliveryDate || '-'}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold uppercase text-zinc-400 tracking-widest">{t.pickupDate}</label>
+                        <p className="font-bold text-lg">{selectedRecord.pickupDate || '-'}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="pt-6 border-t border-white/10 grid grid-cols-2 gap-8 items-end">
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold uppercase text-zinc-400 tracking-widest">{lang === 'ar' ? 'تاريخ العقد' : 'Contract Date'}</label>
+                        <p className="font-bold text-lg">{selectedRecord.contractDate || '-'}</p>
+                      </div>
+                      <div className="text-right rtl:text-left">
+                        <label className="text-[9px] font-bold uppercase text-zinc-400 tracking-widest block mb-1">{t.total}</label>
+                        <p className="text-3xl font-black text-accent-tan">{(selectedRecord.totalAmount || 0).toLocaleString()} <span className="text-xs font-bold opacity-60">EGP</span></p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-6">
-                  <div><label className="text-[10px] font-bold uppercase text-zinc-400">{lang === 'ar' ? 'تاريخ العقد' : 'Contract Date'}</label><p className="font-semibold">{selectedRecord.contractDate || '-'}</p></div>
-                  <div><label className="text-[10px] font-bold uppercase text-zinc-400">{t.total}</label><p className="font-bold text-accent-tan">{(selectedRecord.totalAmount || 0).toLocaleString()} EGP</p></div>
-                </div>
+                {/* Section: Portfolio */}
+                {selectedRecord.portfolio && (
+                  <div className="bg-white border-2 border-dashed border-zinc-100 rounded-3xl p-6">
+                    <label className="text-[10px] font-bold uppercase text-zinc-400 mb-4 block">{t.portfolio}</label>
+                    <div className="flex items-center gap-4 bg-zinc-50 p-4 rounded-2xl">
+                      <div className="w-12 h-12 rounded-xl bg-white shadow-sm flex items-center justify-center">
+                        <FileSpreadsheet className="w-6 h-6 text-accent-tan" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-zinc-900 truncate mb-0.5">{selectedRecord.portfolio}</p>
+                        <p className="text-[10px] text-zinc-400">{t.portfolioDate}: {selectedRecord.portfolioDate || '-'}</p>
+                      </div>
+                      <a href={selectedRecord.portfolio} target="_blank" rel="noreferrer" className="bg-zinc-900 text-white p-3 rounded-xl hover:scale-105 active:scale-95 transition-all shadow-lg"><Eye className="w-5 h-5" /></a>
+                    </div>
+                  </div>
+                )}
 
-                <div className="pt-4 border-t border-black/5">
-                  <label className="text-[10px] font-bold uppercase text-zinc-400">{t.portfolioDate}</label>
-                  <p className="font-semibold">{selectedRecord.portfolioDate || '-'}</p>
-                </div>
-
+                {/* Section: Items */}
                 {selectedRecord.pieces && selectedRecord.pieces.length > 0 && (
-                  <div>
-                    <label className="text-[10px] font-bold uppercase text-zinc-400">{t.pieces}</label>
-                    <div className="mt-2 space-y-2">
+                  <div className="space-y-4">
+                    <label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.pieces}</label>
+                    <div className="grid grid-cols-1 gap-3">
                       {selectedRecord.pieces.map((p: any, i: number) => (
-                        <div key={i} className="flex flex-col bg-black/5 px-4 py-3 rounded-xl text-sm gap-1">
-                          <div className="flex justify-between items-center">
-                            <span className="font-semibold">{p.name} {p.quantity > 1 ? `(x${p.quantity})` : ''}</span>
-                            <span className="font-bold">{(p.price * (p.quantity || 1)).toLocaleString()} EGP</span>
+                        <div key={i} className="group bg-white border border-zinc-100 hover:border-accent-tan/30 p-5 rounded-3xl transition-all hover:shadow-md">
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="font-bold text-zinc-900">{p.name} {p.quantity > 1 ? <span className="text-accent-tan ml-1">× {p.quantity}</span> : ''}</span>
+                            <span className="font-black text-zinc-900">{(p.price * (p.quantity || 1)).toLocaleString()} EGP</span>
                           </div>
                           {p.details && (
-                            <p className="text-xs text-zinc-500 italic border-t border-black/5 pt-1 mt-1">{p.details}</p>
+                            <p className="text-xs text-zinc-500 leading-relaxed italic mt-2 bg-zinc-50 p-3 rounded-xl border-l-2 border-accent-tan/30">{p.details}</p>
                           )}
                         </div>
                       ))}
@@ -1435,20 +1505,12 @@ export default function App() {
                   </div>
                 )}
 
-                {selectedRecord.portfolio && (
-                  <div className="pt-4 border-t border-black/5">
-                    <label className="text-[10px] font-bold uppercase text-zinc-400">{t.portfolio}</label>
-                    <div className="mt-2 flex items-center gap-4 bg-black/5 p-4 rounded-2xl">
-                      <FileSpreadsheet className="w-6 h-6 text-zinc-400" />
-                      <div className="flex-1 truncate text-sm font-semibold">{selectedRecord.portfolio}</div>
-                      <a href={selectedRecord.portfolio} target="_blank" rel="noreferrer" className="bg-zinc-900 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase flex items-center gap-2"><Download className="w-4 h-4" /> {lang === 'ar' ? 'مشاهدة' : 'View'}</a>
-                    </div>
+                {/* Section: Notes */}
+                <div className="pt-6 border-t border-zinc-100">
+                  <label className="text-[10px] font-bold uppercase text-zinc-400 px-1 mb-2 block">{t.notes}</label>
+                  <div className="bg-zinc-50/50 p-5 rounded-3xl italic text-zinc-600 leading-relaxed">
+                    {selectedRecord.notes || (lang === 'ar' ? 'لا توجد ملاحظات' : 'No notes available')}
                   </div>
-                )}
-
-                <div className="pt-4 border-t border-black/5">
-                  <label className="text-[10px] font-bold uppercase text-zinc-400">{t.notes}</label>
-                  <p className="text-sm text-zinc-600 italic">{selectedRecord.notes || 'No notes'}</p>
                 </div>
               </div>
             </motion.div>
