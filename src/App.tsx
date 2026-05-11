@@ -60,12 +60,18 @@ interface CustomerRecord {
   name: string;
   phone: string;
   createdAt: Timestamp;
+  // Extra fields saved at Step 1
+  address?: string;
+  visitDate?: string;
+  visitDateTo?: string;
+  notes?: string;
 }
 
 interface FurniturePiece {
   name: string;
   price: number;
   quantity: number;
+  details?: string;
 }
 
 interface Inspection {
@@ -275,6 +281,7 @@ export default function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingCollection, setEditingCollection] = useState<'customers' | 'inspections' | 'contracted_customers' | 'non_contracted_customers' | null>(null);
   
   const [adminSubView, setAdminSubView] = useState<'customers' | 'catalogs' | 'contracted' | 'not-contracted'>('customers');
   const [catalogs, setCatalogs] = useState<CatalogSheet[]>([]);
@@ -304,6 +311,7 @@ export default function App() {
   
   const [isEditCatalogModalOpen, setIsEditCatalogModalOpen] = useState(false);
   const [editingCatalogRow, setEditingCatalogRow] = useState<{sheetId: string, rowIndex: number, data: any} | null>(null);
+  const [expandedPieceDetails, setExpandedPieceDetails] = useState<number[]>([]);
 
   const selectedSheet = catalogs.find(c => c.id === selectedSheetId);
 
@@ -453,35 +461,59 @@ export default function App() {
 
    const handleInspectionSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (inspectionStep < 2) {
-      // If we are in Step 1 and have an editingId (lead), update the lead info too
-      if (inspectionStep === 1 && editingId) {
-        try {
+    
+    if (inspectionStep === 1) {
+      setIsLoading(true);
+      try {
+        if (inspectionFormData.id) {
+          const collectionName = editingCollection || 'inspections';
+          await updateDoc(doc(db, collectionName, inspectionFormData.id), {
+            customerName: inspectionFormData.customerName?.trim(),
+            address: inspectionFormData.address?.trim(),
+            phone: inspectionFormData.phone?.trim(),
+            visitDate: inspectionFormData.visitDate,
+            visitDateTo: inspectionFormData.visitDateTo,
+            notes: inspectionFormData.notes,
+            rooms: inspectionFormData.rooms || 0,
+            pieces: inspectionFormData.pieces || [],
+            totalAmount: inspectionFormData.totalAmount || 0,
+            ...(inspectionFormData.deliveryDate ? { deliveryDate: inspectionFormData.deliveryDate } : {}),
+            ...(inspectionFormData.contractDate ? { contractDate: inspectionFormData.contractDate } : {}),
+            ...(inspectionFormData.portfolio ? { portfolio: inspectionFormData.portfolio } : {}),
+          });
+        } else if (editingId) {
           await updateDoc(doc(db, 'customers', editingId), {
             name: inspectionFormData.customerName?.trim(),
-            phone: inspectionFormData.phone?.trim()
+            phone: inspectionFormData.phone?.trim(),
+            address: inspectionFormData.address?.trim(),
+            visitDate: inspectionFormData.visitDate,
+            visitDateTo: inspectionFormData.visitDateTo,
+            notes: inspectionFormData.notes,
           });
-        } catch (err) { console.error("Failed to update lead info", err); }
-      }
-      setInspectionStep(prev => prev + 1);
+        }
+        toast.success(lang === 'ar' ? "تم الحفظ بنجاح" : "Saved successfully");
+        setIsInspectionModalOpen(false);
+        setInspectionStep(1);
+        setEditingId(null);
+        setEditingCollection(null);
+        setInspectionFormData({ customerName: '', address: '', phone: '', visitDate: '', visitDateTo: '', notes: '', rooms: 0, pieces: [], totalAmount: 0 });
+      } catch (err: any) { toast.error(err.message); }
+      setIsLoading(false);
       return;
     }
-    
+
+    // Step 2+: Move customer to 'inspections' collection and remove from 'customers'
     setIsLoading(true);
     try {
       const { id: _, ...rest } = inspectionFormData;
-      const data = {
-        ...rest,
-        createdAt: serverTimestamp()
-      };
+      const data = { ...rest, createdAt: serverTimestamp() };
       
       if (inspectionFormData.id) {
-        // Update existing inspection
+        // Update existing inspection record
         await updateDoc(doc(db, 'inspections', inspectionFormData.id), data);
       } else {
-        // New inspection - save to inspections collection
+        // Create new inspection and remove from customers
         await addDoc(collection(db, 'inspections'), { ...data, status: 'pending' });
-        // If this was started from a customer record, remove them from customers
         if (editingId) {
           try {
             await deleteDoc(doc(db, 'customers', editingId));
@@ -489,7 +521,7 @@ export default function App() {
         }
       }
       
-      toast.success(lang === 'ar' ? "تم نقل العميل إلى التعاقدات" : "Customer moved to Contracts");
+      toast.success(lang === 'ar' ? "تم نقل العميل إلى المعاينات" : "Customer moved to Inspections");
       setIsInspectionModalOpen(false);
       setInspectionStep(1);
       setEditingId(null);
@@ -581,9 +613,17 @@ export default function App() {
     setInspectionFormData({ ...inspectionFormData, pieces, totalAmount });
   };
 
-  const handleOpenAddModal = () => { setFormData({ ...formData, name: '', phone: '' }); setModalMode('add'); setIsModalOpen(true); };
+  const handleOpenAddModal = () => { setFormData({ ...formData, name: '', phone: '' }); setModalMode('add'); setEditingCollection(null); setIsModalOpen(true); };
 
-  const handleOpenEditModal = (record: any) => { setFormData({ ...formData, name: record.name, phone: record.phone }); setEditingId(record.id); setModalMode('edit'); setIsModalOpen(true); };
+  const handleOpenEditModal = (record: any) => { setFormData({ ...formData, name: record.name, phone: record.phone }); setEditingId(record.id); setEditingCollection('customers'); setModalMode('edit'); setIsModalOpen(true); };
+
+  const openEditFinalizedRecord = (record: Inspection, collection: 'contracted_customers' | 'non_contracted_customers') => {
+    setInspectionFormData({ ...record });
+    setEditingId(record.id);
+    setEditingCollection(collection);
+    setInspectionStep(1);
+    setIsInspectionModalOpen(true);
+  };
 
   const handleSaveRecord = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -917,20 +957,20 @@ export default function App() {
                           <table className="w-full text-left">
                             <thead>
                               <tr className="border-b border-black/5 text-[10px] font-bold uppercase text-zinc-400 tracking-widest">
-                                <th className="px-4 py-5">{t.userName}</th>
-                                <th className="px-4 py-5">{t.phoneNumber}</th>
-                                <th className="px-4 py-5">{t.loginDate}</th>
-                                <th className="px-4 py-5 text-right">{t.actions}</th>
+                                <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.userName}</th>
+                                <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.phoneNumber}</th>
+                                <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.loginDate}</th>
+                                <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.actions}</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-black/5">
                               {customerRecords.filter(r => !searchQuery || r.name?.toLowerCase().includes(searchQuery.toLowerCase()) || r.phone?.includes(searchQuery)).map((r) => (
                                 <tr key={r.id} className="group hover:bg-black/5 transition-colors">
-                                  <td className="px-4 py-6 font-bold text-zinc-900">{r.name}</td>
-                                  <td className="px-4 py-6">
-                                    <span className="bg-zinc-100 px-3 py-1.5 rounded-xl font-mono text-xs text-zinc-600 group-hover:bg-white transition-colors">{r.phone}</span>
+                                  <td className="px-4 py-6 font-bold text-zinc-900 text-center">{r.name}</td>
+                                  <td className="px-4 py-6 text-center">
+                                    <span className="bg-zinc-100 px-3 py-1.5 rounded-xl font-mono text-xs text-zinc-600 group-hover:bg-white transition-colors ">{r.phone}</span>
                                   </td>
-                                  <td className="px-4 py-6 text-sm text-zinc-500 font-mono">{r.createdAt ? format(r.createdAt.toDate(), 'yyyy/MM/dd HH:mm') : '...'}</td>
+                                  <td className="px-4 py-6 text-sm text-zinc-500 font-mono text-center">{r.createdAt ? format(r.createdAt.toDate(), 'yyyy/MM/dd HH:mm') : '...'}</td>
                                   {currentUser?.email === ADMIN_EMAIL && (
                                     <td className="px-4 py-4">
                                       <div className="flex gap-4 justify-between items-center w-full">
@@ -939,7 +979,11 @@ export default function App() {
                                             customerName: r.name, 
                                             phone: r.phone,
                                             id: undefined,
-                                            address: '', visitDate: '', visitDateTo: '', notes: '', rooms: 0, pieces: [], totalAmount: 0 
+                                            address: (r as any).address || '',
+                                            visitDate: (r as any).visitDate || '',
+                                            visitDateTo: (r as any).visitDateTo || '',
+                                            notes: (r as any).notes || '',
+                                            rooms: 0, pieces: [], totalAmount: 0 
                                           });
                                           setEditingId(r.id);
                                           setInspectionStep(1);
@@ -980,7 +1024,11 @@ export default function App() {
                                     customerName: r.name, 
                                     phone: r.phone,
                                     id: undefined,
-                                    address: '', visitDate: '', visitDateTo: '', notes: '', rooms: 0, pieces: [], totalAmount: 0 
+                                    address: (r as any).address || '',
+                                    visitDate: (r as any).visitDate || '',
+                                    visitDateTo: (r as any).visitDateTo || '',
+                                    notes: (r as any).notes || '',
+                                    rooms: 0, pieces: [], totalAmount: 0 
                                   });
                                   setEditingId(r.id);
                                   setInspectionStep(1);
@@ -1006,11 +1054,11 @@ export default function App() {
                             <table className="w-full text-left">
                               <thead>
                                 <tr className="border-b border-black/5">
-                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[10px]">{t.customerName}</th>
-                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[10px]">{t.phoneNumber}</th>
-                                  {adminSubView === 'contracted' && <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[10px]">{t.deliveryDate}</th>}
-                                  {adminSubView === 'inspections' && <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[10px]">{t.visitDate}</th>}
-                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[10px] text-right">{t.actions}</th>
+                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.customerName}</th>
+                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.phoneNumber}</th>
+                                  {adminSubView === 'contracted' && <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.deliveryDate}</th>}
+                                  {adminSubView === 'inspections' && <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.visitDate}</th>}
+                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center w-px whitespace-nowrap">{t.actions}</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-black/5">
@@ -1018,21 +1066,26 @@ export default function App() {
                                   adminSubView === 'contracted' ? contractedCustomers : 
                                   notContractedCustomers).filter(r => !searchQuery || r.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) || r.phone?.includes(searchQuery)).map(r => (
                                   <tr key={r.id} className="hover:bg-black/5 transition-colors">
-                                    <td className="px-4 py-6 font-semibold">{r.customerName}</td>
-                                    <td className="px-4 py-6"><span className="bg-black/5 px-2 py-1 rounded font-mono text-sm">{r.phone}</span></td>
-                                    {adminSubView === 'contracted' && <td className="px-4 py-6 text-sm text-zinc-500">{r.deliveryDate}</td>}
-                                    {adminSubView === 'inspections' && <td className="px-4 py-6 text-sm text-zinc-500">{r.visitDate}</td>}
-                                    <td className="px-4 py-6 text-right flex gap-3 justify-end">
+                                    <td className="px-4 py-6 font-semibold text-center">{r.customerName}</td>
+                                    <td className="px-4 py-6 text-center"><span className="bg-black/5 px-2 py-1 rounded font-mono text-sm inline-block">{r.phone}</span></td>
+                                    {adminSubView === 'contracted' && <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.deliveryDate}</td>}
+                                    {adminSubView === 'inspections' && <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.visitDate}</td>}
+                                    <td className="px-4 py-6 text-center flex gap-3 justify-center">
                                       {adminSubView === 'inspections' && currentUser?.email === ADMIN_EMAIL && (
-                                        <button onClick={() => { setInspectionFormData(r); setInspectionStep(2); setIsInspectionModalOpen(true); }} className="text-zinc-600 border border-zinc-200 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all">{t.step2}</button>
+                                        <button onClick={() => { setInspectionFormData(r); setInspectionStep(2); setIsInspectionModalOpen(true); }} className="text-zinc-600 border border-zinc-200 px-5 py-3 rounded-lg text-xs font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all">{t.step2}</button>
                                       )}
-                                      <button onClick={() => { setSelectedRecord(r); setIsDetailModalOpen(true); }} className="text-zinc-400 border border-zinc-200 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all"><Eye className="w-3 h-3" /></button>
+                                      {currentUser?.email === ADMIN_EMAIL && adminSubView !== 'inspections' && (
+                                        <button onClick={() => openEditFinalizedRecord(r, adminSubView === 'contracted' ? 'contracted_customers' : 'non_contracted_customers')} className="text-zinc-600 border border-zinc-200 px-5 py-3 rounded-lg text-xs font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all">
+                                          <Edit2 className="w-4 h-4" />
+                                        </button>
+                                      )}
+                                      <button onClick={() => { setSelectedRecord(r); setIsDetailModalOpen(true); }} className="text-zinc-400 border border-zinc-200 px-5 py-3 rounded-lg text-xs font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all"><Eye className="w-4 h-4" /></button>
                                       {currentUser?.email === ADMIN_EMAIL && (
                                         <button onClick={() => {
                                           if (adminSubView === 'contracted') handleDeleteContracted(r.id);
                                           else if (adminSubView === 'not-contracted') handleDeleteNonContracted(r.id);
                                           else if (adminSubView === 'inspections') deleteDoc(doc(db, 'inspections', r.id));
-                                        }} className="text-red-500 border border-red-200 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase hover:bg-red-600 hover:text-white transition-all shadow-sm">
+                                        }} className="text-red-500 border border-red-200 px-5 py-3 rounded-lg text-xs font-bold uppercase hover:bg-red-600 hover:text-white transition-all shadow-sm">
                                           <Trash2 className="w-4 h-4" />
                                         </button>
                                       )}
@@ -1066,16 +1119,21 @@ export default function App() {
                               </div>
                               <div className="flex gap-2 pt-4 border-t border-zinc-100 justify-end">
                                 {adminSubView === 'inspections' && currentUser?.email === ADMIN_EMAIL && (
-                                  <button onClick={() => { setInspectionFormData(r); setInspectionStep(2); setIsInspectionModalOpen(true); }} className="flex-1 flex items-center justify-center text-zinc-600 border border-zinc-200 px-4 py-3 rounded-2xl text-[10px] font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all shadow-sm">{t.step2}</button>
+                                  <button onClick={() => { setInspectionFormData(r); setInspectionStep(2); setIsInspectionModalOpen(true); }} className="flex-1 flex items-center justify-center text-zinc-600 border border-zinc-200 px-6 py-4 rounded-2xl text-sm font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all shadow-sm">{t.step2}</button>
                                 )}
-                                  <button onClick={() => { setSelectedRecord(r); setIsDetailModalOpen(true); }} className="flex-1 flex items-center justify-center gap-2 bg-zinc-100 text-zinc-600 px-4 py-3 rounded-2xl text-[10px] font-bold uppercase hover:bg-zinc-200 transition-all shadow-sm btn-3d btn-3d-glass"><Eye className="w-4 h-4" /> {lang === 'ar' ? 'عرض' : 'View'}</button>
+                                {currentUser?.email === ADMIN_EMAIL && adminSubView !== 'inspections' && (
+                                  <button onClick={() => openEditFinalizedRecord(r, adminSubView === 'contracted' ? 'contracted_customers' : 'non_contracted_customers')} className="flex items-center justify-center gap-2 bg-zinc-100 text-zinc-600 border border-zinc-200 px-6 py-4 rounded-2xl text-sm font-bold uppercase hover:bg-zinc-200 transition-all shadow-sm">
+                                    <Edit2 className="w-5 h-5" /> {lang === 'ar' ? 'تعديل' : 'Edit'}
+                                  </button>
+                                )}
+                                <button onClick={() => { setSelectedRecord(r); setIsDetailModalOpen(true); }} className="flex-1 flex items-center justify-center gap-2 bg-zinc-100 text-zinc-600 px-6 py-4 rounded-2xl text-sm font-bold uppercase hover:bg-zinc-200 transition-all shadow-sm btn-3d btn-3d-glass"><Eye className="w-5 h-5" /> {lang === 'ar' ? 'عرض' : 'View'}</button>
                                 {currentUser?.email === ADMIN_EMAIL && (
                                   <button onClick={() => {
                                     if (adminSubView === 'contracted') handleDeleteContracted(r.id);
                                     else if (adminSubView === 'not-contracted') handleDeleteNonContracted(r.id);
                                     else if (adminSubView === 'inspections') deleteDoc(doc(db, 'inspections', r.id));
-                                  }} className="flex items-center justify-center gap-2 bg-red-50 text-red-500 border border-red-100 px-4 py-3 rounded-2xl text-[10px] font-bold uppercase hover:bg-red-500 hover:text-white transition-all shadow-sm">
-                                    <Trash2 className="w-4 h-4" />
+                                  }} className="flex items-center justify-center gap-2 bg-red-50 text-red-500 border border-red-100 px-6 py-4 rounded-2xl text-sm font-bold uppercase hover:bg-red-500 hover:text-white transition-all shadow-sm">
+                                    <Trash2 className="w-5 h-5" />
                                   </button>
                                 )}
                               </div>
@@ -1109,9 +1167,9 @@ export default function App() {
       <AnimatePresence>
         {isInspectionModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsInspectionModalOpen(false)} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => { setIsInspectionModalOpen(false); setEditingCollection(null); setEditingId(null); }} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white rounded-[2.5rem] w-full max-w-2xl p-8 md:p-12 shadow-2xl relative z-10 overflow-hidden max-h-[90vh] overflow-y-auto">
-              <button onClick={() => setIsInspectionModalOpen(false)} className="absolute top-6 right-6 rtl:right-auto rtl:left-6 w-10 h-10 flex items-center justify-center rounded-2xl bg-zinc-100 hover:bg-zinc-900 text-zinc-400 hover:text-white transition-all duration-300 hover:rotate-90 hover:scale-110 shadow-sm group">
+              <button onClick={() => { setIsInspectionModalOpen(false); setEditingCollection(null); setEditingId(null); }} className="absolute top-6 right-6 rtl:right-auto rtl:left-6 w-10 h-10 flex items-center justify-center rounded-2xl bg-zinc-100 hover:bg-zinc-900 text-zinc-400 hover:text-white transition-all duration-300 hover:rotate-90 hover:scale-110 shadow-sm group">
                 <X className="w-4 h-4 transition-transform duration-300" />
               </button>
               
@@ -1129,6 +1187,15 @@ export default function App() {
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.customerName}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.customerName} onChange={e => setInspectionFormData({ ...inspectionFormData, customerName: e.target.value })} /></div>
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.address}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.address} onChange={e => setInspectionFormData({ ...inspectionFormData, address: e.target.value })} /></div>
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.phoneNumber}</label><input required type="tel" minLength={11} maxLength={11} pattern="[0-9]{11}" title={lang === 'ar' ? 'يجب أن يكون رقم الهاتف 11 رقماً بالضبط' : 'Phone number must be exactly 11 digits'} className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.phone} onChange={e => setInspectionFormData({ ...inspectionFormData, phone: e.target.value })} /></div>
+                    {editingCollection === 'contracted_customers' && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.deliveryDate}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.deliveryDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, deliveryDate: e.target.value })} /></div>
+                        <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{lang === 'ar' ? 'تاريخ العقد' : 'Contract Date'}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.contractDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, contractDate: e.target.value })} /></div>
+                      </div>
+                    )}
+                    {editingCollection === 'contracted_customers' && (
+                      <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.portfolio}</label><input className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" placeholder="https://drive.google.com/..." value={inspectionFormData.portfolio || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, portfolio: e.target.value })} /></div>
+                    )}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.visitDate}</label><input required type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.visitDate} onChange={e => setInspectionFormData({ ...inspectionFormData, visitDate: e.target.value })} /></div>
                       <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.visitDateTo}</label><input required type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.visitDateTo || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, visitDateTo: e.target.value })} /></div>
@@ -1151,23 +1218,44 @@ export default function App() {
                       
                       <div className="space-y-3">
                         {inspectionFormData.pieces?.map((p, idx) => (
-                          <div key={idx} className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 bg-black/5 p-4 rounded-2xl border border-black/5">
-                            <div className="flex-1 font-bold text-lg text-zinc-800">{p.name}</div>
-                            <div className="flex items-center gap-3 w-full sm:w-auto">
-                              <div className="relative">
-                                <span className="absolute top-1/2 -translate-y-1/2 left-3 text-[10px] font-bold text-zinc-400">العدد</span>
-                                <input required type="number" min="1" className="w-20 pl-10 pr-3 py-3 bg-white border border-black/5 rounded-xl text-sm text-center font-bold shadow-sm" value={p.quantity || 1} onChange={e => updatePiece(idx, 'quantity', Number(e.target.value))} />
+                          <div key={idx} className="flex flex-col gap-2 bg-black/5 p-4 rounded-2xl border border-black/5">
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+                              <div className="flex-1 font-bold text-lg text-zinc-800">{p.name}</div>
+                              <div className="flex items-center gap-3 w-full sm:w-auto">
+                                <div className="relative">
+                                  <span className="absolute top-1/2 -translate-y-1/2 left-3 text-[10px] font-bold text-zinc-400">العدد</span>
+                                  <input required type="number" min="1" className="w-20 pl-10 pr-3 py-3 bg-white border border-black/5 rounded-xl text-sm text-center font-bold shadow-sm" value={p.quantity || 1} onChange={e => updatePiece(idx, 'quantity', Number(e.target.value))} />
+                                </div>
+                                <div className="relative flex-1 sm:w-32">
+                                  <span className="absolute top-1/2 -translate-y-1/2 left-3 text-[10px] font-bold text-zinc-400">EGP</span>
+                                  <input required type="number" min="0" placeholder={t.price} className="w-full pl-10 pr-3 py-3 bg-white border border-black/5 rounded-xl text-sm text-center font-bold shadow-sm" value={p.price || ''} onChange={e => updatePiece(idx, 'price', Number(e.target.value))} />
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedPieceDetails(prev =>
+                                    prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
+                                  )}
+                                  className={`px-3 py-3 rounded-xl text-[10px] font-bold uppercase transition-all btn-3d ${expandedPieceDetails.includes(idx) || p.details ? 'bg-accent-tan/20 text-accent-tan border border-accent-tan/30' : 'bg-white border border-black/5 text-zinc-400 hover:text-zinc-600'}`}
+                                >
+                                  تفاصيل
+                                </button>
+                                <button type="button" onClick={() => {
+                                  const pieces = inspectionFormData.pieces?.filter((_, i) => i !== idx);
+                                  const total = pieces?.reduce((sum, p) => sum + (Number(p.price) * (p.quantity || 1)), 0);
+                                  setInspectionFormData({ ...inspectionFormData, pieces, totalAmount: total });
+                                  setExpandedPieceDetails(prev => prev.filter(i => i !== idx).map(i => i > idx ? i - 1 : i));
+                                }} className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-colors shadow-sm btn-3d btn-3d-danger"><Trash2 className="w-5 h-5" /></button>
                               </div>
-                              <div className="relative flex-1 sm:w-32">
-                                <span className="absolute top-1/2 -translate-y-1/2 left-3 text-[10px] font-bold text-zinc-400">EGP</span>
-                                <input required type="number" min="0" placeholder={t.price} className="w-full pl-10 pr-3 py-3 bg-white border border-black/5 rounded-xl text-sm text-center font-bold shadow-sm" value={p.price || ''} onChange={e => updatePiece(idx, 'price', Number(e.target.value))} />
-                              </div>
-                              <button type="button" onClick={() => {
-                                const pieces = inspectionFormData.pieces?.filter((_, i) => i !== idx);
-                                const total = pieces?.reduce((sum, p) => sum + (Number(p.price) * (p.quantity || 1)), 0);
-                                setInspectionFormData({ ...inspectionFormData, pieces, totalAmount: total });
-                              }} className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-colors shadow-sm btn-3d btn-3d-danger"><Trash2 className="w-5 h-5" /></button>
                             </div>
+                            {(expandedPieceDetails.includes(idx) || p.details) && (
+                              <textarea
+                                placeholder={lang === 'ar' ? 'أضف تفاصيل للمنتج...' : 'Add product details...'}
+                                rows={2}
+                                value={p.details || ''}
+                                onChange={e => updatePiece(idx, 'details', e.target.value)}
+                                className="w-full px-4 py-3 bg-white border border-black/5 rounded-xl text-sm text-zinc-700 placeholder:text-zinc-300 outline-none focus:border-accent-tan/40 transition-all resize-none"
+                              />
+                            )}
                           </div>
                         ))}
                       </div>
@@ -1198,16 +1286,24 @@ export default function App() {
                   </div>
                 )}
 
-                {inspectionStep < 3 && (
+                {inspectionStep < 3 && !editingCollection && (
                   <div className="flex gap-4 pt-4">
                     {inspectionStep === 2 && (
                       <button type="button" onClick={() => setInspectionStep(prev => prev - 1)} className="flex-1 py-4 border border-zinc-200 rounded-2xl font-bold uppercase tracking-widest btn-3d btn-3d-glass">{lang === 'ar' ? 'السابق' : 'Back'}</button>
                     )}
-                    {inspectionStep === 1 ? (
-                      <button type="submit" className="flex-1 bg-zinc-900 text-white py-4 rounded-2xl font-bold uppercase tracking-widest shadow-xl btn-3d btn-3d-zinc">{lang === 'ar' ? 'التالي' : 'Next'}</button>
-                    ) : (
-                      <button type="submit" className="flex-1 bg-zinc-900 text-white py-4 rounded-2xl font-bold uppercase tracking-widest shadow-xl btn-3d btn-3d-zinc">{lang === 'ar' ? 'حفظ' : 'Save'}</button>
+                    <button type="submit" disabled={isLoading} className="flex-1 bg-zinc-900 text-white py-4 rounded-2xl font-bold uppercase tracking-widest shadow-xl btn-3d btn-3d-zinc">
+                      {isLoading ? t.processing : (inspectionStep === 1 ? (lang === 'ar' ? 'حفظ' : 'Save') : (lang === 'ar' ? 'حفظ' : 'Save'))}
+                    </button>
+                    {inspectionStep === 1 && (
+                      <button type="button" onClick={() => { setInspectionStep(2); }} className="flex-1 py-4 border border-zinc-200 rounded-2xl font-bold uppercase tracking-widest btn-3d btn-3d-glass">{lang === 'ar' ? 'التالي ←' : 'Next →'}</button>
                     )}
+                  </div>
+                )}
+                {inspectionStep < 3 && editingCollection && (
+                  <div className="flex gap-4 pt-4">
+                    <button type="submit" disabled={isLoading} className="flex-1 bg-zinc-900 text-white py-4 rounded-2xl font-bold uppercase tracking-widest shadow-xl btn-3d btn-3d-zinc">
+                      {isLoading ? t.processing : (lang === 'ar' ? 'حفظ' : 'Save')}
+                    </button>
                   </div>
                 )}
               </form>
@@ -1244,9 +1340,14 @@ export default function App() {
                     <label className="text-[10px] font-bold uppercase text-zinc-400">{t.pieces}</label>
                     <div className="mt-2 space-y-2">
                       {selectedRecord.pieces.map((p: any, i: number) => (
-                        <div key={i} className="flex justify-between bg-black/5 px-4 py-2 rounded-xl text-sm">
-                          <span>{p.name} {p.quantity > 1 ? `(x${p.quantity})` : ''}</span>
-                          <span className="font-bold">{(p.price * (p.quantity || 1)).toLocaleString()} EGP</span>
+                        <div key={i} className="flex flex-col bg-black/5 px-4 py-3 rounded-xl text-sm gap-1">
+                          <div className="flex justify-between items-center">
+                            <span className="font-semibold">{p.name} {p.quantity > 1 ? `(x${p.quantity})` : ''}</span>
+                            <span className="font-bold">{(p.price * (p.quantity || 1)).toLocaleString()} EGP</span>
+                          </div>
+                          {p.details && (
+                            <p className="text-xs text-zinc-500 italic border-t border-black/5 pt-1 mt-1">{p.details}</p>
+                          )}
                         </div>
                       ))}
                     </div>
