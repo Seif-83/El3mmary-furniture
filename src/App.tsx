@@ -67,6 +67,7 @@ interface CustomerRecord {
   notes?: string;
   deliveryDate?: string;
   pickupDate?: string;
+  portfolioDate?: string;
 }
 
 interface FurniturePiece {
@@ -92,6 +93,7 @@ interface Inspection {
   portfolio?: string;
   deliveryDate?: string;
   pickupDate?: string;
+  portfolioDate?: string;
   contractDate?: string;
 }
 
@@ -171,6 +173,7 @@ const translations = {
     portfolio: "Portfolio",
     deliveryDate: "Delivery Date",
     pickupDate: "Pickup Date",
+    portfolioDate: "Portfolio Date",
     contractImg: "Contract Image",
     viewOnly: "Viewer (Read Only)",
     editor: "Editor (Full Access)",
@@ -240,6 +243,7 @@ const translations = {
     portfolio: "البورتفوليو",
     deliveryDate: "تاريخ التسليم",
     pickupDate: "تاريخ الاستلام",
+    portfolioDate: "تاريخ البورتفوليو",
     contractImg: "صورة العقد",
     viewOnly: "مشاهد فقط",
     editor: "مسؤول (صلاحية كاملة)",
@@ -473,6 +477,7 @@ export default function App() {
         ...(r.visitDate ? { [t.visitDate]: r.visitDate } : {}),
         ...(r.deliveryDate ? { [t.deliveryDate]: r.deliveryDate } : {}),
         ...(r.pickupDate ? { [t.pickupDate]: r.pickupDate } : {}),
+        ...(r.portfolioDate ? { [t.portfolioDate]: r.portfolioDate } : {}),
         ...(r.notes ? { [t.notes]: r.notes } : {}),
         ...(r.totalAmount ? { [t.total]: r.totalAmount } : {}),
         [t.loginDate]: r.createdAt ? format(r.createdAt.toDate(), 'yyyy/MM/dd HH:mm') : ''
@@ -509,6 +514,7 @@ export default function App() {
             totalAmount: inspectionFormData.totalAmount || 0,
             ...(inspectionFormData.deliveryDate ? { deliveryDate: inspectionFormData.deliveryDate } : {}),
             ...(inspectionFormData.pickupDate ? { pickupDate: inspectionFormData.pickupDate } : {}),
+            ...(inspectionFormData.portfolioDate ? { portfolioDate: inspectionFormData.portfolioDate } : {}),
             ...(inspectionFormData.contractDate ? { contractDate: inspectionFormData.contractDate } : {}),
             ...(inspectionFormData.portfolio ? { portfolio: inspectionFormData.portfolio } : {}),
           });
@@ -521,6 +527,7 @@ export default function App() {
             visitDateTo: inspectionFormData.visitDateTo,
             notes: inspectionFormData.notes,
             pickupDate: inspectionFormData.pickupDate || '',
+            portfolioDate: inspectionFormData.portfolioDate || '',
           });
         }
         toast.success(lang === 'ar' ? "تم الحفظ بنجاح" : "Saved successfully");
@@ -531,7 +538,7 @@ export default function App() {
         setInspectionFormData({ 
           customerName: '', address: '', phone: '', visitDate: '', visitDateTo: '', 
           notes: '', rooms: 0, pieces: [], totalAmount: 0, deliveryDate: '', pickupDate: '', 
-          contractDate: '', portfolio: '' 
+          portfolioDate: '', contractDate: '', portfolio: '' 
         });
       } catch (err: any) { toast.error(err.message); }
       setIsLoading(false);
@@ -564,7 +571,7 @@ export default function App() {
       setInspectionFormData({ 
         customerName: '', address: '', phone: '', visitDate: '', visitDateTo: '', 
         notes: '', rooms: 0, pieces: [], totalAmount: 0, deliveryDate: '', pickupDate: '', 
-        contractDate: '', portfolio: '' 
+        portfolioDate: '', contractDate: '', portfolio: '' 
       });
     } catch (err: any) { toast.error(err.message); }
     setIsLoading(false);
@@ -1249,7 +1256,10 @@ export default function App() {
                      )}
                      {editingCollection === 'contracted_customers' && <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{lang === 'ar' ? 'تاريخ العقد' : 'Contract Date'}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.contractDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, contractDate: e.target.value })} /></div>}
                     {editingCollection === 'contracted_customers' && (
-                      <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.portfolio}</label><input className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" placeholder="https://drive.google.com/..." value={inspectionFormData.portfolio || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, portfolio: e.target.value })} /></div>
+                      <div className="space-y-4">
+                        <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.portfolio}</label><input className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" placeholder="https://drive.google.com/..." value={inspectionFormData.portfolio || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, portfolio: e.target.value })} /></div>
+                        <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.portfolioDate}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.portfolioDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, portfolioDate: e.target.value })} /></div>
+                      </div>
                     )}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.visitDate}</label><input required type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.visitDate} onChange={e => setInspectionFormData({ ...inspectionFormData, visitDate: e.target.value })} /></div>
@@ -1386,8 +1396,24 @@ export default function App() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-6">
+                  <div><label className="text-[10px] font-bold uppercase text-zinc-400">{t.visitDate}</label><p className="font-semibold">{selectedRecord.visitDate || '-'}</p></div>
+                  <div><label className="text-[10px] font-bold uppercase text-zinc-400">{t.visitDateTo}</label><p className="font-semibold">{selectedRecord.visitDateTo || '-'}</p></div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-6 pt-4 border-t border-black/5">
                   <div><label className="text-[10px] font-bold uppercase text-zinc-400">{t.rooms}</label><p className="font-semibold">{selectedRecord.rooms || 0}</p></div>
+                  <div><label className="text-[10px] font-bold uppercase text-zinc-400">{t.deliveryDate}</label><p className="font-semibold">{selectedRecord.deliveryDate || '-'}</p></div>
+                  <div><label className="text-[10px] font-bold uppercase text-zinc-400">{t.pickupDate}</label><p className="font-semibold">{selectedRecord.pickupDate || '-'}</p></div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-6">
+                  <div><label className="text-[10px] font-bold uppercase text-zinc-400">{lang === 'ar' ? 'تاريخ العقد' : 'Contract Date'}</label><p className="font-semibold">{selectedRecord.contractDate || '-'}</p></div>
                   <div><label className="text-[10px] font-bold uppercase text-zinc-400">{t.total}</label><p className="font-bold text-accent-tan">{(selectedRecord.totalAmount || 0).toLocaleString()} EGP</p></div>
+                </div>
+
+                <div className="pt-4 border-t border-black/5">
+                  <label className="text-[10px] font-bold uppercase text-zinc-400">{t.portfolioDate}</label>
+                  <p className="font-semibold">{selectedRecord.portfolioDate || '-'}</p>
                 </div>
 
                 {selectedRecord.pieces && selectedRecord.pieces.length > 0 && (
