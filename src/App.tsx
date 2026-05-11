@@ -692,7 +692,7 @@ export default function App() {
                         </h1>
                       </div>
                       <div className="flex flex-wrap gap-4">
-                        {adminSubView === 'customers' && currentUser?.email === ADMIN_EMAIL && (
+                        {(adminSubView === 'customers' || adminSubView === 'contracted' || adminSubView === 'not-contracted') && currentUser?.email === ADMIN_EMAIL && (
                           <button onClick={handleOpenAddModal} className="btn-3d btn-3d-glass px-6 py-4 rounded-2xl flex items-center gap-3 font-bold text-xs uppercase"><Plus className="w-4 h-4" /> {t.addCustomerBtn}</button>
                         )}
 
