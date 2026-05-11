@@ -65,6 +65,8 @@ interface CustomerRecord {
   visitDate?: string;
   visitDateTo?: string;
   notes?: string;
+  deliveryDate?: string;
+  pickupDate?: string;
 }
 
 interface FurniturePiece {
@@ -89,6 +91,7 @@ interface Inspection {
   // Contracting details
   portfolio?: string;
   deliveryDate?: string;
+  pickupDate?: string;
   contractDate?: string;
 }
 
@@ -167,6 +170,7 @@ const translations = {
     refusedBtn: "Not Contracted",
     portfolio: "Portfolio",
     deliveryDate: "Delivery Date",
+    pickupDate: "Pickup Date",
     contractImg: "Contract Image",
     viewOnly: "Viewer (Read Only)",
     editor: "Editor (Full Access)",
@@ -235,6 +239,7 @@ const translations = {
     refusedBtn: "لم يتم التعاقد",
     portfolio: "البورتفوليو",
     deliveryDate: "تاريخ التسليم",
+    pickupDate: "تاريخ الاستلام",
     contractImg: "صورة العقد",
     viewOnly: "مشاهد فقط",
     editor: "مسؤول (صلاحية كاملة)",
@@ -458,6 +463,31 @@ export default function App() {
   };
 
   const handleLogout = () => { signOut(auth); toast.success("Logged out"); };
+  
+  const handleExportExcel = (data: any[], fileName: string) => {
+    try {
+      const exportData = data.map(r => ({
+        [t.customerName]: r.customerName || r.name,
+        [t.phoneNumber]: r.phone,
+        ...(r.address ? { [t.address]: r.address } : {}),
+        ...(r.visitDate ? { [t.visitDate]: r.visitDate } : {}),
+        ...(r.deliveryDate ? { [t.deliveryDate]: r.deliveryDate } : {}),
+        ...(r.pickupDate ? { [t.pickupDate]: r.pickupDate } : {}),
+        ...(r.notes ? { [t.notes]: r.notes } : {}),
+        ...(r.totalAmount ? { [t.total]: r.totalAmount } : {}),
+        [t.loginDate]: r.createdAt ? format(r.createdAt.toDate(), 'yyyy/MM/dd HH:mm') : ''
+      }));
+      
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Data");
+      XLSX.writeFile(wb, `${fileName}.xlsx`);
+      toast.success(lang === 'ar' ? "تم تصدير الملف" : "Excel exported");
+    } catch (err) {
+      console.error(err);
+      toast.error("Export failed");
+    }
+  };
 
    const handleInspectionSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -478,6 +508,7 @@ export default function App() {
             pieces: inspectionFormData.pieces || [],
             totalAmount: inspectionFormData.totalAmount || 0,
             ...(inspectionFormData.deliveryDate ? { deliveryDate: inspectionFormData.deliveryDate } : {}),
+            ...(inspectionFormData.pickupDate ? { pickupDate: inspectionFormData.pickupDate } : {}),
             ...(inspectionFormData.contractDate ? { contractDate: inspectionFormData.contractDate } : {}),
             ...(inspectionFormData.portfolio ? { portfolio: inspectionFormData.portfolio } : {}),
           });
@@ -489,6 +520,7 @@ export default function App() {
             visitDate: inspectionFormData.visitDate,
             visitDateTo: inspectionFormData.visitDateTo,
             notes: inspectionFormData.notes,
+            pickupDate: inspectionFormData.pickupDate || '',
           });
         }
         toast.success(lang === 'ar' ? "تم الحفظ بنجاح" : "Saved successfully");
@@ -496,7 +528,11 @@ export default function App() {
         setInspectionStep(1);
         setEditingId(null);
         setEditingCollection(null);
-        setInspectionFormData({ customerName: '', address: '', phone: '', visitDate: '', visitDateTo: '', notes: '', rooms: 0, pieces: [], totalAmount: 0 });
+        setInspectionFormData({ 
+          customerName: '', address: '', phone: '', visitDate: '', visitDateTo: '', 
+          notes: '', rooms: 0, pieces: [], totalAmount: 0, deliveryDate: '', pickupDate: '', 
+          contractDate: '', portfolio: '' 
+        });
       } catch (err: any) { toast.error(err.message); }
       setIsLoading(false);
       return;
@@ -525,7 +561,11 @@ export default function App() {
       setIsInspectionModalOpen(false);
       setInspectionStep(1);
       setEditingId(null);
-      setInspectionFormData({ customerName: '', address: '', phone: '', visitDate: '', visitDateTo: '', notes: '', rooms: 0, pieces: [], totalAmount: 0 });
+      setInspectionFormData({ 
+        customerName: '', address: '', phone: '', visitDate: '', visitDateTo: '', 
+        notes: '', rooms: 0, pieces: [], totalAmount: 0, deliveryDate: '', pickupDate: '', 
+        contractDate: '', portfolio: '' 
+      });
     } catch (err: any) { toast.error(err.message); }
     setIsLoading(false);
   };
@@ -733,7 +773,17 @@ export default function App() {
                       </div>
                       <div className="flex flex-wrap gap-4">
                         {(adminSubView === 'customers' || adminSubView === 'contracted' || adminSubView === 'not-contracted') && currentUser?.email === ADMIN_EMAIL && (
-                          <button onClick={handleOpenAddModal} className="btn-3d btn-3d-glass px-6 py-4 rounded-2xl flex items-center gap-3 font-bold text-xs uppercase"><Plus className="w-4 h-4" /> {t.addCustomerBtn}</button>
+                          <div className="flex gap-2">
+                            <button onClick={handleOpenAddModal} className="btn-3d btn-3d-glass px-6 py-4 rounded-2xl flex items-center gap-3 font-bold text-xs uppercase"><Plus className="w-4 h-4" /> {t.addCustomerBtn}</button>
+                            {adminSubView === 'contracted' && (
+                              <button 
+                                onClick={() => handleExportExcel(contractedCustomers, `العملاء_المتعاقدين_${format(new Date(), 'yyyy-MM-dd')}`)} 
+                                className="btn-3d btn-3d-glass px-6 py-4 rounded-2xl flex items-center gap-3 font-bold text-xs uppercase text-accent-tan"
+                              >
+                                <Download className="w-4 h-4" /> {t.exportExcel}
+                              </button>
+                            )}
+                          </div>
                         )}
 
                         <div className="relative flex items-center">
@@ -959,6 +1009,7 @@ export default function App() {
                               <tr className="border-b border-black/5 text-[10px] font-bold uppercase text-zinc-400 tracking-widest">
                                 <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.userName}</th>
                                 <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.phoneNumber}</th>
+                                <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.pickupDate}</th>
                                 <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.loginDate}</th>
                                 <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.actions}</th>
                               </tr>
@@ -970,6 +1021,7 @@ export default function App() {
                                   <td className="px-4 py-6 text-center">
                                     <span className="bg-zinc-100 px-3 py-1.5 rounded-xl font-mono text-xs text-zinc-600 group-hover:bg-white transition-colors ">{r.phone}</span>
                                   </td>
+                                  <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.pickupDate || '-'}</td>
                                   <td className="px-4 py-6 text-sm text-zinc-500 font-mono text-center">{r.createdAt ? format(r.createdAt.toDate(), 'yyyy/MM/dd HH:mm') : '...'}</td>
                                   {currentUser?.email === ADMIN_EMAIL && (
                                     <td className="px-4 py-4">
@@ -1057,6 +1109,7 @@ export default function App() {
                                   <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.customerName}</th>
                                   <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.phoneNumber}</th>
                                   {adminSubView === 'contracted' && <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.deliveryDate}</th>}
+                                  {adminSubView === 'contracted' && <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.pickupDate}</th>}
                                   {adminSubView === 'inspections' && <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.visitDate}</th>}
                                   <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center w-px whitespace-nowrap">{t.actions}</th>
                                 </tr>
@@ -1069,6 +1122,7 @@ export default function App() {
                                     <td className="px-4 py-6 font-semibold text-center">{r.customerName}</td>
                                     <td className="px-4 py-6 text-center"><span className="bg-black/5 px-2 py-1 rounded font-mono text-sm inline-block">{r.phone}</span></td>
                                     {adminSubView === 'contracted' && <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.deliveryDate}</td>}
+                                    {adminSubView === 'contracted' && <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.pickupDate || '-'}</td>}
                                     {adminSubView === 'inspections' && <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.visitDate}</td>}
                                     <td className="px-4 py-6 text-center flex gap-3 justify-center">
                                       {adminSubView === 'inspections' && currentUser?.email === ADMIN_EMAIL && (
@@ -1187,12 +1241,13 @@ export default function App() {
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.customerName}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.customerName} onChange={e => setInspectionFormData({ ...inspectionFormData, customerName: e.target.value })} /></div>
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.address}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.address} onChange={e => setInspectionFormData({ ...inspectionFormData, address: e.target.value })} /></div>
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.phoneNumber}</label><input required type="tel" minLength={11} maxLength={11} pattern="[0-9]{11}" title={lang === 'ar' ? 'يجب أن يكون رقم الهاتف 11 رقماً بالضبط' : 'Phone number must be exactly 11 digits'} className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.phone} onChange={e => setInspectionFormData({ ...inspectionFormData, phone: e.target.value })} /></div>
-                    {editingCollection === 'contracted_customers' && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.deliveryDate}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.deliveryDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, deliveryDate: e.target.value })} /></div>
-                        <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{lang === 'ar' ? 'تاريخ العقد' : 'Contract Date'}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.contractDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, contractDate: e.target.value })} /></div>
-                      </div>
-                    )}
+                     {(editingCollection === 'contracted_customers' || editingCollection === 'customers') && (
+                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                         <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.pickupDate}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.pickupDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, pickupDate: e.target.value })} /></div>
+                         {(editingCollection === 'contracted_customers') && <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.deliveryDate}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.deliveryDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, deliveryDate: e.target.value })} /></div>}
+                       </div>
+                     )}
+                     {editingCollection === 'contracted_customers' && <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{lang === 'ar' ? 'تاريخ العقد' : 'Contract Date'}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.contractDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, contractDate: e.target.value })} /></div>}
                     {editingCollection === 'contracted_customers' && (
                       <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.portfolio}</label><input className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" placeholder="https://drive.google.com/..." value={inspectionFormData.portfolio || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, portfolio: e.target.value })} /></div>
                     )}
