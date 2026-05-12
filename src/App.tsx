@@ -62,6 +62,7 @@ interface CustomerRecord {
   createdAt: Timestamp;
   // Extra fields saved at Step 1
   address?: string;
+  deliveryAddress?: string;
   visitDate?: string;
   visitDateTo?: string;
   notes?: string;
@@ -81,6 +82,8 @@ interface Inspection {
   id: string;
   customerName: string;
   phone: string;
+  address?: string;
+  deliveryAddress?: string;
   visitDate: string;
   visitDateTo?: string;
   notes: string;
@@ -159,7 +162,8 @@ const translations = {
     step2: "During Visit",
     step3: "Contracting",
     customerName: "Customer Name",
-    address: "Delivery Address",
+    address: "Pickup Address",
+    deliveryAddress: "Delivery Address",
     visitDate: "Visit Date (From)",
     visitDateTo: "Visit Date (To)",
     notes: "Notes",
@@ -230,6 +234,7 @@ const translations = {
     step3: "التعاقد",
     customerName: "اسم العميل",
     address: "عنوان الاستلام",
+    deliveryAddress: "عنوان التسليم",
     visitDate: "تاريخ المعاينة (من)",
     visitDateTo: "تاريخ المعاينة (إلى)",
     notes: "ملاحظات",
@@ -305,6 +310,7 @@ export default function App() {
   const [inspectionFormData, setInspectionFormData] = useState<Partial<Inspection>>({
     customerName: '',
     address: '',
+    deliveryAddress: '',
     phone: '',
     visitDate: '',
     visitDateTo: '',
@@ -496,6 +502,7 @@ export default function App() {
         [t.customerName]: r.customerName || r.name,
         [t.phoneNumber]: r.phone,
         ...(r.address ? { [t.address]: r.address } : {}),
+        ...(r.deliveryAddress ? { [t.deliveryAddress]: r.deliveryAddress } : {}),
         ...(r.visitDate ? { [t.visitDate]: r.visitDate } : {}),
         ...(r.deliveryDate ? { [t.deliveryDate]: r.deliveryDate } : {}),
         ...(r.pickupDate ? { [t.pickupDate]: r.pickupDate } : {}),
@@ -527,6 +534,7 @@ export default function App() {
           await updateDoc(doc(db, collectionName, inspectionFormData.id), {
             customerName: inspectionFormData.customerName?.trim(),
             address: inspectionFormData.address?.trim(),
+            deliveryAddress: inspectionFormData.deliveryAddress?.trim(),
             phone: inspectionFormData.phone?.trim(),
             visitDate: inspectionFormData.visitDate,
             visitDateTo: inspectionFormData.visitDateTo,
@@ -545,6 +553,7 @@ export default function App() {
             name: inspectionFormData.customerName?.trim(),
             phone: inspectionFormData.phone?.trim(),
             address: inspectionFormData.address?.trim(),
+            deliveryAddress: inspectionFormData.deliveryAddress?.trim(),
             visitDate: inspectionFormData.visitDate,
             visitDateTo: inspectionFormData.visitDateTo,
             notes: inspectionFormData.notes,
@@ -558,7 +567,7 @@ export default function App() {
         setEditingId(null);
         setEditingCollection(null);
         setInspectionFormData({ 
-          customerName: '', address: '', phone: '', visitDate: '', visitDateTo: '', 
+          customerName: '', address: '', deliveryAddress: '', phone: '', visitDate: '', visitDateTo: '', 
           notes: '', rooms: 0, pieces: [], totalAmount: 0, deliveryDate: '', pickupDate: '', 
           portfolioDate: '', contractDate: '', portfolio: '' 
         });
@@ -591,7 +600,7 @@ export default function App() {
       setInspectionStep(1);
       setEditingId(null);
       setInspectionFormData({ 
-        customerName: '', address: '', phone: '', visitDate: '', visitDateTo: '', 
+        customerName: '', address: '', deliveryAddress: '', phone: '', visitDate: '', visitDateTo: '', 
         notes: '', rooms: 0, pieces: [], totalAmount: 0, deliveryDate: '', pickupDate: '', 
         portfolioDate: '', contractDate: '', portfolio: '' 
       });
@@ -1279,6 +1288,7 @@ export default function App() {
                   <div className="space-y-4">
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.customerName}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.customerName} onChange={e => setInspectionFormData({ ...inspectionFormData, customerName: e.target.value })} /></div>
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.address}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.address} onChange={e => setInspectionFormData({ ...inspectionFormData, address: e.target.value })} /></div>
+                    <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.deliveryAddress}</label><input className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.deliveryAddress || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, deliveryAddress: e.target.value })} /></div>
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.phoneNumber}</label><input required type="tel" minLength={11} maxLength={11} pattern="[0-9]{11}" title={lang === 'ar' ? 'يجب أن يكون رقم الهاتف 11 رقماً بالضبط' : 'Phone number must be exactly 11 digits'} className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.phone} onChange={e => setInspectionFormData({ ...inspectionFormData, phone: e.target.value })} /></div>
                      {(editingCollection === 'contracted_customers' || editingCollection === 'customers') && (
                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1438,11 +1448,19 @@ export default function App() {
                       <p className="text-lg font-bold text-zinc-900 font-mono tracking-wider">{selectedRecord.phone}</p>
                     </div>
                   </div>
-                  <div className="mt-6 pt-6 border-t border-zinc-100">
-                    <label className="text-[10px] font-bold uppercase text-zinc-400 flex items-center gap-2 mb-2">
-                      <Languages className="w-3 h-3" /> {t.address}
-                    </label>
-                    <p className="text-zinc-700 leading-relaxed font-semibold">{selectedRecord.address || '-'}</p>
+                  <div className="mt-6 pt-6 border-t border-zinc-100 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-zinc-400 flex items-center gap-2 mb-2">
+                        <Languages className="w-3 h-3" /> {t.address}
+                      </label>
+                      <p className="text-zinc-700 leading-relaxed font-semibold">{selectedRecord.address || '-'}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-zinc-400 flex items-center gap-2 mb-2">
+                        <Languages className="w-3 h-3 text-accent-tan" /> {t.deliveryAddress}
+                      </label>
+                      <p className="text-zinc-700 leading-relaxed font-semibold">{selectedRecord.deliveryAddress || '-'}</p>
+                    </div>
                   </div>
                 </div>
 
