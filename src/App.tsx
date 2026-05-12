@@ -318,6 +318,18 @@ export default function App() {
   const [selectedRecord, setSelectedRecord] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
   
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [confirmModalConfig, setConfirmModalConfig] = useState<{
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ title: '', message: '', onConfirm: () => {} });
+
+  const triggerConfirm = (title: string, message: string, onConfirm: () => void) => {
+    setConfirmModalConfig({ title, message, onConfirm });
+    setIsConfirmModalOpen(true);
+  };
+  
   const [isEditCatalogModalOpen, setIsEditCatalogModalOpen] = useState(false);
   const [editingCatalogRow, setEditingCatalogRow] = useState<{sheetId: string, rowIndex: number, data: any} | null>(null);
   const [expandedPieceDetails, setExpandedPieceDetails] = useState<number[]>([]);
@@ -398,12 +410,17 @@ export default function App() {
   };
 
   const deleteCatalogSection = async (id: string) => {
-    if (!confirm(lang === 'ar' ? "هل أنت متأكد من حذف هذا الملف؟" : "Are you sure you want to delete this sheet?")) return;
-    try {
-      await deleteDoc(doc(db, 'catalogs', id));
-      if (selectedSheetId === id) setSelectedSheetId(null);
-      toast.success(lang === 'ar' ? "تم الحذف" : "Sheet deleted");
-    } catch { toast.error("Failed to delete"); }
+    triggerConfirm(
+      lang === 'ar' ? "حذف الملف" : "Delete Sheet",
+      lang === 'ar' ? "هل أنت متأكد من حذف هذا الملف؟" : "Are you sure you want to delete this sheet?",
+      async () => {
+        try {
+          await deleteDoc(doc(db, 'catalogs', id));
+          if (selectedSheetId === id) setSelectedSheetId(null);
+          toast.success(lang === 'ar' ? "تم الحذف" : "Sheet deleted");
+        } catch { toast.error("Failed to delete"); }
+      }
+    );
   };
 
   const handleEditCatalogRow = (sheetId: string, rowIndex: number, rowData: any) => {
@@ -459,11 +476,16 @@ export default function App() {
   };
 
   const handleDeleteCustomer = async (id: string) => {
-    if (!confirm(lang === 'ar' ? "هل أنت متأكد؟" : "Are you sure?")) return;
-    try {
-      await deleteDoc(doc(db, 'customers', id));
-      toast.success(lang === 'ar' ? "تم حذف العميل" : "Customer removed");
-    } catch { toast.error("Unauthorized"); }
+    triggerConfirm(
+      lang === 'ar' ? "حذف العميل" : "Remove Customer",
+      lang === 'ar' ? "هل أنت متأكد؟" : "Are you sure?",
+      async () => {
+        try {
+          await deleteDoc(doc(db, 'customers', id));
+          toast.success(lang === 'ar' ? "تم حذف العميل" : "Customer removed");
+        } catch { toast.error("Unauthorized"); }
+      }
+    );
   };
 
   const handleLogout = () => { signOut(auth); toast.success("Logged out"); };
@@ -611,19 +633,29 @@ export default function App() {
   };
 
   const handleDeleteContracted = async (id: string) => {
-    if (!confirm(lang === 'ar' ? "هل أنت متأكد من حذف هذا السجل؟" : "Are you sure?")) return;
-    try {
-      await deleteDoc(doc(db, 'contracted_customers', id));
-      toast.success(lang === 'ar' ? "تم الحذف" : "Deleted");
-    } catch { toast.error("Unauthorized"); }
+    triggerConfirm(
+      lang === 'ar' ? "حذف السجل" : "Delete Record",
+      lang === 'ar' ? "هل أنت متأكد من حذف هذا السجل؟" : "Are you sure?",
+      async () => {
+        try {
+          await deleteDoc(doc(db, 'contracted_customers', id));
+          toast.success(lang === 'ar' ? "تم الحذف" : "Deleted");
+        } catch { toast.error("Unauthorized"); }
+      }
+    );
   };
 
   const handleDeleteNonContracted = async (id: string) => {
-    if (!confirm(lang === 'ar' ? "هل أنت متأكد من حذف هذا السجل؟" : "Are you sure?")) return;
-    try {
-      await deleteDoc(doc(db, 'non_contracted_customers', id));
-      toast.success(lang === 'ar' ? "تم الحذف" : "Deleted");
-    } catch { toast.error("Unauthorized"); }
+    triggerConfirm(
+      lang === 'ar' ? "حذف السجل" : "Delete Record",
+      lang === 'ar' ? "هل أنت متأكد من حذف هذا السجل؟" : "Are you sure?",
+      async () => {
+        try {
+          await deleteDoc(doc(db, 'non_contracted_customers', id));
+          toast.success(lang === 'ar' ? "تم الحذف" : "Deleted");
+        } catch { toast.error("Unauthorized"); }
+      }
+    );
   };
 
   const addPiece = (name: string) => {
@@ -997,7 +1029,7 @@ export default function App() {
                                 <div className="flex justify-between items-center pt-4 border-t border-zinc-100 relative z-10">
                                   <div className="flex gap-2">
                                     <button onClick={() => { setSelectedRecord(ins); setIsDetailModalOpen(true); }} className="p-3 bg-zinc-50 text-zinc-400 rounded-2xl hover:bg-zinc-100 hover:text-zinc-600 transition-all"><Eye className="w-5 h-5" /></button>
-                                    <button onClick={async () => { if(confirm(lang === 'ar' ? "حذف؟" : "Delete?")) await deleteDoc(doc(db, 'inspections', ins.id)); }} className="p-3 bg-red-50 text-red-400 rounded-2xl hover:bg-red-100 transition-all"><Trash2 className="w-5 h-5" /></button>
+                                    <button onClick={() => triggerConfirm(lang === 'ar' ? "حذف" : "Delete", lang === 'ar' ? "حذف؟" : "Delete?", async () => { await deleteDoc(doc(db, 'inspections', ins.id)); toast.success(lang === 'ar' ? "تم الحذف" : "Deleted"); })} className="p-3 bg-red-50 text-red-400 rounded-2xl hover:bg-red-100 transition-all"><Trash2 className="w-5 h-5" /></button>
                                   </div>
                                   <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-tighter">ID: {ins.id.slice(0,8)}</span>
                                 </div>
@@ -1592,6 +1624,24 @@ export default function App() {
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {isConfirmModalOpen && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsConfirmModalOpen(false)} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white rounded-[2.5rem] w-full max-w-sm p-10 shadow-2xl relative z-10 overflow-hidden text-center">
+              <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Trash2 className="w-10 h-10 text-red-500" />
+              </div>
+              <h2 className="text-2xl font-bold text-zinc-900 mb-2">{confirmModalConfig.title}</h2>
+              <p className="text-zinc-500 mb-10 leading-relaxed">{confirmModalConfig.message}</p>
+              <div className="flex gap-4">
+                <button onClick={() => setIsConfirmModalOpen(false)} className="flex-1 py-4 border border-zinc-200 rounded-2xl font-bold uppercase text-xs tracking-widest hover:bg-zinc-50 transition-all active:scale-95 btn-3d btn-3d-glass">{lang === 'ar' ? 'إلغاء' : 'Cancel'}</button>
+                <button onClick={() => { confirmModalConfig.onConfirm(); setIsConfirmModalOpen(false); }} className="flex-1 py-4 bg-red-500 text-white rounded-2xl font-bold uppercase text-xs tracking-widest hover:bg-red-600 transition-all active:scale-95 shadow-lg shadow-red-200 btn-3d btn-3d-danger">{lang === 'ar' ? 'تأكيد' : 'Confirm'}</button>
+              </div>
             </motion.div>
           </div>
         )}
