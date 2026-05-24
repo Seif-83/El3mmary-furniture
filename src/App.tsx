@@ -421,6 +421,29 @@ export default function App() {
     setNotContractedCustomers((nonContrData || []).map(mapInspectionFromDB));
   };
 
+  const isLegacyInspectionStatusConstraintError = (error: any) => {
+    const raw = [error?.message, error?.details, error?.hint].filter(Boolean).join(' ').toLowerCase();
+    return raw.includes('inspections_status_check');
+  };
+
+  const insertInspectionRecord = async (inspectionDbData: Record<string, any>) => {
+    const { error } = await supabase.from('inspections').insert(inspectionDbData);
+
+    if (!error) return;
+
+    if (isLegacyInspectionStatusConstraintError(error)) {
+      const { error: legacyInsertError } = await supabase.from('inspections').insert({
+        ...inspectionDbData,
+        status: 'scheduled',
+      });
+
+      if (!legacyInsertError) return;
+      throw legacyInsertError;
+    }
+
+    throw error;
+  };
+
   const handleDeleteInspection = async (id: string) => {
     try {
       const { error } = await supabase.from('inspections').delete().eq('id', id);
@@ -717,8 +740,7 @@ export default function App() {
         if (error) throw error;
       } else {
         // Create new inspection and remove from customers
-        const { error: insertError } = await supabase.from('inspections').insert(inspectionDbData);
-        if (insertError) throw insertError;
+        await insertInspectionRecord(inspectionDbData);
         if (editingId) {
           try {
             const { error: deleteError } = await supabase.from('customers').delete().eq('id', editingId);
