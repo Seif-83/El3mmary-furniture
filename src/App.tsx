@@ -222,7 +222,7 @@ const translations: Record<'en' | 'ar', Record<string, string>> = {
     contracted: "العملاء المتعاقدين",
     notContracted: "عملاء غير متعاقدين",
     addInspection: "معاينة جديدة",
-    step1: "قبل المعاينة",
+    step1: "تعديل",
     step2: "أثناء المعاينة",
     step3: "التعاقد",
     customerName: "اسم العميل",
@@ -240,7 +240,7 @@ const translations: Record<'en' | 'ar', Record<string, string>> = {
     refusedBtn: "لم يتم التعاقد",
     portfolio: "البورتفوليو",
     deliveryDate: "تاريخ التسليم",
-    pickupDate: "تاريخ الاستلام",
+    pickupDate: "عنوان المعاينة",
     portfolioDate: "تاريخ البورتفوليو",
     contractImg: "صورة العقد",
     viewOnly: "مشاهد فقط",
@@ -382,7 +382,8 @@ export default function App() {
     username: '', 
     password: '',
     name: '',
-    phone: ''
+    phone: '',
+    pickupDate: ''
   });
 
   const clearDashboardData = () => {
@@ -650,6 +651,43 @@ export default function App() {
     );
   };
 
+  const handleMoveCustomerToNonContracted = async (customer: CustomerRecord) => {
+    if (!ensureAdminAccess()) return;
+
+    triggerConfirm(
+      lang === 'ar' ? "نقل العميل إلى غير المتعاقدين" : "Move customer to Non-Contracted",
+      lang === 'ar' ? "هل تريد نقل هذا العميل إلى قائمة العملاء غير المتعاقدين؟" : "Do you want to move this customer to the non-contracted list?",
+      async () => {
+        try {
+          const { error } = await supabase.from('non_contracted_customers').insert({
+            customer_name: customer.name?.trim(),
+            address: customer.address?.trim() || null,
+            delivery_address: customer.deliveryAddress?.trim() || null,
+            phone: customer.phone?.trim(),
+            visit_date: customer.visitDate || null,
+            visit_date_to: customer.visitDateTo || null,
+            notes: customer.notes || null,
+            rooms: 0,
+            pieces: [],
+            total_amount: 0,
+            status: 'refused',
+            finalized_at: new Date().toISOString()
+          });
+          if (error) throw error;
+
+          const { error: deleteError } = await supabase.from('customers').delete().eq('id', customer.id);
+          if (deleteError) throw deleteError;
+
+          await refreshAllData();
+          toast.success(lang === 'ar' ? "تم نقل العميل إلى العملاء غير المتعاقدين" : "Customer moved to non-contracted customers");
+        } catch (err: any) {
+          console.error(err);
+          toast.error(err?.message || (lang === 'ar' ? "فشل النقل" : "Move failed"));
+        }
+      }
+    );
+  };
+
   const handleLogout = async () => { await supabase.auth.signOut(); toast.success("Logged out"); };
   
   const handleExportExcel = (data: any[], fileName: string) => {
@@ -902,9 +940,9 @@ export default function App() {
     setInspectionFormData({ ...inspectionFormData, pieces, totalAmount });
   };
 
-  const handleOpenAddModal = () => { setFormData({ ...formData, name: '', phone: '' }); setModalMode('add'); setEditingCollection(null); setIsModalOpen(true); };
+  const handleOpenAddModal = () => { setFormData({ ...formData, name: '', phone: '', pickupDate: '' }); setModalMode('add'); setEditingCollection(null); setIsModalOpen(true); };
 
-  const handleOpenEditModal = (record: any) => { setFormData({ ...formData, name: record.name, phone: record.phone }); setEditingId(record.id); setEditingCollection('customers'); setModalMode('edit'); setIsModalOpen(true); };
+  const handleOpenEditModal = (record: any) => { setFormData({ ...formData, name: record.name, phone: record.phone, pickupDate: record.pickupDate || '' }); setEditingId(record.id); setEditingCollection('customers'); setModalMode('edit'); setIsModalOpen(true); };
 
   const openEditFinalizedRecord = (record: Inspection, collection: 'contracted_customers' | 'non_contracted_customers') => {
     setInspectionFormData({ ...record });
@@ -936,7 +974,8 @@ export default function App() {
         
         const { error: insertError } = await supabase.from('customers').insert({
           name: formData.name.trim(),
-          phone: formData.phone.trim()
+          phone: formData.phone.trim(),
+          pickup_date: formData.pickupDate || null
         });
         if (insertError) throw insertError;
         await refreshAllData();
@@ -946,7 +985,8 @@ export default function App() {
           .from('customers')
           .update({
             name: formData.name.trim(),
-            phone: formData.phone.trim()
+            phone: formData.phone.trim(),
+            pickup_date: formData.pickupDate || null
           })
           .eq('id', editingId!);
         if (updateError) throw updateError;
@@ -1233,7 +1273,7 @@ export default function App() {
                         <div className="space-y-4">
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {inspections.filter(ins => !searchQuery || ins.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) || ins.phone?.includes(searchQuery)).map(ins => (
-                              <div key={ins.id} className="bg-white/80 backdrop-blur-xl p-8 rounded-[2.5rem] flex flex-col gap-6 border border-white/50 shadow-xl hover:shadow-2xl transition-all group relative overflow-hidden">
+                              <div id={`inspection-${ins.id}`} key={ins.id} className="bg-white/80 backdrop-blur-xl p-8 rounded-[2.5rem] flex flex-col gap-6 border border-white/50 shadow-xl hover:shadow-2xl transition-all group relative overflow-hidden">
                                 <div className="absolute top-0 right-0 w-32 h-32 bg-accent-tan/5 rounded-full -mr-16 -mt-16 blur-3xl group-hover:bg-accent-tan/10 transition-colors" />
                                 
                                 <div className="flex justify-between items-start relative z-10">
@@ -1254,11 +1294,14 @@ export default function App() {
 
                                 {isAdminUser && (
                                   <div className="grid grid-cols-2 gap-3 relative z-10">
-                                    <button onClick={() => { setInspectionFormData(ins); setInspectionStep(3); setIsInspectionModalOpen(true); }} className="btn-3d btn-3d-zinc flex flex-col items-center justify-center gap-2 bg-zinc-900 text-white p-4 rounded-3xl font-bold uppercase transition-all hover:scale-[1.02] active:scale-95 shadow-lg shadow-zinc-200">
+                                    <button onClick={async () => {
+                                      await handleFinalizeInspection('contracted', ins);
+                                      setAdminSubView('contracted');
+                                    }} className="btn-3d btn-3d-glass flex flex-col items-center justify-center gap-2 bg-white border border-zinc-100 text-zinc-400 p-4 rounded-3xl font-bold uppercase transition-all hover:scale-[1.02] active:scale-95 hover:text-danger hover:border-danger/20">
                                       <CheckCircle2 className="w-5 h-5" />
                                       <span className="text-[11px] tracking-widest">{t.contractedBtn}</span>
                                     </button>
-                                    <button onClick={() => handleFinalizeInspection('refused', ins)} className="btn-3d btn-3d-glass flex flex-col items-center justify-center gap-2 bg-white border border-zinc-100 text-zinc-400 p-4 rounded-3xl font-bold uppercase transition-all hover:scale-[1.02] active:scale-95 hover:text-danger hover:border-danger/20">
+                                    <button onClick={() => handleFinalizeInspection('refused', ins)} className="btn-3d btn-3d-red flex flex-col items-center justify-center gap-2 bg-red-50 text-red-500 p-4 rounded-3xl font-bold uppercase transition-all hover:bg-red-100 active:scale-95 border border-red-100">
                                       <X className="w-5 h-5" />
                                       <span className="text-[11px] tracking-widest">{t.refusedBtn}</span>
                                     </button>
@@ -1305,30 +1348,38 @@ export default function App() {
                                   <td className="px-4 py-6 text-sm text-zinc-500 font-mono text-center">{r.createdAt ? format(r.createdAt.toDate(), 'yyyy/MM/dd HH:mm') : '...'}</td>
                                   <td className="px-4 py-4">
                                     <div className="flex gap-4 justify-between items-center w-full">
-                                      <button onClick={() => { setSelectedRecord(r); setIsDetailModalOpen(true); }} className="flex items-center gap-2 bg-zinc-100 text-zinc-700 px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-zinc-200 active:scale-95 transition-all duration-200 shadow-sm">
-                                        <Eye className="w-4 h-4" />
-                                        <span>{lang === 'ar' ? 'عرض' : 'View'}</span>
-                                      </button>
                                       {isAdminUser && (
                                         <>
-                                        <button onClick={() => {
-                                          setInspectionFormData({ 
-                                            customerName: r.name, 
-                                            phone: r.phone,
-                                            id: undefined,
-                                            address: (r as any).address || '',
-                                            visitDate: (r as any).visitDate || '',
-                                            visitDateTo: (r as any).visitDateTo || '',
-                                            notes: (r as any).notes || '',
-                                            rooms: 0, pieces: [], totalAmount: 0 
-                                          });
-                                          setEditingId(r.id);
-                                          setInspectionStep(1);
-                                          setIsInspectionModalOpen(true);
-                                        }} className="flex items-center gap-2 bg-zinc-900 text-white px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-zinc-700 active:scale-95 transition-all duration-200 shadow-md shadow-zinc-200 hover:shadow-lg">
-                                          <Eye className="w-4 h-4" />
-                                          <span>{lang === 'ar' ? 'معاينة / تعديل' : 'Inspect / Edit'}</span>
-                                        </button>
+                                          <button onClick={() => handleOpenEditModal(r)} className="flex items-center gap-2 bg-zinc-800 text-white px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-zinc-700 active:scale-95 transition-all duration-200 shadow-md shadow-zinc-200 hover:shadow-lg">
+                                            <Edit2 className="w-4 h-4" />
+                                            <span>{lang === 'ar' ? 'تعديل' : 'Edit'}</span>
+                                          </button>
+                                          <button onClick={() => {
+                                            // Navigate to inspections view and prefill the inspection form for this customer,
+                                            // then open the inspection modal and smoothly scroll to the card.
+                                            setAdminSubView('inspections');
+                                            // Delay to allow inspections view to render
+                                            setTimeout(() => {
+                                              setInspectionFormData({
+                                                customerName: r.name,
+                                                phone: r.phone,
+                                                id: undefined,
+                                                address: (r as any).address || '',
+                                                visitDate: (r as any).visitDate || '',
+                                                visitDateTo: (r as any).visitDateTo || '',
+                                                notes: (r as any).notes || '',
+                                                rooms: 0, pieces: [], totalAmount: 0
+                                              });
+                                              setEditingId(r.id);
+                                              setInspectionStep(1);
+                                              setIsInspectionModalOpen(true);
+                                              const el = document.getElementById(`inspection-${r.id}`);
+                                              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                            }, 120);
+                                          }} className="ml-2 flex items-center gap-2 bg-accent-tan text-white px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-accent-tan/90 active:scale-95 transition-all duration-200 shadow-md">
+                                            <Eye className="w-4 h-4" />
+                                            <span>{lang === 'ar' ? 'بدء المعاينة' : 'Start Visit'}</span>
+                                          </button>
                                         <button onClick={() => handleDeleteCustomer(r.id)} className="btn-3d btn-3d-danger flex items-center gap-2 bg-white-50 text-white-500 border border-white-100 px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-white-500 hover:text-white active:scale-95 transition-all duration-200 hover:shadow-lg hover:shadow-white-100">
                                           <Trash2 className="w-4 h-4" />
                                           <span>{t.delete}</span>
@@ -1356,10 +1407,6 @@ export default function App() {
                               <span className="text-[10px] text-zinc-400 font-mono">{r.createdAt ? format(r.createdAt.toDate(), 'yyyy/MM/dd HH:mm') : '...'}</span>
                             </div>
                             <div className="flex gap-2 pt-4 border-t border-zinc-100">
-                              <button onClick={() => { setSelectedRecord(r); setIsDetailModalOpen(true); }} className="flex-1 flex items-center justify-center gap-2 bg-zinc-100 text-zinc-700 px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-zinc-200 active:scale-95 transition-all shadow-sm">
-                                <Eye className="w-4 h-4" />
-                                <span>{lang === 'ar' ? 'عرض' : 'View'}</span>
-                              </button>
                               {isAdminUser && (
                                 <>
                                 <button onClick={() => {
@@ -1377,8 +1424,32 @@ export default function App() {
                                   setInspectionStep(1);
                                   setIsInspectionModalOpen(true);
                                 }} className="flex-1 flex items-center justify-center gap-2 bg-zinc-900 text-white px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-zinc-700 active:scale-95 transition-all shadow-md">
+                                  <Edit2 className="w-4 h-4" />
+                                  <span>{lang === 'ar' ? 'تعديل' : 'Edit'}</span>
+                                </button>
+                                <button onClick={() => {
+                                  setAdminSubView('inspections');
+                                  // Delay to allow inspections view to render
+                                  setTimeout(() => {
+                                    setInspectionFormData({
+                                      customerName: r.name,
+                                      phone: r.phone,
+                                      id: undefined,
+                                      address: (r as any).address || '',
+                                      visitDate: (r as any).visitDate || '',
+                                      visitDateTo: (r as any).visitDateTo || '',
+                                      notes: (r as any).notes || '',
+                                      rooms: 0, pieces: [], totalAmount: 0
+                                    });
+                                    setEditingId(r.id);
+                                    setInspectionStep(1);
+                                    setIsInspectionModalOpen(true);
+                                    const el = document.getElementById(`inspection-${r.id}`);
+                                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                  }, 120);
+                                }} className="ml-2 flex items-center justify-center gap-2 bg-accent-tan text-white px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-accent-tan/90 active:scale-95 transition-all shadow-md">
                                   <Eye className="w-4 h-4" />
-                                  <span>{lang === 'ar' ? 'معاينة / تعديل' : 'Inspect / Edit'}</span>
+                                  <span>{lang === 'ar' ? 'بدء المعاينة' : 'Start Visit'}</span>
                                 </button>
                                 <button onClick={() => handleDeleteCustomer(r.id)} className="flex items-center justify-center gap-2 bg-red-50 text-red-500 border border-red-100 px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-red-500 hover:text-white active:scale-95 transition-all shadow-md">
                                   <Trash2 className="w-4 h-4" />
@@ -1540,7 +1611,7 @@ export default function App() {
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.phoneNumber}</label><input required type="tel" minLength={11} maxLength={11} pattern="[0-9]{11}" title={lang === 'ar' ? 'يجب أن يكون رقم الهاتف 11 رقماً بالضبط' : 'Phone number must be exactly 11 digits'} className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.phone} onChange={e => setInspectionFormData({ ...inspectionFormData, phone: e.target.value })} /></div>
                      {(editingCollection === 'contracted_customers' || editingCollection === 'customers') && (
                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                         <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.pickupDate}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.pickupDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, pickupDate: e.target.value })} /></div>
+                         <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.pickupDate}</label><input type="text" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.pickupDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, pickupDate: e.target.value })} /></div>
                          {(editingCollection === 'contracted_customers') && <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.deliveryDate}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.deliveryDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, deliveryDate: e.target.value })} /></div>}
                        </div>
                      )}
@@ -1826,6 +1897,7 @@ export default function App() {
               <form onSubmit={handleSaveRecord} className="space-y-6">
                 <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.fullName}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} /></div>
                 <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.phoneNumber}</label><input required type="tel" minLength={11} maxLength={11} pattern="[0-9]{11}" title={lang === 'ar' ? 'يجب أن يكون رقم الهاتف 11 رقماً بالضبط' : 'Phone number must be exactly 11 digits'} className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={formData.phone || ''} onChange={e => setFormData({ ...formData, phone: e.target.value })} /></div>
+                <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.pickupDate}</label><input type="text" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={formData.pickupDate || ''} onChange={e => setFormData({ ...formData, pickupDate: e.target.value })} /></div>
                 <button disabled={isLoading} type="submit" className="w-full bg-zinc-900 text-white py-5 rounded-3xl font-bold uppercase tracking-widest shadow-2xl btn-3d btn-3d-zinc">{isLoading ? t.processing : t.save}</button>
               </form>
             </motion.div>
