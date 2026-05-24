@@ -21,10 +21,12 @@ View your app in AI Studio: https://ai.studio/apps/eeb87e46-c984-42d4-80a4-4d1ac
    - `GEMINI_API_KEY` to your Gemini API key
    - `VITE_SUPABASE_URL` to your Supabase project URL
    - `VITE_SUPABASE_ANON_KEY` to your Supabase anon key
+   - `VIEWER_EMAIL` if you want a different read-only viewer email than `view@gmail.com`
 3. Create the admin/viewer Supabase auth users:
    - Manual: go to Supabase dashboard → Auth → Users
    - Programmatic: use a Supabase service role key if you want the app to provision them
    - The password used at login comes from the Supabase Auth user record. `ADMIN_PASSWORD` is not used by the current client login flow.
+   - Recommended viewer account for this project: `view@gmail.com` with password `view123`
 4. Apply the tracked database migration:
    `npx supabase db query --linked --file supabase/migrations/0001_init.sql`
 5. Run the app:
@@ -42,6 +44,7 @@ Before deploying on Vercel:
    - `VITE_SUPABASE_ANON_KEY`
    - `GEMINI_API_KEY` if you use the Gemini features
    - `ADMIN_EMAIL`
+   - `VIEWER_EMAIL` if you want to override the default read-only account email (`view@gmail.com`)
    - `ADMIN_PASSWORD` only if you still use it elsewhere; the current client login itself uses the password stored in Supabase Auth
 3. Redeploy after saving the variables.
 

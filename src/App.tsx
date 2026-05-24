@@ -94,7 +94,7 @@ interface Inspection {
 }
 
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "admin@gmail.com") as string;
-const VIEWER_EMAIL = (process.env.VIEWER_EMAIL || "viewer@gmail.com") as string;
+const VIEWER_EMAIL = (process.env.VIEWER_EMAIL || "view@gmail.com") as string;
 
 const FURNITURE_OPTIONS = [
   "سرير كبير", "دولاب", "كومود", "سراحة", "شفونيرة",
@@ -322,6 +322,7 @@ export default function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
   const allowedEmails = [ADMIN_EMAIL, VIEWER_EMAIL];
+  const isAdminUser = currentUser?.email === ADMIN_EMAIL;
   const isAuthorizedUser = currentUser !== null && allowedEmails.includes(currentUser.email ?? '');
   
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -393,6 +394,15 @@ export default function App() {
     setSelectedSheetId(null);
   };
 
+  const ensureAdminAccess = () => {
+    if (!isAdminUser) {
+      toast.error(lang === 'ar' ? "هذه العملية متاحة للمسؤول فقط" : "This action is available to the admin only");
+      return false;
+    }
+
+    return true;
+  };
+
   const refreshAllData = async (preferredSheetId?: string | null) => {
     const { data: catData, error: catError } = await supabase.from('catalogs').select('*').order('created_at', { ascending: false });
     if (catError) throw catError;
@@ -445,6 +455,8 @@ export default function App() {
   };
 
   const handleDeleteInspection = async (id: string) => {
+    if (!ensureAdminAccess()) return;
+
     try {
       const { error } = await supabase.from('inspections').delete().eq('id', id);
       if (error) throw error;
@@ -509,6 +521,11 @@ export default function App() {
   }, []);
 
   const handleImportExcel = (e: ChangeEvent<HTMLInputElement>) => {
+    if (!ensureAdminAccess()) {
+      e.target.value = '';
+      return;
+    }
+
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
@@ -534,6 +551,8 @@ export default function App() {
   };
 
   const deleteCatalogSection = async (id: string) => {
+    if (!ensureAdminAccess()) return;
+
     triggerConfirm(
       lang === 'ar' ? "حذف الملف" : "Delete Sheet",
       lang === 'ar' ? "هل أنت متأكد من حذف هذا الملف؟" : "Are you sure you want to delete this sheet?",
@@ -555,6 +574,7 @@ export default function App() {
 
   const handleSaveCatalogRow = async (e: FormEvent) => {
     e.preventDefault();
+    if (!ensureAdminAccess()) return;
     if (!editingCatalogRow) return;
     
     setIsLoading(true);
@@ -614,6 +634,8 @@ export default function App() {
   };
 
   const handleDeleteCustomer = async (id: string) => {
+    if (!ensureAdminAccess()) return;
+
     triggerConfirm(
       lang === 'ar' ? "حذف العميل" : "Remove Customer",
       lang === 'ar' ? "هل أنت متأكد؟" : "Are you sure?",
@@ -659,6 +681,7 @@ export default function App() {
 
   const handleInspectionSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!ensureAdminAccess()) return;
     
     if (inspectionStep === 1) {
       setIsLoading(true);
@@ -764,6 +787,8 @@ export default function App() {
   };
 
   const handleFinalizeInspection = async (status: 'contracted' | 'refused', directRecord?: Inspection) => {
+    if (!ensureAdminAccess()) return;
+
     setIsLoading(true);
     try {
       const recordToSave = directRecord || inspectionFormData;
@@ -810,6 +835,8 @@ export default function App() {
   };
 
   const handleDeleteContracted = async (id: string) => {
+    if (!ensureAdminAccess()) return;
+
     triggerConfirm(
       lang === 'ar' ? "حذف السجل" : "Delete Record",
       lang === 'ar' ? "هل أنت متأكد من حذف هذا السجل؟" : "Are you sure?",
@@ -825,6 +852,8 @@ export default function App() {
   };
 
   const handleDeleteNonContracted = async (id: string) => {
+    if (!ensureAdminAccess()) return;
+
     triggerConfirm(
       lang === 'ar' ? "حذف السجل" : "Delete Record",
       lang === 'ar' ? "هل أنت متأكد من حذف هذا السجل؟" : "Are you sure?",
@@ -887,6 +916,7 @@ export default function App() {
 
   const handleSaveRecord = async (e: FormEvent) => {
     e.preventDefault();
+    if (!ensureAdminAccess()) return;
     if (!formData.name.trim() || !formData.phone.trim()) return toast.error("Please enter data");
     setIsLoading(true);
     try {
@@ -969,7 +999,7 @@ export default function App() {
             <aside className="w-full md:w-64 glass-dark shrink-0 flex flex-col p-8 gap-8 md:h-screen md:sticky md:top-0 z-50">
               <div className="logo border-b-2 border-accent-tan pb-1 text-xl font-bold tracking-widest uppercase">{t.brand}</div>
               <nav className="flex flex-col gap-4 flex-1">
-                {currentUser && (currentUser.email === ADMIN_EMAIL || currentUser.email === VIEWER_EMAIL) ? (
+                {currentUser && isAuthorizedUser ? (
                   <>
                     <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'customers' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'}`} onClick={() => setAdminSubView('customers')}>
                       <UserIcon className="w-4 h-4" /> {t.customers}
@@ -1002,8 +1032,8 @@ export default function App() {
                   <motion.div key={adminSubView} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-8">
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
                       <div>
-                        <span className={`text-[10px] font-bold ${currentUser?.email === ADMIN_EMAIL ? 'bg-zinc-800' : 'bg-accent-sage'} text-white px-2 py-1 rounded inline-block uppercase tracking-wider mb-1`}>
-                          {currentUser?.email === ADMIN_EMAIL ? t.editor : t.viewOnly}
+                        <span className={`text-[10px] font-bold ${isAdminUser ? 'bg-zinc-800' : 'bg-accent-sage'} text-white px-2 py-1 rounded inline-block uppercase tracking-wider mb-1`}>
+                          {isAdminUser ? t.editor : t.viewOnly}
                         </span>
                         <h1 className="text-3xl md:text-4xl font-light">
                           {adminSubView === 'customers' ? t.customers : 
@@ -1101,7 +1131,7 @@ export default function App() {
                                         <div className="text-xs text-zinc-500 font-mono">{format(selectedSheet.createdAt.toDate(), 'yyyy-MM-dd HH:mm')}</div>
                                       </div>
                                     </div>
-                                    {currentUser?.email === ADMIN_EMAIL && (
+                                    {isAdminUser && (
                                       <button 
                                         onClick={() => deleteCatalogSection(selectedSheet.id)} 
                                         className="btn-3d btn-3d-glass px-4 py-2.5 rounded-xl text-danger flex items-center gap-2 font-bold text-[10px] uppercase hover:bg-red-50 transition-colors"
@@ -1135,14 +1165,16 @@ export default function App() {
                                                       {formatCellValue(row[k])}
                                                     </td>
                                                   ))}
-                                                  <td className="px-4 py-5 text-left sticky left-0 bg-white/50 backdrop-blur-md group-hover:bg-white transition-colors">
-                                                    <button 
-                                                      onClick={() => handleEditCatalogRow(selectedSheet.id, originalIndex, row)}
-                                                      className="p-2 text-zinc-400 hover:text-accent-tan transition-all"
-                                                    >
-                                                      <Edit2 className="w-4 h-4" />
-                                                    </button>
-                                                  </td>
+                                                  {isAdminUser && (
+                                                    <td className="px-4 py-5 text-left sticky left-0 bg-white/50 backdrop-blur-md group-hover:bg-white transition-colors">
+                                                      <button 
+                                                        onClick={() => handleEditCatalogRow(selectedSheet.id, originalIndex, row)}
+                                                        className="p-2 text-zinc-400 hover:text-accent-tan transition-all"
+                                                      >
+                                                        <Edit2 className="w-4 h-4" />
+                                                      </button>
+                                                    </td>
+                                                  )}
                                                 </tr>
                                               );
                                             })}
@@ -1158,12 +1190,14 @@ export default function App() {
                                               <div className="absolute top-0 right-0 w-24 h-24 bg-accent-tan/5 rounded-full -mr-12 -mt-12 blur-2xl group-hover:bg-accent-tan/10 transition-colors" />
                                               <div className="flex justify-between items-center relative z-10">
                                                 <div className="w-10 h-10 rounded-xl bg-zinc-50 flex items-center justify-center text-zinc-300 font-bold">#{i+1}</div>
-                                                <button 
-                                                  onClick={() => handleEditCatalogRow(selectedSheet.id, originalIndex, row)}
-                                                  className="p-3 bg-white border border-zinc-100 rounded-2xl text-accent-tan shadow-sm hover:shadow-md transition-all"
-                                                >
-                                                  <Edit2 className="w-4 h-4" />
-                                                </button>
+                                                {isAdminUser && (
+                                                  <button 
+                                                    onClick={() => handleEditCatalogRow(selectedSheet.id, originalIndex, row)}
+                                                    className="p-3 bg-white border border-zinc-100 rounded-2xl text-accent-tan shadow-sm hover:shadow-md transition-all"
+                                                  >
+                                                    <Edit2 className="w-4 h-4" />
+                                                  </button>
+                                                )}
                                               </div>
                                               {allKeys.map((key) => (
                                                 <div key={key} className="flex flex-col gap-1 relative z-10 border-b border-black/5 pb-3 last:border-0 last:pb-0">
@@ -1218,21 +1252,25 @@ export default function App() {
                                   </div>
                                 </div>
 
-                                <div className="grid grid-cols-2 gap-3 relative z-10">
-                                  <button onClick={() => { setInspectionFormData(ins); setInspectionStep(3); setIsInspectionModalOpen(true); }} className="btn-3d btn-3d-zinc flex flex-col items-center justify-center gap-2 bg-zinc-900 text-white p-4 rounded-3xl font-bold uppercase transition-all hover:scale-[1.02] active:scale-95 shadow-lg shadow-zinc-200">
-                                    <CheckCircle2 className="w-5 h-5" />
-                                    <span className="text-[11px] tracking-widest">{t.contractedBtn}</span>
-                                  </button>
-                                  <button onClick={() => handleFinalizeInspection('refused', ins)} className="btn-3d btn-3d-glass flex flex-col items-center justify-center gap-2 bg-white border border-zinc-100 text-zinc-400 p-4 rounded-3xl font-bold uppercase transition-all hover:scale-[1.02] active:scale-95 hover:text-danger hover:border-danger/20">
-                                    <X className="w-5 h-5" />
-                                    <span className="text-[11px] tracking-widest">{t.refusedBtn}</span>
-                                  </button>
-                                </div>
+                                {isAdminUser && (
+                                  <div className="grid grid-cols-2 gap-3 relative z-10">
+                                    <button onClick={() => { setInspectionFormData(ins); setInspectionStep(3); setIsInspectionModalOpen(true); }} className="btn-3d btn-3d-zinc flex flex-col items-center justify-center gap-2 bg-zinc-900 text-white p-4 rounded-3xl font-bold uppercase transition-all hover:scale-[1.02] active:scale-95 shadow-lg shadow-zinc-200">
+                                      <CheckCircle2 className="w-5 h-5" />
+                                      <span className="text-[11px] tracking-widest">{t.contractedBtn}</span>
+                                    </button>
+                                    <button onClick={() => handleFinalizeInspection('refused', ins)} className="btn-3d btn-3d-glass flex flex-col items-center justify-center gap-2 bg-white border border-zinc-100 text-zinc-400 p-4 rounded-3xl font-bold uppercase transition-all hover:scale-[1.02] active:scale-95 hover:text-danger hover:border-danger/20">
+                                      <X className="w-5 h-5" />
+                                      <span className="text-[11px] tracking-widest">{t.refusedBtn}</span>
+                                    </button>
+                                  </div>
+                                )}
 
                                 <div className="flex justify-between items-center pt-4 border-t border-zinc-100 relative z-10">
                                   <div className="flex gap-2">
                                     <button onClick={() => { setSelectedRecord(ins); setIsDetailModalOpen(true); }} className="p-3 bg-zinc-50 text-zinc-400 rounded-2xl hover:bg-zinc-100 hover:text-zinc-600 transition-all"><Eye className="w-5 h-5" /></button>
-                                    <button onClick={() => triggerConfirm(lang === 'ar' ? "حذف" : "Delete", lang === 'ar' ? "حذف؟" : "Delete?", async () => { await handleDeleteInspection(ins.id); })} className="p-3 bg-red-50 text-red-400 rounded-2xl hover:bg-red-100 transition-all"><Trash2 className="w-5 h-5" /></button>
+                                    {isAdminUser && (
+                                      <button onClick={() => triggerConfirm(lang === 'ar' ? "حذف" : "Delete", lang === 'ar' ? "حذف؟" : "Delete?", async () => { await handleDeleteInspection(ins.id); })} className="p-3 bg-red-50 text-red-400 rounded-2xl hover:bg-red-100 transition-all"><Trash2 className="w-5 h-5" /></button>
+                                    )}
                                   </div>
                                   <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-tighter">ID: {ins.id.slice(0,8)}</span>
                                 </div>
@@ -1265,9 +1303,14 @@ export default function App() {
                                   </td>
                                   <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.pickupDate || '-'}</td>
                                   <td className="px-4 py-6 text-sm text-zinc-500 font-mono text-center">{r.createdAt ? format(r.createdAt.toDate(), 'yyyy/MM/dd HH:mm') : '...'}</td>
-                                  {currentUser?.email === ADMIN_EMAIL && (
-                                    <td className="px-4 py-4">
-                                      <div className="flex gap-4 justify-between items-center w-full">
+                                  <td className="px-4 py-4">
+                                    <div className="flex gap-4 justify-between items-center w-full">
+                                      <button onClick={() => { setSelectedRecord(r); setIsDetailModalOpen(true); }} className="flex items-center gap-2 bg-zinc-100 text-zinc-700 px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-zinc-200 active:scale-95 transition-all duration-200 shadow-sm">
+                                        <Eye className="w-4 h-4" />
+                                        <span>{lang === 'ar' ? 'عرض' : 'View'}</span>
+                                      </button>
+                                      {isAdminUser && (
+                                        <>
                                         <button onClick={() => {
                                           setInspectionFormData({ 
                                             customerName: r.name, 
@@ -1290,12 +1333,13 @@ export default function App() {
                                           <Trash2 className="w-4 h-4" />
                                           <span>{t.delete}</span>
                                         </button>
-                                      </div>
-                                    </td>
-                                  )}
+                                        </>
+                                      )}
+                                    </div>
+                                  </td>
                                 </tr>
                               ))}
-                              {customerRecords.length === 0 && <tr><td colSpan={4} className="py-20 text-center italic text-zinc-400">{t.noRecords}</td></tr>}
+                              {customerRecords.length === 0 && <tr><td colSpan={5} className="py-20 text-center italic text-zinc-400">{t.noRecords}</td></tr>}
                             </tbody>
                           </table>
                         </div>
@@ -1311,8 +1355,13 @@ export default function App() {
                               </div>
                               <span className="text-[10px] text-zinc-400 font-mono">{r.createdAt ? format(r.createdAt.toDate(), 'yyyy/MM/dd HH:mm') : '...'}</span>
                             </div>
-                            {currentUser?.email === ADMIN_EMAIL && (
-                              <div className="flex gap-2 pt-4 border-t border-zinc-100">
+                            <div className="flex gap-2 pt-4 border-t border-zinc-100">
+                              <button onClick={() => { setSelectedRecord(r); setIsDetailModalOpen(true); }} className="flex-1 flex items-center justify-center gap-2 bg-zinc-100 text-zinc-700 px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-zinc-200 active:scale-95 transition-all shadow-sm">
+                                <Eye className="w-4 h-4" />
+                                <span>{lang === 'ar' ? 'عرض' : 'View'}</span>
+                              </button>
+                              {isAdminUser && (
+                                <>
                                 <button onClick={() => {
                                   setInspectionFormData({ 
                                     customerName: r.name, 
@@ -1334,8 +1383,9 @@ export default function App() {
                                 <button onClick={() => handleDeleteCustomer(r.id)} className="flex items-center justify-center gap-2 bg-red-50 text-red-500 border border-red-100 px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-red-500 hover:text-white active:scale-95 transition-all shadow-md">
                                   <Trash2 className="w-4 h-4" />
                                 </button>
-                              </div>
-                            )}
+                                </>
+                              )}
+                            </div>
                           </div>
                         ))}
                         {customerRecords.length === 0 && <div className="py-20 text-center italic text-zinc-400">{t.noRecords}</div>}
