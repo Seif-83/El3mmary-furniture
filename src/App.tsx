@@ -384,107 +384,104 @@ export default function App() {
     phone: ''
   });
 
+  const clearDashboardData = () => {
+    setCatalogs([]);
+    setCustomerRecords([]);
+    setInspections([]);
+    setContractedCustomers([]);
+    setNotContractedCustomers([]);
+    setSelectedSheetId(null);
+  };
+
+  const refreshAllData = async (preferredSheetId?: string | null) => {
+    const { data: catData, error: catError } = await supabase.from('catalogs').select('*').order('created_at', { ascending: false });
+    if (catError) throw catError;
+    const sheets = (catData || []).map(r => ({ ...r, createdAt: toTimestamp(r.created_at) })) as CatalogSheet[];
+    setCatalogs(sheets);
+    setSelectedSheetId(prev => {
+      const nextSelectedId = preferredSheetId ?? prev;
+      if (nextSelectedId && sheets.some(sheet => sheet.id === nextSelectedId)) return nextSelectedId;
+      return sheets[0]?.id ?? null;
+    });
+
+    const { data: custData, error: custError } = await supabase.from('customers').select('*').order('created_at', { ascending: false });
+    if (custError) throw custError;
+    setCustomerRecords((custData || []).map(mapCustomerFromDB));
+
+    const { data: inspData, error: inspError } = await supabase.from('inspections').select('*').order('created_at', { ascending: false });
+    if (inspError) throw inspError;
+    setInspections((inspData || []).map(mapInspectionFromDB));
+
+    const { data: contrData, error: contrError } = await supabase.from('contracted_customers').select('*').order('finalized_at', { ascending: false });
+    if (contrError) throw contrError;
+    setContractedCustomers((contrData || []).map(mapInspectionFromDB));
+
+    const { data: nonContrData, error: nonContrError } = await supabase.from('non_contracted_customers').select('*').order('finalized_at', { ascending: false });
+    if (nonContrError) throw nonContrError;
+    setNotContractedCustomers((nonContrData || []).map(mapInspectionFromDB));
+  };
+
+  const handleDeleteInspection = async (id: string) => {
+    try {
+      const { error } = await supabase.from('inspections').delete().eq('id', id);
+      if (error) throw error;
+      await refreshAllData();
+      toast.success(lang === 'ar' ? "تم الحذف" : "Deleted");
+    } catch (err: any) {
+      toast.error(err?.message || "Error");
+    }
+  };
+
   useEffect(() => {
-    let catalogsChannel: any;
-    let customersChannel: any;
-    let inspectionsChannel: any;
-    let contractedChannel: any;
-    let nonContractedChannel: any;
+    let channels: any[] = [];
 
-    const loadInitialData = async () => {
-      const { data: catData } = await supabase.from('catalogs').select('*').order('created_at', { ascending: false });
-      if (catData) {
-        const sheets = catData.map(r => ({ ...r, createdAt: toTimestamp(r.created_at) })) as CatalogSheet[];
-        setCatalogs(sheets);
-        if (sheets.length > 0 && !selectedSheetId) setSelectedSheetId(sheets[0].id);
-      }
+    const unsubscribeChannels = () => {
+      channels.forEach(channel => channel.unsubscribe());
+      channels = [];
+    };
 
-      const { data: custData } = await supabase.from('customers').select('*').order('created_at', { ascending: false });
-      if (custData) {
-        setCustomerRecords(custData.map(mapCustomerFromDB));
-      }
+    const subscribeToRealtime = () => {
+      unsubscribeChannels();
+      const tableNames = ['catalogs', 'customers', 'inspections', 'contracted_customers', 'non_contracted_customers'] as const;
 
-      const { data: inspData } = await supabase.from('inspections').select('*').order('created_at', { ascending: false });
-      if (inspData) {
-        setInspections(inspData.map(mapInspectionFromDB));
-      }
+      channels = tableNames.map((tableName) =>
+        supabase.channel(`public:${tableName}`)
+          .on('postgres_changes', { event: '*', schema: 'public', table: tableName }, () => {
+            void refreshAllData();
+          })
+          .subscribe()
+      );
+    };
 
-      const { data: contrData } = await supabase.from('contracted_customers').select('*').order('finalized_at', { ascending: false });
-      if (contrData) {
-        setContractedCustomers(contrData.map(mapInspectionFromDB));
-      }
+    const syncAuthorizedUser = async (user: User | null) => {
+      setCurrentUser(user);
+      setIsAuthChecking(false);
 
-      const { data: nonContrData } = await supabase.from('non_contracted_customers').select('*').order('finalized_at', { ascending: false });
-      if (nonContrData) {
-        setNotContractedCustomers(nonContrData.map(mapInspectionFromDB));
+      if (user && allowedEmails.includes(user.email ?? '')) {
+        try {
+          await refreshAllData();
+          subscribeToRealtime();
+        } catch (error) {
+          console.error('Failed to sync dashboard data', error);
+          toast.error(lang === 'ar' ? "تعذر تحديث البيانات" : "Failed to refresh data");
+        }
+      } else {
+        unsubscribeChannels();
+        clearDashboardData();
       }
     };
 
-    // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
-      const user = session?.user ?? null;
-      setCurrentUser(user);
-      setIsAuthChecking(false);
-      
-      if (user && (user.email === ADMIN_EMAIL || user.email === VIEWER_EMAIL)) {
-        loadInitialData();
-
-        // Subscribe to channels for real-time updates
-        catalogsChannel = supabase.channel('public:catalogs')
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'catalogs' }, () => {
-            loadInitialData();
-          })
-          .subscribe();
-
-        customersChannel = supabase.channel('public:customers')
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, () => {
-            loadInitialData();
-          })
-          .subscribe();
-
-        inspectionsChannel = supabase.channel('public:inspections')
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'inspections' }, () => {
-            loadInitialData();
-          })
-          .subscribe();
-
-        contractedChannel = supabase.channel('public:contracted_customers')
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'contracted_customers' }, () => {
-            loadInitialData();
-          })
-          .subscribe();
-
-        nonContractedChannel = supabase.channel('public:non_contracted_customers')
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'non_contracted_customers' }, () => {
-            loadInitialData();
-          })
-          .subscribe();
-      }
+      void syncAuthorizedUser(session?.user ?? null);
     });
 
     const { data: { subscription: authListener } } = supabase.auth.onAuthStateChange((_event, session) => {
-      const user = session?.user ?? null;
-      setCurrentUser(user);
-      setIsAuthChecking(false);
-      
-      if (user && (user.email === ADMIN_EMAIL || user.email === VIEWER_EMAIL)) {
-        loadInitialData();
-      } else {
-        setCatalogs([]);
-        setCustomerRecords([]);
-        setInspections([]);
-        setContractedCustomers([]);
-        setNotContractedCustomers([]);
-      }
+      void syncAuthorizedUser(session?.user ?? null);
     });
 
     return () => {
       authListener.unsubscribe();
-      if (catalogsChannel) catalogsChannel.unsubscribe();
-      if (customersChannel) customersChannel.unsubscribe();
-      if (inspectionsChannel) inspectionsChannel.unsubscribe();
-      if (contractedChannel) contractedChannel.unsubscribe();
-      if (nonContractedChannel) nonContractedChannel.unsubscribe();
+      unsubscribeChannels();
     };
   }, []);
 
@@ -504,7 +501,7 @@ export default function App() {
         setIsLoading(true);
         const { data: newCat, error } = await supabase.from('catalogs').insert({ title, data }).select().single();
         if (error) throw error;
-        setSelectedSheetId(newCat.id);
+        await refreshAllData(newCat.id);
         toast.success(lang === 'ar' ? "تم النشر بنجاح" : "Sheet published successfully");
       } catch (error) { toast.error("Failed to parse Excel file"); }
       setIsLoading(false);
@@ -521,7 +518,7 @@ export default function App() {
         try {
           const { error } = await supabase.from('catalogs').delete().eq('id', id);
           if (error) throw error;
-          if (selectedSheetId === id) setSelectedSheetId(null);
+          await refreshAllData();
           toast.success(lang === 'ar' ? "تم الحذف" : "Sheet deleted");
         } catch { toast.error("Failed to delete"); }
       }
@@ -547,6 +544,7 @@ export default function App() {
       
       const { error } = await supabase.from('catalogs').update({ data: newData }).eq('id', editingCatalogRow.sheetId);
       if (error) throw error;
+      await refreshAllData(editingCatalogRow.sheetId);
       toast.success(lang === 'ar' ? "تم تحديث البيانات" : "Data updated");
       setIsEditCatalogModalOpen(false);
       setEditingCatalogRow(null);
@@ -584,8 +582,8 @@ export default function App() {
       const rawMessage = error?.message || error?.msg || error?.error_description || null;
       const message = typeof rawMessage === 'string' && rawMessage.toLowerCase().includes('invalid api key')
         ? (lang === 'ar'
-            ? "مفتاح Supabase غير صحيح في نسخة Vercel. أضف VITE_SUPABASE_ANON_KEY أو SUPABASE_ANON_KEY ثم أعد النشر."
-            : "This Vercel deployment has an invalid Supabase key. Add VITE_SUPABASE_ANON_KEY or SUPABASE_ANON_KEY, then redeploy.")
+            ? "مفتاح Supabase في Vercel غير صحيح. افتح إعدادات Vercel وأضف VITE_SUPABASE_URL و VITE_SUPABASE_ANON_KEY بالقيم الصحيحة من Supabase بدون علامات تنصيص، ثم أعد النشر."
+            : "This Vercel deployment has an invalid Supabase key. In Vercel, set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to the exact values from Supabase without quotes, then redeploy.")
         : rawMessage;
       toast.error(message || (lang === 'ar' ? "بيانات غير صالحة" : "Invalid credentials"));
     }
@@ -600,6 +598,7 @@ export default function App() {
         try {
           const { error } = await supabase.from('customers').delete().eq('id', id);
           if (error) throw error;
+          await refreshAllData();
           toast.success(lang === 'ar' ? "تم حذف العميل" : "Customer removed");
         } catch { toast.error("Unauthorized"); }
       }
@@ -675,6 +674,7 @@ export default function App() {
           }).eq('id', editingId);
           if (error) throw error;
         }
+        await refreshAllData();
         toast.success(lang === 'ar' ? "تم الحفظ بنجاح" : "Saved successfully");
         setIsInspectionModalOpen(false);
         setInspectionStep(1);
@@ -728,6 +728,7 @@ export default function App() {
         }
       }
       
+      await refreshAllData();
       toast.success(lang === 'ar' ? "تم نقل العميل إلى المعاينات" : "Customer moved to Inspections");
       setIsInspectionModalOpen(false);
       setInspectionStep(1);
@@ -776,6 +777,7 @@ export default function App() {
         if (deleteError) throw deleteError;
       }
       
+      await refreshAllData();
       toast.success(lang === 'ar' ? "تمت العملية بنجاح" : "Process completed");
       setIsInspectionModalOpen(false);
       setInspectionStep(1);
@@ -794,6 +796,7 @@ export default function App() {
         try {
           const { error } = await supabase.from('contracted_customers').delete().eq('id', id);
           if (error) throw error;
+          await refreshAllData();
           toast.success(lang === 'ar' ? "تم الحذف" : "Deleted");
         } catch { toast.error("Unauthorized"); }
       }
@@ -808,6 +811,7 @@ export default function App() {
         try {
           const { error } = await supabase.from('non_contracted_customers').delete().eq('id', id);
           if (error) throw error;
+          await refreshAllData();
           toast.success(lang === 'ar' ? "تم الحذف" : "Deleted");
         } catch { toast.error("Unauthorized"); }
       }
@@ -884,6 +888,7 @@ export default function App() {
           phone: formData.phone.trim()
         });
         if (insertError) throw insertError;
+        await refreshAllData();
         toast.success("Added success");
       } else {
         const { error: updateError } = await supabase
@@ -894,6 +899,7 @@ export default function App() {
           })
           .eq('id', editingId!);
         if (updateError) throw updateError;
+        await refreshAllData();
         toast.success("Updated success");
       }
       setIsModalOpen(false);
@@ -1205,7 +1211,7 @@ export default function App() {
                                 <div className="flex justify-between items-center pt-4 border-t border-zinc-100 relative z-10">
                                   <div className="flex gap-2">
                                     <button onClick={() => { setSelectedRecord(ins); setIsDetailModalOpen(true); }} className="p-3 bg-zinc-50 text-zinc-400 rounded-2xl hover:bg-zinc-100 hover:text-zinc-600 transition-all"><Eye className="w-5 h-5" /></button>
-                                    <button onClick={() => triggerConfirm(lang === 'ar' ? "حذف" : "Delete", lang === 'ar' ? "حذف؟" : "Delete?", async () => { const { error } = await supabase.from('inspections').delete().eq('id', ins.id); if (error) toast.error("Error"); else toast.success(lang === 'ar' ? "تم الحذف" : "Deleted"); })} className="p-3 bg-red-50 text-red-400 rounded-2xl hover:bg-red-100 transition-all"><Trash2 className="w-5 h-5" /></button>
+                                    <button onClick={() => triggerConfirm(lang === 'ar' ? "حذف" : "Delete", lang === 'ar' ? "حذف؟" : "Delete?", async () => { await handleDeleteInspection(ins.id); })} className="p-3 bg-red-50 text-red-400 rounded-2xl hover:bg-red-100 transition-all"><Trash2 className="w-5 h-5" /></button>
                                   </div>
                                   <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-tighter">ID: {ins.id.slice(0,8)}</span>
                                 </div>
@@ -1350,7 +1356,7 @@ export default function App() {
                                         <button onClick={() => {
                                           if (isContractedView) handleDeleteContracted(r.id);
                                           else if (adminSubView === 'not-contracted') handleDeleteNonContracted(r.id);
-                                          else if (isInspectionView) supabase.from('inspections').delete().eq('id', r.id).then(({ error }) => { if (error) toast.error("Error"); else toast.success(lang === 'ar' ? "تم الحذف" : "Deleted"); });
+                                          else if (isInspectionView) void handleDeleteInspection(r.id);
                                         }} className="text-red-500 border border-red-200 px-5 py-3 rounded-lg text-xs font-bold uppercase hover:bg-red-600 hover:text-white transition-all shadow-sm">
                                           <Trash2 className="w-4 h-4" />
                                         </button>
@@ -1395,7 +1401,7 @@ export default function App() {
                                   <button onClick={() => {
                                     if (isContractedView) handleDeleteContracted(r.id);
                                     else if (adminSubView === 'not-contracted') handleDeleteNonContracted(r.id);
-                                    else if (isInspectionView) supabase.from('inspections').delete().eq('id', r.id).then(({ error }) => { if (error) toast.error("Error"); else toast.success(lang === 'ar' ? "تم الحذف" : "Deleted"); });
+                                    else if (isInspectionView) void handleDeleteInspection(r.id);
                                   }} className="flex items-center justify-center gap-2 bg-red-50 text-red-500 border border-red-100 px-6 py-4 rounded-2xl text-sm font-bold uppercase hover:bg-red-500 hover:text-white transition-all shadow-sm">
                                     <Trash2 className="w-5 h-5" />
                                   </button>
