@@ -56,7 +56,6 @@ interface CustomerRecord {
   address?: string;
   deliveryAddress?: string;
   visitDate?: string;
-  visitDateTo?: string;
   notes?: string;
   deliveryDate?: string;
   pickupDate?: string;
@@ -77,7 +76,6 @@ interface Inspection {
   address?: string;
   deliveryAddress?: string;
   visitDate: string;
-  visitDateTo?: string;
   notes: string;
   rooms: number;
   pieces: FurniturePiece[];
@@ -157,8 +155,7 @@ const translations: Record<'en' | 'ar', Record<string, string>> = {
     customerName: "Customer Name",
     address: "Pickup Address",
     deliveryAddress: "Delivery Address",
-    visitDate: "Visit Date (From)",
-    visitDateTo: "Visit Date (To)",
+    visitDate: "Visit Date",
     notes: "Notes",
     rooms: "Rooms",
     pieces: "Furniture Pieces",
@@ -226,10 +223,9 @@ const translations: Record<'en' | 'ar', Record<string, string>> = {
     step2: "أثناء المعاينة",
     step3: "التعاقد",
     customerName: "اسم العميل",
-    address: "عنوان الاستلام",
+    address: "عنوان المعاينة",
     deliveryAddress: "عنوان التسليم",
-    visitDate: "تاريخ المعاينة (من)",
-    visitDateTo: "تاريخ المعاينة (إلى)",
+    visitDate: "تاريخ المعاينة",
     notes: "ملاحظات",
     rooms: "عدد الغرف",
     pieces: "القطع المطلوبة",
@@ -282,7 +278,6 @@ const mapCustomerFromDB = (dbCust: any): CustomerRecord => ({
   address: dbCust.address,
   deliveryAddress: dbCust.delivery_address,
   visitDate: dbCust.visit_date,
-  visitDateTo: dbCust.visit_date_to,
   notes: dbCust.notes,
   deliveryDate: dbCust.delivery_date,
   pickupDate: dbCust.pickup_date,
@@ -297,7 +292,6 @@ const mapInspectionFromDB = (dbInsp: any): Inspection => ({
   address: dbInsp.address,
   deliveryAddress: dbInsp.delivery_address,
   visitDate: dbInsp.visit_date,
-  visitDateTo: dbInsp.visit_date_to,
   notes: dbInsp.notes,
   rooms: dbInsp.rooms,
   pieces: dbInsp.pieces || [],
@@ -665,7 +659,6 @@ export default function App() {
             delivery_address: customer.deliveryAddress?.trim() || null,
             phone: customer.phone?.trim(),
             visit_date: customer.visitDate || null,
-            visit_date_to: customer.visitDateTo || null,
             notes: customer.notes || null,
             rooms: 0,
             pieces: [],
@@ -732,7 +725,6 @@ export default function App() {
             delivery_address: inspectionFormData.deliveryAddress?.trim(),
             phone: inspectionFormData.phone?.trim(),
             visit_date: inspectionFormData.visitDate,
-            visit_date_to: inspectionFormData.visitDateTo,
             notes: inspectionFormData.notes,
             rooms: inspectionFormData.rooms || 0,
             pieces: inspectionFormData.pieces || [],
@@ -751,7 +743,6 @@ export default function App() {
             address: inspectionFormData.address?.trim(),
             delivery_address: inspectionFormData.deliveryAddress?.trim(),
             visit_date: inspectionFormData.visitDate,
-            visit_date_to: inspectionFormData.visitDateTo,
             notes: inspectionFormData.notes,
             pickup_date: inspectionFormData.pickupDate || null,
             portfolio_date: inspectionFormData.portfolio_date || null,
@@ -765,7 +756,7 @@ export default function App() {
         setEditingId(null);
         setEditingCollection(null);
         setInspectionFormData({ 
-          customerName: '', address: '', deliveryAddress: '', phone: '', visitDate: '', visitDateTo: '', 
+          customerName: '', address: '', deliveryAddress: '', phone: '', visitDate: '', 
           notes: '', rooms: 0, pieces: [], totalAmount: 0, deliveryDate: '', pickupDate: '', 
           portfolioDate: '', contractDate: '', portfolio: '' 
         });
@@ -783,13 +774,7 @@ export default function App() {
         delivery_address: inspectionFormData.deliveryAddress?.trim(),
         phone: inspectionFormData.phone?.trim(),
         visit_date: inspectionFormData.visitDate,
-        visit_date_to: inspectionFormData.visitDateTo,
-        notes: inspectionFormData.notes,
-        rooms: inspectionFormData.rooms || 0,
-        pieces: inspectionFormData.pieces || [],
-        total_amount: inspectionFormData.totalAmount || 0,
-        portfolio: inspectionFormData.portfolio || null,
-        delivery_date: inspectionFormData.deliveryDate || null,
+
         pickup_date: inspectionFormData.pickupDate || null,
         portfolio_date: inspectionFormData.portfolio_date || null,
         contract_date: inspectionFormData.contractDate || null
@@ -816,7 +801,7 @@ export default function App() {
       setInspectionStep(1);
       setEditingId(null);
       setInspectionFormData({ 
-        customerName: '', address: '', deliveryAddress: '', phone: '', visitDate: '', visitDateTo: '', 
+        customerName: '', address: '', deliveryAddress: '', phone: '', visitDate: '', 
         notes: '', rooms: 0, pieces: [], totalAmount: 0, deliveryDate: '', pickupDate: '', 
         portfolioDate: '', contractDate: '', portfolio: '' 
       });
@@ -838,7 +823,6 @@ export default function App() {
         delivery_address: recordToSave.deliveryAddress?.trim(),
         phone: recordToSave.phone?.trim(),
         visit_date: recordToSave.visitDate,
-        visit_date_to: recordToSave.visitDateTo,
         notes: recordToSave.notes,
         rooms: recordToSave.rooms || 0,
         pieces: recordToSave.pieces || [],
@@ -846,21 +830,12 @@ export default function App() {
         status,
         portfolio: recordToSave.portfolio || null,
         delivery_date: recordToSave.deliveryDate || null,
-        pickup_date: recordToSave.pickupDate || null,
-        portfolio_date: recordToSave.portfolio_date || null,
+        pickup_date: recordToSave.pickupDate || recordToSave.address || null,
+        portfolio_date: recordToSave.portfolioDate || null,
         contract_date: recordToSave.contractDate || null,
-        finalized_at: new Date().toISOString()
       };
-      
-      const { error: insertError } = await supabase.from(tableName).insert(dbData);
-      if (insertError) throw insertError;
-      
-      // If this was a pending inspection, remove it
-      if (recordToSave.id) {
-        const { error: deleteError } = await supabase.from('inspections').delete().eq('id', recordToSave.id);
-        if (deleteError) throw deleteError;
-      }
-      
+      const { error } = await supabase.from(tableName).insert(dbData);
+      if (error) throw error;
       await refreshAllData();
       toast.success(lang === 'ar' ? "تمت العملية بنجاح" : "Process completed");
       setIsInspectionModalOpen(false);
@@ -1364,12 +1339,14 @@ export default function App() {
                                                 customerName: r.name,
                                                 phone: r.phone,
                                                 id: undefined,
-                                                address: (r as any).address || '',
+                                                address: (r as any).address || (r as any).pickupDate || '',
+                                                pickupDate: (r as any).pickupDate || (r as any).address || '',
                                                 visitDate: (r as any).visitDate || '',
                                                 visitDateTo: (r as any).visitDateTo || '',
                                                 notes: (r as any).notes || '',
                                                 rooms: 0, pieces: [], totalAmount: 0
                                               });
+                                              setEditingCollection('customers');
                                               setEditingId(r.id);
                                               setInspectionStep(1);
                                               setIsInspectionModalOpen(true);
@@ -1414,12 +1391,14 @@ export default function App() {
                                     customerName: r.name, 
                                     phone: r.phone,
                                     id: undefined,
-                                    address: (r as any).address || '',
+                                    address: (r as any).address || (r as any).pickupDate || '',
+                                    pickupDate: (r as any).pickupDate || (r as any).address || '',
                                     visitDate: (r as any).visitDate || '',
                                     visitDateTo: (r as any).visitDateTo || '',
                                     notes: (r as any).notes || '',
                                     rooms: 0, pieces: [], totalAmount: 0 
                                   });
+                                  setEditingCollection('customers');
                                   setEditingId(r.id);
                                   setInspectionStep(1);
                                   setIsInspectionModalOpen(true);
@@ -1610,10 +1589,7 @@ export default function App() {
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.deliveryAddress}</label><input className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.deliveryAddress || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, deliveryAddress: e.target.value })} /></div>
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.phoneNumber}</label><input required type="tel" minLength={11} maxLength={11} pattern="[0-9]{11}" title={lang === 'ar' ? 'يجب أن يكون رقم الهاتف 11 رقماً بالضبط' : 'Phone number must be exactly 11 digits'} className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.phone} onChange={e => setInspectionFormData({ ...inspectionFormData, phone: e.target.value })} /></div>
                      {(editingCollection === 'contracted_customers' || editingCollection === 'customers') && (
-                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                         <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.pickupDate}</label><input type="text" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.pickupDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, pickupDate: e.target.value })} /></div>
-                         {(editingCollection === 'contracted_customers') && <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.deliveryDate}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.deliveryDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, deliveryDate: e.target.value })} /></div>}
-                       </div>
+                       <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.deliveryDate}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.deliveryDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, deliveryDate: e.target.value })} /></div>
                      )}
                      {editingCollection === 'contracted_customers' && <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{lang === 'ar' ? 'تاريخ العقد' : 'Contract Date'}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.contractDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, contractDate: e.target.value })} /></div>}
                     {editingCollection === 'contracted_customers' && (
@@ -1622,10 +1598,7 @@ export default function App() {
                         <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.portfolioDate}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.portfolioDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, portfolioDate: e.target.value })} /></div>
                       </div>
                     )}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.visitDate}</label><input required type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.visitDate} onChange={e => setInspectionFormData({ ...inspectionFormData, visitDate: e.target.value })} /></div>
-                      <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.visitDateTo}</label><input required type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.visitDateTo || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, visitDateTo: e.target.value })} /></div>
-                    </div>
+                    <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.visitDate}</label><input required type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.visitDate} onChange={e => setInspectionFormData({ ...inspectionFormData, visitDate: e.target.value })} /></div>
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.notes}</label><textarea className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" rows={3} value={inspectionFormData.notes} onChange={e => setInspectionFormData({ ...inspectionFormData, notes: e.target.value })} /></div>
                   </div>
                 )}
