@@ -56,6 +56,7 @@ interface CustomerRecord {
   address?: string;
   deliveryAddress?: string;
   visitDate?: string;
+  visitDateTo?: string;
   notes?: string;
   deliveryDate?: string;
   pickupDate?: string;
@@ -76,6 +77,7 @@ interface Inspection {
   address?: string;
   deliveryAddress?: string;
   visitDate: string;
+  visitDateTo?: string;
   notes: string;
   rooms: number;
   pieces: FurniturePiece[];
@@ -168,6 +170,7 @@ const translations: Record<'en' | 'ar', Record<string, string>> = {
     deliveryDate: "Delivery Date",
     pickupDate: "Pickup Date",
     portfolioDate: "Portfolio Date",
+    contractDate: "Contract Date",
     contractImg: "Contract Image",
     viewOnly: "Viewer (Read Only)",
     editor: "Editor (Full Access)",
@@ -238,6 +241,7 @@ const translations: Record<'en' | 'ar', Record<string, string>> = {
     deliveryDate: "تاريخ التسليم",
     pickupDate: "عنوان المعاينة",
     portfolioDate: "تاريخ البورتفوليو",
+    contractDate: "تاريخ العقد",
     contractImg: "صورة العقد",
     viewOnly: "مشاهد فقط",
     editor: "مسؤول (صلاحية كاملة)",
@@ -343,7 +347,6 @@ export default function App() {
     deliveryAddress: '',
     phone: '',
     visitDate: '',
-    visitDateTo: '',
     notes: '',
     rooms: 0,
     pieces: [],
@@ -693,6 +696,7 @@ export default function App() {
         ...(r.visitDate ? { [t.visitDate]: r.visitDate } : {}),
         ...(r.deliveryDate ? { [t.deliveryDate]: r.deliveryDate } : {}),
         ...(r.pickupDate ? { [t.pickupDate]: r.pickupDate } : {}),
+        ...(r.contractDate ? { [t.contractDate]: r.contractDate } : {}),
         ...(r.portfolioDate ? { [t.portfolioDate]: r.portfolioDate } : {}),
         ...(r.notes ? { [t.notes]: r.notes } : {}),
         ...(r.totalAmount ? { [t.total]: r.totalAmount } : {}),
@@ -840,7 +844,7 @@ export default function App() {
       toast.success(lang === 'ar' ? "تمت العملية بنجاح" : "Process completed");
       setIsInspectionModalOpen(false);
       setInspectionStep(1);
-      setInspectionFormData({ customerName: '', address: '', phone: '', visitDate: '', visitDateTo: '', notes: '', rooms: 0, pieces: [], totalAmount: 0 });
+      setInspectionFormData({ customerName: '', address: '', phone: '', visitDate: '',  notes: '', rooms: 0, pieces: [], totalAmount: 0 });
     } catch (err: any) { 
       toast.error(err.message); 
     }
@@ -1261,9 +1265,7 @@ export default function App() {
                                       <Calendar className="w-3 h-3" />
                                       {ins.visitDate}
                                     </div>
-                                    {ins.visitDateTo && (
-                                      <div className="text-[10px] font-bold text-zinc-400 mr-2">لـ {ins.visitDateTo}</div>
-                                    )}
+                                    
                                   </div>
                                 </div>
 
@@ -1451,7 +1453,7 @@ export default function App() {
                                   <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.customerName}</th>
                                   <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.phoneNumber}</th>
                                   {isContractedView && <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.deliveryDate}</th>}
-                                  {isContractedView && <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.pickupDate}</th>}
+                                  {isContractedView && <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.contractDate}</th>}
                                   <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center w-px whitespace-nowrap">{t.actions}</th>
                                 </tr>
                               </thead>
@@ -1460,8 +1462,8 @@ export default function App() {
                                   <tr key={r.id} className="hover:bg-black/5 transition-colors">
                                     <td className="px-4 py-6 font-semibold text-center">{r.customerName}</td>
                                     <td className="px-4 py-6 text-center"><span className="bg-black/5 px-2 py-1 rounded font-mono text-sm inline-block">{r.phone}</span></td>
-                                    {isContractedView && <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.deliveryDate}</td>}
-                                    {isContractedView && <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.pickupDate || '-'}</td>}
+                                    {isContractedView && <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.deliveryDate || '-'}</td>}
+                                    {isContractedView && <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.contractDate || '-'}</td>}
                                     {isInspectionView && <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.visitDate}</td>}
                                     <td className="px-4 py-6 text-center flex gap-3 justify-center">
                                       {isInspectionView && currentUser?.email === ADMIN_EMAIL && (
@@ -1503,7 +1505,9 @@ export default function App() {
                                 </div>
                                 <div className="text-right">
                                   {isContractedView && <span className="text-[10px] text-zinc-400 font-mono block mb-1">{t.deliveryDate}</span>}
-                                  {isContractedView && <span className="text-xs font-bold text-zinc-600">{r.deliveryDate}</span>}
+                                  {isContractedView && <span className="text-xs font-bold text-zinc-600 block mb-2">{r.deliveryDate || '-'}</span>}
+                                  {isContractedView && <span className="text-[10px] text-zinc-400 font-mono block mb-1">{t.contractDate}</span>}
+                                  {isContractedView && <span className="text-xs font-bold text-zinc-600">{r.contractDate || '-'}</span>}
                                   {isInspectionView && <span className="text-[10px] text-zinc-400 font-mono block mb-1">{t.visitDate}</span>}
                                   {isInspectionView && <span className="text-xs font-bold text-zinc-600">{r.visitDate}</span>}
                                 </div>
@@ -1591,7 +1595,7 @@ export default function App() {
                      {(editingCollection === 'contracted_customers' || editingCollection === 'customers') && (
                        <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.deliveryDate}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.deliveryDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, deliveryDate: e.target.value })} /></div>
                      )}
-                     {editingCollection === 'contracted_customers' && <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{lang === 'ar' ? 'تاريخ العقد' : 'Contract Date'}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.contractDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, contractDate: e.target.value })} /></div>}
+                     {editingCollection === 'contracted_customers' && <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.contractDate}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.contractDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, contractDate: e.target.value })} /></div>}
                     {editingCollection === 'contracted_customers' && (
                       <div className="space-y-4">
                         <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.portfolio}</label><input className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" placeholder="https://drive.google.com/..." value={inspectionFormData.portfolio || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, portfolio: e.target.value })} /></div>
@@ -1676,7 +1680,7 @@ export default function App() {
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.deliveryDate}</label><input required type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.deliveryDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, deliveryDate: e.target.value })} /></div>
-                        <div className="flex-1 space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{lang === 'ar' ? 'تاريخ العقد' : 'Contract Date'}</label><input required type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.contractDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, contractDate: e.target.value })} /></div>
+                        <div className="flex-1 space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.contractDate}</label><input required type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.contractDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, contractDate: e.target.value })} /></div>
                       </div>
                       <button disabled={isLoading} type="button" onClick={() => handleFinalizeInspection('contracted')} className="w-full bg-zinc-900 text-white py-5 rounded-3xl font-bold uppercase tracking-widest shadow-2xl flex items-center justify-center gap-3 btn-3d btn-3d-zinc">
                         {t.save}
@@ -1799,7 +1803,7 @@ export default function App() {
                     
                     <div className="pt-6 border-t border-white/10 grid grid-cols-2 gap-8 items-end">
                       <div className="space-y-1">
-                        <label className="text-[9px] font-bold uppercase text-zinc-400 tracking-widest">{lang === 'ar' ? 'تاريخ العقد' : 'Contract Date'}</label>
+                        <label className="text-[9px] font-bold uppercase text-zinc-400 tracking-widest">{t.contractDate}</label>
                         <p className="font-bold text-lg">{selectedRecord.contractDate || '-'}</p>
                       </div>
                       <div className="text-right rtl:text-left">
