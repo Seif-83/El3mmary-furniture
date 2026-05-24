@@ -581,7 +581,12 @@ export default function App() {
       setFormData({ ...formData, username: '', password: '' });
     } catch (error: any) {
       console.error('Supabase sign-in error:', error);
-      const message = error?.message || error?.msg || error?.error_description || null;
+      const rawMessage = error?.message || error?.msg || error?.error_description || null;
+      const message = typeof rawMessage === 'string' && rawMessage.toLowerCase().includes('invalid api key')
+        ? (lang === 'ar'
+            ? "مفتاح Supabase غير صحيح في نسخة Vercel. أضف VITE_SUPABASE_ANON_KEY أو SUPABASE_ANON_KEY ثم أعد النشر."
+            : "This Vercel deployment has an invalid Supabase key. Add VITE_SUPABASE_ANON_KEY or SUPABASE_ANON_KEY, then redeploy.")
+        : rawMessage;
       toast.error(message || (lang === 'ar' ? "بيانات غير صالحة" : "Invalid credentials"));
     }
     setIsLoading(false);
