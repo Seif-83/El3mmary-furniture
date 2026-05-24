@@ -310,6 +310,23 @@ const mapInspectionFromDB = (dbInsp: any): Inspection => ({
   ...((dbInsp as any).finalized_at ? { finalizedAt: toTimestamp((dbInsp as any).finalized_at) } : {})
 } as Inspection);
 
+const toSortableDateValue = (value?: string | null) => {
+  if (!value) return Number.POSITIVE_INFINITY;
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? Number.POSITIVE_INFINITY : timestamp;
+};
+
+const sortContractedRecordsByContractDate = (records: Inspection[]) =>
+  [...records].sort((a, b) => {
+    const contractDateDiff = toSortableDateValue(a.contractDate) - toSortableDateValue(b.contractDate);
+    if (contractDateDiff !== 0) return contractDateDiff;
+
+    const deliveryDateDiff = toSortableDateValue(a.deliveryDate) - toSortableDateValue(b.deliveryDate);
+    if (deliveryDateDiff !== 0) return deliveryDateDiff;
+
+    return (a.customerName || '').localeCompare(b.customerName || '', 'ar');
+  });
+
 export default function App() {
   const [lang, setLang] = useState<'en' | 'ar'>('ar');
   const t = translations[lang];
@@ -422,7 +439,7 @@ export default function App() {
 
     const { data: contrData, error: contrError } = await supabase.from('contracted_customers').select('*').order('finalized_at', { ascending: false });
     if (contrError) throw contrError;
-    setContractedCustomers((contrData || []).map(mapInspectionFromDB));
+    setContractedCustomers(sortContractedRecordsByContractDate((contrData || []).map(mapInspectionFromDB)));
 
     const { data: nonContrData, error: nonContrError } = await supabase.from('non_contracted_customers').select('*').order('finalized_at', { ascending: false });
     if (nonContrError) throw nonContrError;
