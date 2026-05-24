@@ -693,7 +693,7 @@ export default function App() {
     // Step 2+: Move customer to 'inspections' table and remove from 'customers'
     setIsLoading(true);
     try {
-      const dbData = {
+      const inspectionDbData = {
         customer_name: inspectionFormData.customerName?.trim(),
         address: inspectionFormData.address?.trim(),
         delivery_address: inspectionFormData.deliveryAddress?.trim(),
@@ -704,7 +704,6 @@ export default function App() {
         rooms: inspectionFormData.rooms || 0,
         pieces: inspectionFormData.pieces || [],
         total_amount: inspectionFormData.totalAmount || 0,
-        status: inspectionFormData.status || 'pending',
         portfolio: inspectionFormData.portfolio || null,
         delivery_date: inspectionFormData.deliveryDate || null,
         pickup_date: inspectionFormData.pickupDate || null,
@@ -714,11 +713,11 @@ export default function App() {
       
       if (inspectionFormData.id) {
         // Update existing inspection record
-        const { error } = await supabase.from('inspections').update(dbData).eq('id', inspectionFormData.id);
+        const { error } = await supabase.from('inspections').update(inspectionDbData).eq('id', inspectionFormData.id);
         if (error) throw error;
       } else {
         // Create new inspection and remove from customers
-        const { error: insertError } = await supabase.from('inspections').insert({ ...dbData, status: 'pending' });
+        const { error: insertError } = await supabase.from('inspections').insert(inspectionDbData);
         if (insertError) throw insertError;
         if (editingId) {
           try {
