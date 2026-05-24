@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+/// <reference types="react" />
+import React, { useState, useEffect, type ChangeEvent, type FormEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Armchair, 
@@ -22,29 +23,20 @@ import {
   Search
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword,
-  signOut, 
-  onAuthStateChanged,
-  User
-} from 'firebase/auth';
-import { 
-  collection, 
-  addDoc, 
-  getDocs, 
-  onSnapshot,
-  deleteDoc, 
-  doc, 
-  query, 
-  orderBy, 
-  where,
-  limit,
-  serverTimestamp,
-  updateDoc,
-  Timestamp
-} from 'firebase/firestore';
-import { auth, db } from './lib/firebase';
+import { supabase } from './lib/supabase';
+import { User } from '@supabase/supabase-js';
+
+interface FakeTimestamp {
+  toDate: () => Date;
+}
+const toTimestamp = (isoString: string | null | undefined): FakeTimestamp => {
+  const d = isoString ? new Date(isoString) : new Date();
+  return {
+    toDate: () => d
+  };
+};
+
+type Timestamp = FakeTimestamp;
 import toast, { Toaster } from 'react-hot-toast';
 import { format } from 'date-fns';
 
@@ -97,11 +89,12 @@ interface Inspection {
   deliveryDate?: string;
   pickupDate?: string;
   portfolioDate?: string;
+  portfolio_date?: string;
   contractDate?: string;
 }
 
-const ADMIN_EMAIL = "admin@gmail.com";
-const VIEWER_EMAIL = "viewer@gmail.com";
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "admin@gmail.com") as string;
+const VIEWER_EMAIL = (process.env.VIEWER_EMAIL || "viewer@gmail.com") as string;
 
 const FURNITURE_OPTIONS = [
   "سرير كبير", "دولاب", "كومود", "سراحة", "شفونيرة",
@@ -110,7 +103,7 @@ const FURNITURE_OPTIONS = [
   "مطبخ", "كنبة", "ركنة", "صالون"
 ];
 
-const translations = {
+const translations: Record<'en' | 'ar', Record<string, string>> = {
   en: {
     brand: "Welcome to EL3mmary",
     userDatabase: "User Database",
@@ -282,6 +275,43 @@ const formatCellValue = (v: any) => {
   return String(v);
 };
 
+const mapCustomerFromDB = (dbCust: any): CustomerRecord => ({
+  id: dbCust.id,
+  name: dbCust.name,
+  phone: dbCust.phone,
+  address: dbCust.address,
+  deliveryAddress: dbCust.delivery_address,
+  visitDate: dbCust.visit_date,
+  visitDateTo: dbCust.visit_date_to,
+  notes: dbCust.notes,
+  deliveryDate: dbCust.delivery_date,
+  pickupDate: dbCust.pickup_date,
+  portfolioDate: dbCust.portfolio_date,
+  createdAt: toTimestamp(dbCust.created_at)
+});
+
+const mapInspectionFromDB = (dbInsp: any): Inspection => ({
+  id: dbInsp.id,
+  customerName: dbInsp.customer_name,
+  phone: dbInsp.phone,
+  address: dbInsp.address,
+  deliveryAddress: dbInsp.delivery_address,
+  visitDate: dbInsp.visit_date,
+  visitDateTo: dbInsp.visit_date_to,
+  notes: dbInsp.notes,
+  rooms: dbInsp.rooms,
+  pieces: dbInsp.pieces || [],
+  totalAmount: Number(dbInsp.total_amount || 0),
+  status: dbInsp.status,
+  portfolio: dbInsp.portfolio,
+  deliveryDate: dbInsp.delivery_date,
+  pickupDate: dbInsp.pickup_date,
+  portfolioDate: dbInsp.portfolio_date,
+  contractDate: dbInsp.contract_date,
+  createdAt: toTimestamp(dbInsp.created_at),
+  ...((dbInsp as any).finalized_at ? { finalizedAt: toTimestamp((dbInsp as any).finalized_at) } : {})
+} as Inspection);
+
 export default function App() {
   const [lang, setLang] = useState<'en' | 'ar'>('ar');
   const t = translations[lang];
@@ -291,19 +321,24 @@ export default function App() {
   const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
+  const allowedEmails = [ADMIN_EMAIL, VIEWER_EMAIL];
+  const isAuthorizedUser = currentUser !== null && allowedEmails.includes(currentUser.email ?? '');
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingCollection, setEditingCollection] = useState<'customers' | 'inspections' | 'contracted_customers' | 'non_contracted_customers' | null>(null);
   
-  const [adminSubView, setAdminSubView] = useState<'customers' | 'catalogs' | 'contracted' | 'not-contracted'>('customers');
+  const [adminSubView, setAdminSubView] = useState<'customers' | 'catalogs' | 'contracted' | 'not-contracted' | 'inspections'>('customers');
   const [catalogs, setCatalogs] = useState<CatalogSheet[]>([]);
   const [customerRecords, setCustomerRecords] = useState<CustomerRecord[]>([]);
   const [inspections, setInspections] = useState<Inspection[]>([]);
   const [contractedCustomers, setContractedCustomers] = useState<Inspection[]>([]);
   const [notContractedCustomers, setNotContractedCustomers] = useState<Inspection[]>([]);
   const [selectedSheetId, setSelectedSheetId] = useState<string | null>(null);
+  const isInspectionView = adminSubView === 'inspections';
+  const isContractedView = adminSubView === 'contracted';
+  const activeRecords = isInspectionView ? inspections : isContractedView ? contractedCustomers : notContractedCustomers;
   
   const [isInspectionModalOpen, setIsInspectionModalOpen] = useState(false);
   const [inspectionStep, setInspectionStep] = useState(1);
@@ -340,7 +375,7 @@ export default function App() {
   const [editingCatalogRow, setEditingCatalogRow] = useState<{sheetId: string, rowIndex: number, data: any} | null>(null);
   const [expandedPieceDetails, setExpandedPieceDetails] = useState<number[]>([]);
 
-  const selectedSheet = catalogs.find(c => c.id === selectedSheetId);
+  const selectedSheet = catalogs.find((c: CatalogSheet) => c.id === selectedSheetId);
 
   const [formData, setFormData] = useState({
     username: '', 
@@ -350,48 +385,110 @@ export default function App() {
   });
 
   useEffect(() => {
-    let unsubscribeCatalogs: (() => void) | undefined;
-    let unsubscribeCustomers: (() => void) | undefined;
+    let catalogsChannel: any;
+    let customersChannel: any;
+    let inspectionsChannel: any;
+    let contractedChannel: any;
+    let nonContractedChannel: any;
 
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+    const loadInitialData = async () => {
+      const { data: catData } = await supabase.from('catalogs').select('*').order('created_at', { ascending: false });
+      if (catData) {
+        const sheets = catData.map(r => ({ ...r, createdAt: toTimestamp(r.created_at) })) as CatalogSheet[];
+        setCatalogs(sheets);
+        if (sheets.length > 0 && !selectedSheetId) setSelectedSheetId(sheets[0].id);
+      }
+
+      const { data: custData } = await supabase.from('customers').select('*').order('created_at', { ascending: false });
+      if (custData) {
+        setCustomerRecords(custData.map(mapCustomerFromDB));
+      }
+
+      const { data: inspData } = await supabase.from('inspections').select('*').order('created_at', { ascending: false });
+      if (inspData) {
+        setInspections(inspData.map(mapInspectionFromDB));
+      }
+
+      const { data: contrData } = await supabase.from('contracted_customers').select('*').order('finalized_at', { ascending: false });
+      if (contrData) {
+        setContractedCustomers(contrData.map(mapInspectionFromDB));
+      }
+
+      const { data: nonContrData } = await supabase.from('non_contracted_customers').select('*').order('finalized_at', { ascending: false });
+      if (nonContrData) {
+        setNotContractedCustomers(nonContrData.map(mapInspectionFromDB));
+      }
+    };
+
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const user = session?.user ?? null;
       setCurrentUser(user);
       setIsAuthChecking(false);
       
-      if (user && user.email === ADMIN_EMAIL) {
-        const qCatalogs = query(collection(db, 'catalogs'), orderBy('createdAt', 'desc'));
-        unsubscribeCatalogs = onSnapshot(qCatalogs, (snapshot) => {
-          const sheets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as CatalogSheet[];
-          setCatalogs(sheets);
-          if (sheets.length > 0 && !selectedSheetId) setSelectedSheetId(sheets[0].id);
-        });
+      if (user && (user.email === ADMIN_EMAIL || user.email === VIEWER_EMAIL)) {
+        loadInitialData();
 
-        const qCustomers = query(collection(db, 'customers'), orderBy('createdAt', 'desc'));
-        unsubscribeCustomers = onSnapshot(qCustomers, (snapshot) => {
-          const records = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as CustomerRecord[];
-          setCustomerRecords(records);
-        });
+        // Subscribe to channels for real-time updates
+        catalogsChannel = supabase.channel('public:catalogs')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'catalogs' }, () => {
+            loadInitialData();
+          })
+          .subscribe();
 
-        // Real-time listeners for new collections
-        onSnapshot(query(collection(db, 'inspections'), orderBy('createdAt', 'desc')), (snap) => {
-          setInspections(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Inspection[]);
-        });
-        onSnapshot(query(collection(db, 'contracted_customers'), orderBy('finalizedAt', 'desc')), (snap) => {
-          setContractedCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Inspection[]);
-        });
-        onSnapshot(query(collection(db, 'non_contracted_customers'), orderBy('finalizedAt', 'desc')), (snap) => {
-          setNotContractedCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Inspection[]);
-        });
+        customersChannel = supabase.channel('public:customers')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, () => {
+            loadInitialData();
+          })
+          .subscribe();
+
+        inspectionsChannel = supabase.channel('public:inspections')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'inspections' }, () => {
+            loadInitialData();
+          })
+          .subscribe();
+
+        contractedChannel = supabase.channel('public:contracted_customers')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'contracted_customers' }, () => {
+            loadInitialData();
+          })
+          .subscribe();
+
+        nonContractedChannel = supabase.channel('public:non_contracted_customers')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'non_contracted_customers' }, () => {
+            loadInitialData();
+          })
+          .subscribe();
+      }
+    });
+
+    const { data: { subscription: authListener } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const user = session?.user ?? null;
+      setCurrentUser(user);
+      setIsAuthChecking(false);
+      
+      if (user && (user.email === ADMIN_EMAIL || user.email === VIEWER_EMAIL)) {
+        loadInitialData();
+      } else {
+        setCatalogs([]);
+        setCustomerRecords([]);
+        setInspections([]);
+        setContractedCustomers([]);
+        setNotContractedCustomers([]);
       }
     });
 
     return () => {
-      unsubscribeAuth();
-      if (unsubscribeCatalogs) unsubscribeCatalogs();
-      if (unsubscribeCustomers) unsubscribeCustomers();
+      authListener.unsubscribe();
+      if (catalogsChannel) catalogsChannel.unsubscribe();
+      if (customersChannel) customersChannel.unsubscribe();
+      if (inspectionsChannel) inspectionsChannel.unsubscribe();
+      if (contractedChannel) contractedChannel.unsubscribe();
+      if (nonContractedChannel) nonContractedChannel.unsubscribe();
     };
   }, []);
 
-  const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportExcel = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
@@ -405,8 +502,9 @@ export default function App() {
         const title = prompt(lang === 'ar' ? "أدخل اسم الملف:" : "Enter sheet title:", file.name.split('.')[0]);
         if (!title) return;
         setIsLoading(true);
-        const docRef = await addDoc(collection(db, 'catalogs'), { title, data, createdAt: serverTimestamp() });
-        setSelectedSheetId(docRef.id);
+        const { data: newCat, error } = await supabase.from('catalogs').insert({ title, data }).select().single();
+        if (error) throw error;
+        setSelectedSheetId(newCat.id);
         toast.success(lang === 'ar' ? "تم النشر بنجاح" : "Sheet published successfully");
       } catch (error) { toast.error("Failed to parse Excel file"); }
       setIsLoading(false);
@@ -421,7 +519,8 @@ export default function App() {
       lang === 'ar' ? "هل أنت متأكد من حذف هذا الملف؟" : "Are you sure you want to delete this sheet?",
       async () => {
         try {
-          await deleteDoc(doc(db, 'catalogs', id));
+          const { error } = await supabase.from('catalogs').delete().eq('id', id);
+          if (error) throw error;
           if (selectedSheetId === id) setSelectedSheetId(null);
           toast.success(lang === 'ar' ? "تم الحذف" : "Sheet deleted");
         } catch { toast.error("Failed to delete"); }
@@ -434,19 +533,20 @@ export default function App() {
     setIsEditCatalogModalOpen(true);
   };
 
-  const handleSaveCatalogRow = async (e: React.FormEvent) => {
+  const handleSaveCatalogRow = async (e: FormEvent) => {
     e.preventDefault();
     if (!editingCatalogRow) return;
     
     setIsLoading(true);
     try {
-      const sheet = catalogs.find(c => c.id === editingCatalogRow.sheetId);
+      const sheet = catalogs.find((c: CatalogSheet) => c.id === editingCatalogRow.sheetId);
       if (!sheet) throw new Error("Sheet not found");
       
       const newData = [...sheet.data];
       newData[editingCatalogRow.rowIndex] = editingCatalogRow.data;
       
-      await updateDoc(doc(db, 'catalogs', editingCatalogRow.sheetId), { data: newData });
+      const { error } = await supabase.from('catalogs').update({ data: newData }).eq('id', editingCatalogRow.sheetId);
+      if (error) throw error;
       toast.success(lang === 'ar' ? "تم تحديث البيانات" : "Data updated");
       setIsEditCatalogModalOpen(false);
       setEditingCatalogRow(null);
@@ -456,28 +556,34 @@ export default function App() {
     setIsLoading(false);
   };
 
-  const handleAdminLogin = async (e: React.FormEvent) => {
+  const handleAdminLogin = async (e: FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    const expectedEmail = ADMIN_EMAIL;
-    const viewerEmail = VIEWER_EMAIL;
-    const expectedPass = "admin123";
-    
-    const isMaster = formData.username.toLowerCase() === expectedEmail.toLowerCase();
-    const isViewer = formData.username.toLowerCase() === viewerEmail.toLowerCase();
+    const targetEmail = formData.username.toLowerCase().trim();
+    const targetPassword = formData.password;
 
-    if ((isMaster || isViewer) && formData.password === expectedPass) {
-      try {
-        const targetEmail = isMaster ? expectedEmail : viewerEmail;
-        try { await signInWithEmailAndPassword(auth, targetEmail, expectedPass); }
-        catch (authError: any) {
-          if (authError.code === 'auth/user-not-found' || authError.code === 'auth/invalid-credential') await createUserWithEmailAndPassword(auth, targetEmail, expectedPass);
-          else throw authError;
-        }
-        toast.success(lang === 'ar' ? "تم التحقق" : "Verified");
-        setFormData({ ...formData, username: '', password: '' });
-      } catch (error: any) { toast.error(error.message); }
-    } else toast.error(lang === 'ar' ? "بيانات غير صالحة" : "Invalid credentials");
+    if (!targetEmail || !targetPassword) {
+      toast.error(lang === 'ar' ? "الرجاء إدخال البريد الإلكتروني وكلمة المرور" : "Please enter email and password");
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: targetEmail,
+        password: targetPassword
+      });
+      if (error) throw error;
+      const user = data.session?.user ?? null;
+      setCurrentUser(user);
+      setIsAuthChecking(false);
+      toast.success(lang === 'ar' ? "تم تسجيل الدخول" : "Logged in successfully");
+      setFormData({ ...formData, username: '', password: '' });
+    } catch (error: any) {
+      console.error('Supabase sign-in error:', error);
+      const message = error?.message || error?.msg || error?.error_description || null;
+      toast.error(message || (lang === 'ar' ? "بيانات غير صالحة" : "Invalid credentials"));
+    }
     setIsLoading(false);
   };
 
@@ -487,14 +593,15 @@ export default function App() {
       lang === 'ar' ? "هل أنت متأكد؟" : "Are you sure?",
       async () => {
         try {
-          await deleteDoc(doc(db, 'customers', id));
+          const { error } = await supabase.from('customers').delete().eq('id', id);
+          if (error) throw error;
           toast.success(lang === 'ar' ? "تم حذف العميل" : "Customer removed");
         } catch { toast.error("Unauthorized"); }
       }
     );
   };
 
-  const handleLogout = () => { signOut(auth); toast.success("Logged out"); };
+  const handleLogout = async () => { await supabase.auth.signOut(); toast.success("Logged out"); };
   
   const handleExportExcel = (data: any[], fileName: string) => {
     try {
@@ -523,43 +630,45 @@ export default function App() {
     }
   };
 
-   const handleInspectionSubmit = async (e: React.FormEvent) => {
+  const handleInspectionSubmit = async (e: FormEvent) => {
     e.preventDefault();
     
     if (inspectionStep === 1) {
       setIsLoading(true);
       try {
         if (inspectionFormData.id) {
-          const collectionName = editingCollection || 'inspections';
-          await updateDoc(doc(db, collectionName, inspectionFormData.id), {
-            customerName: inspectionFormData.customerName?.trim(),
+          const tableName = editingCollection || 'inspections';
+          const { error } = await supabase.from(tableName).update({
+            customer_name: inspectionFormData.customerName?.trim(),
             address: inspectionFormData.address?.trim(),
-            deliveryAddress: inspectionFormData.deliveryAddress?.trim(),
+            delivery_address: inspectionFormData.deliveryAddress?.trim(),
             phone: inspectionFormData.phone?.trim(),
-            visitDate: inspectionFormData.visitDate,
-            visitDateTo: inspectionFormData.visitDateTo,
+            visit_date: inspectionFormData.visitDate,
+            visit_date_to: inspectionFormData.visitDateTo,
             notes: inspectionFormData.notes,
             rooms: inspectionFormData.rooms || 0,
             pieces: inspectionFormData.pieces || [],
-            totalAmount: inspectionFormData.totalAmount || 0,
-            ...(inspectionFormData.deliveryDate ? { deliveryDate: inspectionFormData.deliveryDate } : {}),
-            ...(inspectionFormData.pickupDate ? { pickupDate: inspectionFormData.pickupDate } : {}),
-            ...(inspectionFormData.portfolioDate ? { portfolioDate: inspectionFormData.portfolioDate } : {}),
-            ...(inspectionFormData.contractDate ? { contractDate: inspectionFormData.contractDate } : {}),
-            ...(inspectionFormData.portfolio ? { portfolio: inspectionFormData.portfolio } : {}),
-          });
+            total_amount: inspectionFormData.totalAmount || 0,
+            delivery_date: inspectionFormData.deliveryDate || null,
+            pickup_date: inspectionFormData.pickupDate || null,
+            portfolio_date: inspectionFormData.portfolio_date || null,
+            contract_date: inspectionFormData.contractDate || null,
+            portfolio: inspectionFormData.portfolio || null,
+          }).eq('id', inspectionFormData.id);
+          if (error) throw error;
         } else if (editingId) {
-          await updateDoc(doc(db, 'customers', editingId), {
+          const { error } = await supabase.from('customers').update({
             name: inspectionFormData.customerName?.trim(),
             phone: inspectionFormData.phone?.trim(),
             address: inspectionFormData.address?.trim(),
-            deliveryAddress: inspectionFormData.deliveryAddress?.trim(),
-            visitDate: inspectionFormData.visitDate,
-            visitDateTo: inspectionFormData.visitDateTo,
+            delivery_address: inspectionFormData.deliveryAddress?.trim(),
+            visit_date: inspectionFormData.visitDate,
+            visit_date_to: inspectionFormData.visitDateTo,
             notes: inspectionFormData.notes,
-            pickupDate: inspectionFormData.pickupDate || '',
-            portfolioDate: inspectionFormData.portfolioDate || '',
-          });
+            pickup_date: inspectionFormData.pickupDate || null,
+            portfolio_date: inspectionFormData.portfolio_date || null,
+          }).eq('id', editingId);
+          if (error) throw error;
         }
         toast.success(lang === 'ar' ? "تم الحفظ بنجاح" : "Saved successfully");
         setIsInspectionModalOpen(false);
@@ -576,21 +685,40 @@ export default function App() {
       return;
     }
 
-    // Step 2+: Move customer to 'inspections' collection and remove from 'customers'
+    // Step 2+: Move customer to 'inspections' table and remove from 'customers'
     setIsLoading(true);
     try {
-      const { id: _, ...rest } = inspectionFormData;
-      const data = { ...rest, createdAt: serverTimestamp() };
+      const dbData = {
+        customer_name: inspectionFormData.customerName?.trim(),
+        address: inspectionFormData.address?.trim(),
+        delivery_address: inspectionFormData.deliveryAddress?.trim(),
+        phone: inspectionFormData.phone?.trim(),
+        visit_date: inspectionFormData.visitDate,
+        visit_date_to: inspectionFormData.visitDateTo,
+        notes: inspectionFormData.notes,
+        rooms: inspectionFormData.rooms || 0,
+        pieces: inspectionFormData.pieces || [],
+        total_amount: inspectionFormData.totalAmount || 0,
+        status: inspectionFormData.status || 'pending',
+        portfolio: inspectionFormData.portfolio || null,
+        delivery_date: inspectionFormData.deliveryDate || null,
+        pickup_date: inspectionFormData.pickupDate || null,
+        portfolio_date: inspectionFormData.portfolio_date || null,
+        contract_date: inspectionFormData.contractDate || null
+      };
       
       if (inspectionFormData.id) {
         // Update existing inspection record
-        await updateDoc(doc(db, 'inspections', inspectionFormData.id), data);
+        const { error } = await supabase.from('inspections').update(dbData).eq('id', inspectionFormData.id);
+        if (error) throw error;
       } else {
         // Create new inspection and remove from customers
-        await addDoc(collection(db, 'inspections'), { ...data, status: 'pending' });
+        const { error: insertError } = await supabase.from('inspections').insert({ ...dbData, status: 'pending' });
+        if (insertError) throw insertError;
         if (editingId) {
           try {
-            await deleteDoc(doc(db, 'customers', editingId));
+            const { error: deleteError } = await supabase.from('customers').delete().eq('id', editingId);
+            if (deleteError) throw deleteError;
           } catch (err) { console.error("Failed to remove customer after creating inspection", err); }
         }
       }
@@ -612,24 +740,36 @@ export default function App() {
     setIsLoading(true);
     try {
       const recordToSave = directRecord || inspectionFormData;
-      const collectionName = status === 'contracted' ? 'contracted_customers' : 'non_contracted_customers';
-      const { id: _, ...rest } = recordToSave as any;
-      const data = {
-        ...rest,
+      const tableName = status === 'contracted' ? 'contracted_customers' : 'non_contracted_customers';
+      
+      const dbData = {
+        customer_name: recordToSave.customerName?.trim(),
+        address: recordToSave.address?.trim(),
+        delivery_address: recordToSave.deliveryAddress?.trim(),
+        phone: recordToSave.phone?.trim(),
+        visit_date: recordToSave.visitDate,
+        visit_date_to: recordToSave.visitDateTo,
+        notes: recordToSave.notes,
+        rooms: recordToSave.rooms || 0,
+        pieces: recordToSave.pieces || [],
+        total_amount: recordToSave.totalAmount || 0,
         status,
-        finalizedAt: serverTimestamp(),
-        createdAt: recordToSave.createdAt || serverTimestamp()
+        portfolio: recordToSave.portfolio || null,
+        delivery_date: recordToSave.deliveryDate || null,
+        pickup_date: recordToSave.pickupDate || null,
+        portfolio_date: recordToSave.portfolio_date || null,
+        contract_date: recordToSave.contractDate || null,
+        finalized_at: new Date().toISOString()
       };
       
-      await addDoc(collection(db, collectionName), data);
+      const { error: insertError } = await supabase.from(tableName).insert(dbData);
+      if (insertError) throw insertError;
       
       // If this was a pending inspection, remove it
       if (recordToSave.id) {
-        await deleteDoc(doc(db, 'inspections', recordToSave.id));
+        const { error: deleteError } = await supabase.from('inspections').delete().eq('id', recordToSave.id);
+        if (deleteError) throw deleteError;
       }
-
-      // Important: If we are finalizing, we might want to mark the original customer record too, 
-      // but the user wants them in the specialized tables, so we'll keep the current move logic.
       
       toast.success(lang === 'ar' ? "تمت العملية بنجاح" : "Process completed");
       setIsInspectionModalOpen(false);
@@ -647,7 +787,8 @@ export default function App() {
       lang === 'ar' ? "هل أنت متأكد من حذف هذا السجل؟" : "Are you sure?",
       async () => {
         try {
-          await deleteDoc(doc(db, 'contracted_customers', id));
+          const { error } = await supabase.from('contracted_customers').delete().eq('id', id);
+          if (error) throw error;
           toast.success(lang === 'ar' ? "تم الحذف" : "Deleted");
         } catch { toast.error("Unauthorized"); }
       }
@@ -660,7 +801,8 @@ export default function App() {
       lang === 'ar' ? "هل أنت متأكد من حذف هذا السجل؟" : "Are you sure?",
       async () => {
         try {
-          await deleteDoc(doc(db, 'non_contracted_customers', id));
+          const { error } = await supabase.from('non_contracted_customers').delete().eq('id', id);
+          if (error) throw error;
           toast.success(lang === 'ar' ? "تم الحذف" : "Deleted");
         } catch { toast.error("Unauthorized"); }
       }
@@ -696,8 +838,8 @@ export default function App() {
   };
 
   const removePiece = (index: number) => {
-    const pieces = inspectionFormData.pieces?.filter((_, i) => i !== index) || [];
-    const totalAmount = pieces.reduce((acc, curr) => acc + curr.price, 0);
+    const pieces = inspectionFormData.pieces?.filter((_: any, i: number) => i !== index) || [];
+    const totalAmount = pieces.reduce((acc: number, curr: FurniturePiece) => acc + curr.price, 0);
     setInspectionFormData({ ...inspectionFormData, pieces, totalAmount });
   };
 
@@ -713,20 +855,40 @@ export default function App() {
     setIsInspectionModalOpen(true);
   };
 
-  const handleSaveRecord = async (e: React.FormEvent) => {
+  const handleSaveRecord = async (e: FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim() || !formData.phone.trim()) return toast.error("Please enter data");
     setIsLoading(true);
     try {
-      const target = 'customers';
       if (modalMode === 'add') {
-        const q = query(collection(db, target), where('phone', '==', formData.phone.trim()), limit(1));
-        const snap = await getDocs(q);
-        if (!snap.empty) { toast.error("Already registered"); setIsLoading(false); return; }
-        await addDoc(collection(db, target), { name: formData.name.trim(), phone: formData.phone.trim(), createdAt: serverTimestamp() });
+        const { data: existing, error: checkError } = await supabase
+          .from('customers')
+          .select('id')
+          .eq('phone', formData.phone.trim())
+          .limit(1);
+        
+        if (checkError) throw checkError;
+        if (existing && existing.length > 0) {
+          toast.error("Already registered");
+          setIsLoading(false);
+          return;
+        }
+        
+        const { error: insertError } = await supabase.from('customers').insert({
+          name: formData.name.trim(),
+          phone: formData.phone.trim()
+        });
+        if (insertError) throw insertError;
         toast.success("Added success");
       } else {
-        await updateDoc(doc(db, target, editingId!), { name: formData.name.trim(), phone: formData.phone.trim() });
+        const { error: updateError } = await supabase
+          .from('customers')
+          .update({
+            name: formData.name.trim(),
+            phone: formData.phone.trim()
+          })
+          .eq('id', editingId!);
+        if (updateError) throw updateError;
         toast.success("Updated success");
       }
       setIsModalOpen(false);
@@ -804,7 +966,7 @@ export default function App() {
 
             <main className="flex-1 p-6 md:p-12 max-w-7xl mx-auto w-full">
               <AnimatePresence mode="wait">
-                {currentUser && currentUser.email === ADMIN_EMAIL ? (
+                {currentUser && isAuthorizedUser ? (
                   <motion.div key={adminSubView} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-8">
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
                       <div>
@@ -1038,7 +1200,7 @@ export default function App() {
                                 <div className="flex justify-between items-center pt-4 border-t border-zinc-100 relative z-10">
                                   <div className="flex gap-2">
                                     <button onClick={() => { setSelectedRecord(ins); setIsDetailModalOpen(true); }} className="p-3 bg-zinc-50 text-zinc-400 rounded-2xl hover:bg-zinc-100 hover:text-zinc-600 transition-all"><Eye className="w-5 h-5" /></button>
-                                    <button onClick={() => triggerConfirm(lang === 'ar' ? "حذف" : "Delete", lang === 'ar' ? "حذف؟" : "Delete?", async () => { await deleteDoc(doc(db, 'inspections', ins.id)); toast.success(lang === 'ar' ? "تم الحذف" : "Deleted"); })} className="p-3 bg-red-50 text-red-400 rounded-2xl hover:bg-red-100 transition-all"><Trash2 className="w-5 h-5" /></button>
+                                    <button onClick={() => triggerConfirm(lang === 'ar' ? "حذف" : "Delete", lang === 'ar' ? "حذف؟" : "Delete?", async () => { const { error } = await supabase.from('inspections').delete().eq('id', ins.id); if (error) toast.error("Error"); else toast.success(lang === 'ar' ? "تم الحذف" : "Deleted"); })} className="p-3 bg-red-50 text-red-400 rounded-2xl hover:bg-red-100 transition-all"><Trash2 className="w-5 h-5" /></button>
                                   </div>
                                   <span className="text-[10px] font-bold text-zinc-300 uppercase tracking-tighter">ID: {ins.id.slice(0,8)}</span>
                                 </div>
@@ -1156,37 +1318,34 @@ export default function App() {
                                 <tr className="border-b border-black/5">
                                   <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.customerName}</th>
                                   <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.phoneNumber}</th>
-                                  {adminSubView === 'contracted' && <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.deliveryDate}</th>}
-                                  {adminSubView === 'contracted' && <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.pickupDate}</th>}
-                                  {adminSubView === 'inspections' && <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.visitDate}</th>}
+                                  {isContractedView && <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.deliveryDate}</th>}
+                                  {isContractedView && <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.pickupDate}</th>}
                                   <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center w-px whitespace-nowrap">{t.actions}</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-black/5">
-                                {(adminSubView === 'inspections' ? inspections : 
-                                  adminSubView === 'contracted' ? contractedCustomers : 
-                                  notContractedCustomers).filter(r => !searchQuery || r.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) || r.phone?.includes(searchQuery)).map(r => (
+                                {activeRecords.filter(r => !searchQuery || r.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) || r.phone?.includes(searchQuery)).map(r => (
                                   <tr key={r.id} className="hover:bg-black/5 transition-colors">
                                     <td className="px-4 py-6 font-semibold text-center">{r.customerName}</td>
                                     <td className="px-4 py-6 text-center"><span className="bg-black/5 px-2 py-1 rounded font-mono text-sm inline-block">{r.phone}</span></td>
-                                    {adminSubView === 'contracted' && <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.deliveryDate}</td>}
-                                    {adminSubView === 'contracted' && <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.pickupDate || '-'}</td>}
-                                    {adminSubView === 'inspections' && <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.visitDate}</td>}
+                                    {isContractedView && <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.deliveryDate}</td>}
+                                    {isContractedView && <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.pickupDate || '-'}</td>}
+                                    {isInspectionView && <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.visitDate}</td>}
                                     <td className="px-4 py-6 text-center flex gap-3 justify-center">
-                                      {adminSubView === 'inspections' && currentUser?.email === ADMIN_EMAIL && (
+                                      {isInspectionView && currentUser?.email === ADMIN_EMAIL && (
                                         <button onClick={() => { setInspectionFormData(r); setInspectionStep(2); setIsInspectionModalOpen(true); }} className="text-zinc-600 border border-zinc-200 px-5 py-3 rounded-lg text-xs font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all">{t.step2}</button>
                                       )}
-                                      {currentUser?.email === ADMIN_EMAIL && adminSubView !== 'inspections' && (
-                                        <button onClick={() => openEditFinalizedRecord(r, adminSubView === 'contracted' ? 'contracted_customers' : 'non_contracted_customers')} className="text-zinc-600 border border-zinc-200 px-5 py-3 rounded-lg text-xs font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all">
+                                      {currentUser?.email === ADMIN_EMAIL && !isInspectionView && (
+                                        <button onClick={() => openEditFinalizedRecord(r, isContractedView ? 'contracted_customers' : 'non_contracted_customers')} className="text-zinc-600 border border-zinc-200 px-5 py-3 rounded-lg text-xs font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all">
                                           <Edit2 className="w-4 h-4" />
                                         </button>
                                       )}
                                       <button onClick={() => { setSelectedRecord(r); setIsDetailModalOpen(true); }} className="text-zinc-400 border border-zinc-200 px-5 py-3 rounded-lg text-xs font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all"><Eye className="w-4 h-4" /></button>
                                       {currentUser?.email === ADMIN_EMAIL && (
                                         <button onClick={() => {
-                                          if (adminSubView === 'contracted') handleDeleteContracted(r.id);
+                                          if (isContractedView) handleDeleteContracted(r.id);
                                           else if (adminSubView === 'not-contracted') handleDeleteNonContracted(r.id);
-                                          else if (adminSubView === 'inspections') deleteDoc(doc(db, 'inspections', r.id));
+                                          else if (isInspectionView) supabase.from('inspections').delete().eq('id', r.id).then(({ error }) => { if (error) toast.error("Error"); else toast.success(lang === 'ar' ? "تم الحذف" : "Deleted"); });
                                         }} className="text-red-500 border border-red-200 px-5 py-3 rounded-lg text-xs font-bold uppercase hover:bg-red-600 hover:text-white transition-all shadow-sm">
                                           <Trash2 className="w-4 h-4" />
                                         </button>
@@ -1194,7 +1353,7 @@ export default function App() {
                                     </td>
                                   </tr>
                                 ))}
-                                {(adminSubView === 'inspections' ? inspections : adminSubView === 'contracted' ? contractedCustomers : notContractedCustomers).length === 0 && (
+                                {activeRecords.length === 0 && (
                                   <tr><td colSpan={5} className="py-20 text-center italic text-zinc-400">{t.noRecords}</td></tr>
                                 )}
                               </tbody>
@@ -1203,9 +1362,7 @@ export default function App() {
                         </div>
 
                         <div className="grid grid-cols-1 gap-4 md:hidden">
-                          {(adminSubView === 'inspections' ? inspections : 
-                            adminSubView === 'contracted' ? contractedCustomers : 
-                            notContractedCustomers).filter(r => !searchQuery || r.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) || r.phone?.includes(searchQuery)).map(r => (
+                          {activeRecords.filter(r => !searchQuery || r.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) || r.phone?.includes(searchQuery)).map(r => (
                             <div key={r.id} className="bg-white/80 backdrop-blur-xl p-6 rounded-[2rem] flex flex-col gap-4 border border-white/50 shadow-lg relative overflow-hidden group">
                               <div className="flex justify-between items-start">
                                 <div>
@@ -1213,27 +1370,27 @@ export default function App() {
                                   <p className="text-zinc-500 font-mono text-sm">{r.phone}</p>
                                 </div>
                                 <div className="text-right">
-                                  {adminSubView === 'contracted' && <span className="text-[10px] text-zinc-400 font-mono block mb-1">{t.deliveryDate}</span>}
-                                  {adminSubView === 'contracted' && <span className="text-xs font-bold text-zinc-600">{r.deliveryDate}</span>}
-                                  {adminSubView === 'inspections' && <span className="text-[10px] text-zinc-400 font-mono block mb-1">{t.visitDate}</span>}
-                                  {adminSubView === 'inspections' && <span className="text-xs font-bold text-zinc-600">{r.visitDate}</span>}
+                                  {isContractedView && <span className="text-[10px] text-zinc-400 font-mono block mb-1">{t.deliveryDate}</span>}
+                                  {isContractedView && <span className="text-xs font-bold text-zinc-600">{r.deliveryDate}</span>}
+                                  {isInspectionView && <span className="text-[10px] text-zinc-400 font-mono block mb-1">{t.visitDate}</span>}
+                                  {isInspectionView && <span className="text-xs font-bold text-zinc-600">{r.visitDate}</span>}
                                 </div>
                               </div>
                               <div className="flex gap-2 pt-4 border-t border-zinc-100 justify-end">
-                                {adminSubView === 'inspections' && currentUser?.email === ADMIN_EMAIL && (
+                                {isInspectionView && currentUser?.email === ADMIN_EMAIL && (
                                   <button onClick={() => { setInspectionFormData(r); setInspectionStep(2); setIsInspectionModalOpen(true); }} className="flex-1 flex items-center justify-center text-zinc-600 border border-zinc-200 px-6 py-4 rounded-2xl text-sm font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all shadow-sm">{t.step2}</button>
                                 )}
-                                {currentUser?.email === ADMIN_EMAIL && adminSubView !== 'inspections' && (
-                                  <button onClick={() => openEditFinalizedRecord(r, adminSubView === 'contracted' ? 'contracted_customers' : 'non_contracted_customers')} className="flex items-center justify-center gap-2 bg-zinc-100 text-zinc-600 border border-zinc-200 px-6 py-4 rounded-2xl text-sm font-bold uppercase hover:bg-zinc-200 transition-all shadow-sm">
+                                {currentUser?.email === ADMIN_EMAIL && !isInspectionView && (
+                                  <button onClick={() => openEditFinalizedRecord(r, isContractedView ? 'contracted_customers' : 'non_contracted_customers')} className="flex items-center justify-center gap-2 bg-zinc-100 text-zinc-600 border border-zinc-200 px-6 py-4 rounded-2xl text-sm font-bold uppercase hover:bg-zinc-200 transition-all shadow-sm">
                                     <Edit2 className="w-5 h-5" /> {lang === 'ar' ? 'تعديل' : 'Edit'}
                                   </button>
                                 )}
                                 <button onClick={() => { setSelectedRecord(r); setIsDetailModalOpen(true); }} className="flex-1 flex items-center justify-center gap-2 bg-zinc-100 text-zinc-600 px-6 py-4 rounded-2xl text-sm font-bold uppercase hover:bg-zinc-200 transition-all shadow-sm btn-3d btn-3d-glass"><Eye className="w-5 h-5" /> {lang === 'ar' ? 'عرض' : 'View'}</button>
                                 {currentUser?.email === ADMIN_EMAIL && (
                                   <button onClick={() => {
-                                    if (adminSubView === 'contracted') handleDeleteContracted(r.id);
+                                    if (isContractedView) handleDeleteContracted(r.id);
                                     else if (adminSubView === 'not-contracted') handleDeleteNonContracted(r.id);
-                                    else if (adminSubView === 'inspections') deleteDoc(doc(db, 'inspections', r.id));
+                                    else if (isInspectionView) supabase.from('inspections').delete().eq('id', r.id).then(({ error }) => { if (error) toast.error("Error"); else toast.success(lang === 'ar' ? "تم الحذف" : "Deleted"); });
                                   }} className="flex items-center justify-center gap-2 bg-red-50 text-red-500 border border-red-100 px-6 py-4 rounded-2xl text-sm font-bold uppercase hover:bg-red-500 hover:text-white transition-all shadow-sm">
                                     <Trash2 className="w-5 h-5" />
                                   </button>
@@ -1241,12 +1398,21 @@ export default function App() {
                               </div>
                             </div>
                           ))}
-                          {(adminSubView === 'inspections' ? inspections : adminSubView === 'contracted' ? contractedCustomers : notContractedCustomers).length === 0 && (
+                          {activeRecords.length === 0 && (
                             <div className="py-20 text-center italic text-zinc-400">{t.noRecords}</div>
                           )}
                         </div>
                       </div>
                     )}
+                  </motion.div>
+                ) : currentUser && !isAuthorizedUser ? (
+                  <motion.div key="unauthorized" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="max-w-3xl mx-auto py-16 px-4 sm:px-6 lg:px-8">
+                    <div className="glass rounded-[2.5rem] p-12 shadow-2xl text-center">
+                      <Armchair className="w-14 h-14 text-accent-tan mx-auto mb-5" />
+                      <h2 className="heading-accent text-4xl md:text-5xl font-light mb-4">{lang === 'ar' ? 'لا تملك صلاحية الدخول' : 'Access not authorized'}</h2>
+                      <p className="text-zinc-500 text-base md:text-lg mb-8">{lang === 'ar' ? 'تم تسجيل الدخول ولكن هذا الحساب غير مصرح له باستخدام لوحة التحكم.' : 'You are signed in, but this account is not authorized to access the admin portal.'}</p>
+                      <button onClick={handleLogout} className="bg-zinc-900 text-white py-4 px-8 rounded-3xl font-bold uppercase tracking-widest btn-3d btn-3d-zinc">{lang === 'ar' ? 'تسجيل الخروج' : 'Sign Out'}</button>
+                    </div>
                   </motion.div>
                 ) : (
                   <div className="max-w-3xl mx-auto py-16 px-4 sm:px-6 lg:px-8">
