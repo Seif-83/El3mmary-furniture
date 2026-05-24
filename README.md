@@ -28,3 +28,23 @@ View your app in AI Studio: https://ai.studio/apps/eeb87e46-c984-42d4-80a4-4d1ac
    `npx supabase db query --linked --file supabase/migrations/0001_init.sql`
 5. Run the app:
    `npm run dev`
+
+## Deploy To Vercel
+
+This repo now uses Supabase only. There is no Firebase code in the current source or in the current production build output.
+
+Before deploying on Vercel:
+
+1. Open your Vercel project for this GitHub repository.
+2. In `Settings > Environment Variables`, add:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+   - `GEMINI_API_KEY` if you use the Gemini features
+   - `ADMIN_EMAIL`
+   - `ADMIN_PASSWORD`
+3. Redeploy after saving the variables.
+
+Important:
+- Your local `.env` file is not uploaded to Vercel automatically.
+- If Vercel still shows an old Firebase-based site, that usually means the wrong Vercel project, wrong repository, or wrong branch is being deployed.
+- The build now fails fast when `VITE_SUPABASE_URL` or `VITE_SUPABASE_ANON_KEY` are missing, so misconfigured Vercel deployments are easier to catch.
