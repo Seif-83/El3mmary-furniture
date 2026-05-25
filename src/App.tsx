@@ -910,6 +910,10 @@ export default function App() {
       };
       const { error } = await supabase.from(tableName).insert(dbData);
       if (error) throw error;
+      if (directRecord?.id) {
+        const { error: deleteError } = await supabase.from('inspections').delete().eq('id', directRecord.id);
+        if (deleteError) throw deleteError;
+      }
       await refreshAllData();
       void playSound('success');
       toast.success(lang === 'ar' ? "تمت العملية بنجاح" : "Process completed");
@@ -1460,7 +1464,7 @@ export default function App() {
                                     <button onClick={async () => {
                                       await handleFinalizeInspection('contracted', ins);
                                       setAdminSubView('contracted');
-                                    }} className="btn-3d btn-3d-glass flex flex-col items-center justify-center gap-2 bg-white border border-zinc-100 text-zinc-400 p-4 rounded-3xl font-bold uppercase transition-all hover:scale-[1.02] active:scale-95 hover:text-danger hover:border-danger/20">
+                                    }} className="btn-3d btn-3d-glass flex flex-col items-center justify-center gap-2 bg-white border border-zinc-100 text-zinc-400 p-4 rounded-3xl font-bold uppercase transition-all hover:scale-[1.02] active:scale-95 hover:text-emerald-600 hover:border-emerald-200">
                                       <CheckCircle2 className="w-5 h-5" />
                                       <span className="text-[11px] tracking-widest">{t.contractedBtn}</span>
                                     </button>
@@ -1537,6 +1541,7 @@ export default function App() {
                                                 visitDate: (r as any).visitDate || '',
                                                 visitDateTo: (r as any).visitDateTo || '',
                                                 notes: (r as any).notes || '',
+                                                governorate: (r as any).governorate || '',
                                                 rooms: 0, pieces: [], totalAmount: 0
                                               });
                                               setEditingCollection('customers');
@@ -1590,6 +1595,7 @@ export default function App() {
                                     visitDate: (r as any).visitDate || '',
                                     visitDateTo: (r as any).visitDateTo || '',
                                     notes: (r as any).notes || '',
+                                    governorate: (r as any).governorate || '',
                                     rooms: 0, pieces: [], totalAmount: 0 
                                   });
                                   setEditingCollection('customers');
@@ -1612,6 +1618,7 @@ export default function App() {
                                       visitDate: (r as any).visitDate || '',
                                       visitDateTo: (r as any).visitDateTo || '',
                                       notes: (r as any).notes || '',
+                                      governorate: (r as any).governorate || '',
                                       rooms: 0, pieces: [], totalAmount: 0
                                     });
                                     setEditingId(r.id);
