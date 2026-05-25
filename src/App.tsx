@@ -1,5 +1,5 @@
 /// <reference types="react" />
-import React, { useState, useEffect, useRef, type ChangeEvent, type FormEvent } from 'react';
+import React, { useState, useEffect, useRef, useMemo, type ChangeEvent, type FormEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Armchair, 
@@ -401,6 +401,44 @@ export default function App() {
   const isContractedView = adminSubView === 'contracted';
   const activeRecords = isInspectionView ? inspections : isContractedView ? contractedCustomers : notContractedCustomers;
   
+  // Unified customers list across tables with status
+  const unifiedCustomers = useMemo(() => {
+    const map = new Map();
+
+    const push = (key, entry, source, status) => {
+      const k = (key || '').toString().trim();
+      if (!k) return;
+      const existing = map.get(k);
+      const obj = {
+        id: entry?.id,
+        phone: k,
+        name: entry?.name || entry?.customerName || '',
+        governorate: entry?.governorate || entry?.city || '',
+        pickupDate: entry?.pickup_date || entry?.pickupDate || entry?.visitDate || '',
+        source,
+        status,
+        raw: entry
+      };
+      const priority = { contracted: 4, 'not-contracted': 3, inspections: 2, customers: 1 };
+      if (!existing) map.set(k, obj);
+      else if (priority[status] > priority[existing.status]) map.set(k, obj);
+    };
+
+    (customerRecords || []).forEach(c => push(c.phone, c, 'customers', 'customers'));
+    (inspections || []).forEach(i => push(i.phone, i, 'inspections', 'inspections'));
+    (contractedCustomers || []).forEach(c => push(c.phone, c, 'contracted', 'contracted'));
+    (notContractedCustomers || []).forEach(c => push(c.phone, c, 'not-contracted', 'not-contracted'));
+
+    return Array.from(map.values());
+  }, [customerRecords, inspections, contractedCustomers, notContractedCustomers]);
+
+  const getStatusBadge = (status: string) => {
+    if (status === 'contracted') return { label: lang === 'ar' ? 'متعاقد' : 'Contracted', cls: 'bg-emerald-100 text-emerald-700' };
+    if (status === 'not-contracted') return { label: lang === 'ar' ? 'غير متعاقد' : 'Not contracted', cls: 'bg-red-100 text-red-700' };
+    if (status === 'inspections') return { label: lang === 'ar' ? 'معاينات' : 'Inspection', cls: 'bg-yellow-100 text-yellow-700' };
+    return { label: lang === 'ar' ? 'عميل' : 'Customer', cls: 'bg-zinc-100 text-zinc-700' };
+  };
+
   const [isInspectionModalOpen, setIsInspectionModalOpen] = useState(false);
   const [inspectionStep, setInspectionStep] = useState(1);
   const [inspectionFormData, setInspectionFormData] = useState<Partial<Inspection>>({
@@ -1232,7 +1270,7 @@ export default function App() {
 
                         <div className="glass px-4 py-3 rounded-2xl min-w-[90px]">
                           <div className="text-[10px] uppercase font-bold text-zinc-400">{adminSubView === 'customers' ? t.totalCustomers : adminSubView === 'inspections' ? t.inspections : adminSubView === 'contracted' ? t.contracted : adminSubView === 'not-contracted' ? t.notContracted : adminSubView === 'phonebook' ? (lang === 'ar' ? 'الأرقام' : 'Numbers') : t.publishedSheets}</div>
-                          <div className="text-2xl font-semibold">{adminSubView === 'customers' ? customerRecords.filter(r => matchesFilters(r)).length : adminSubView === 'inspections' ? inspections.filter(r => matchesFilters(r)).length : adminSubView === 'contracted' ? contractedCustomers.filter(r => matchesFilters(r)).length : adminSubView === 'not-contracted' ? notContractedCustomers.filter(r => matchesFilters(r)).length : adminSubView === 'phonebook' ? new Set([...customerRecords, ...inspections, ...contractedCustomers, ...notContractedCustomers].map(r => r.phone).filter(Boolean)).size : catalogs.length}</div>
+                          <div className="text-2xl font-semibold">{adminSubView === 'customers' ? unifiedCustomers.filter(r => matchesFilters(r)).length : adminSubView === 'inspections' ? inspections.filter(r => matchesFilters(r)).length : adminSubView === 'contracted' ? contractedCustomers.filter(r => matchesFilters(r)).length : adminSubView === 'not-contracted' ? notContractedCustomers.filter(r => matchesFilters(r)).length : adminSubView === 'phonebook' ? new Set([...customerRecords, ...inspections, ...contractedCustomers, ...notContractedCustomers].map(r => r.phone).filter(Boolean)).size : catalogs.length}</div>
                         </div>
                       </div>
                     </div>
@@ -1503,21 +1541,23 @@ export default function App() {
                                   <th className="px-6 py-5 font-bold text-zinc-500 uppercase text-[13px] text-center">{t.userName}</th>
                                   <th className="px-6 py-5 font-bold text-zinc-500 uppercase text-[13px] text-center">{t.phoneNumber}</th>
                                   <th className="px-6 py-5 font-bold text-zinc-500 uppercase text-[13px] text-center">المحافظة</th>
-                                  <th className="px-6 py-5 font-bold text-zinc-500 uppercase text-[13px] text-center">{t.pickupDate}</th>
-                                  <th className="px-6 py-5 font-bold text-zinc-500 uppercase text-[13px] text-center">{t.loginDate}</th>
+                                  <th className="px-6 py-5 font-bold text-zinc-500 uppercase text-[13px] text-center">الحالة</th>
                                   <th className="px-6 py-5 font-bold text-zinc-500 uppercase text-[13px] text-center">{t.actions}</th>
                                 </tr>
                             </thead>
                             <tbody>
-                              {customerRecords.filter(r => matchesFilters(r)).map((r) => (
-                                <tr key={r.id} className="group hover:bg-black/5 transition-colors">
+                              {unifiedCustomers.filter(r => matchesFilters(r)).map((r) => (
+                                <tr key={r.phone || r.id} className="group hover:bg-black/5 transition-colors">
                                   <td className="px-4 py-6 font-bold text-zinc-900 text-center">{r.name}</td>
                                   <td className="px-4 py-6 text-center">
                                     <span className="bg-zinc-100 px-3 py-1.5 rounded-xl font-mono text-xs text-zinc-600 group-hover:bg-white transition-colors ">{r.phone}</span>
                                   </td>
                                   <td className="px-4 py-6 text-center text-sm text-zinc-600">{r.governorate || '-'}</td>
-                                  <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.pickupDate || '-'}</td>
-                                  <td className="px-4 py-6 text-sm text-zinc-500 font-mono text-center">{r.createdAt ? format(r.createdAt.toDate(), 'yyyy/MM/dd HH:mm') : '...'}</td>
+                                  <td className="px-4 py-6 text-center">
+                                    <span className={`inline-flex items-center justify-center px-3 py-2 rounded-full text-sm font-semibold ${getStatusBadge(r.status).cls}`}>
+                                      {getStatusBadge(r.status).label}
+                                    </span>
+                                  </td>
                                   <td className="px-4 py-4">
                                     <div className="flex gap-4 justify-between items-center w-full">
                                       {isAdminUser && (
@@ -1580,7 +1620,7 @@ export default function App() {
                                 <p className="text-zinc-500 font-mono">{r.phone}</p>
                                 <p className="text-zinc-500 font-mono text-sm">{r.governorate || ''}</p>
                               </div>
-                              <span className="text-[10px] text-zinc-400 font-mono">{r.createdAt ? format(r.createdAt.toDate(), 'yyyy/MM/dd HH:mm') : '...'}</span>
+                              
                             </div>
                             <div className="flex gap-2 pt-4 border-t border-zinc-100">
                               {isAdminUser && (
@@ -1606,7 +1646,7 @@ export default function App() {
                                   <Edit2 className="w-4 h-4" />
                                   <span>{lang === 'ar' ? 'تعديل' : 'Edit'}</span>
                                 </button>
-                                <button onClick={() => {
+                                  <button onClick={() => {
                                   setAdminSubView('inspections');
                                   // Delay to allow inspections view to render
                                   setTimeout(() => {
