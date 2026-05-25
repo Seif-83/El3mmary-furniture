@@ -1,5 +1,5 @@
 /// <reference types="react" />
-import React, { useState, useEffect, type ChangeEvent, type FormEvent } from 'react';
+import React, { useState, useEffect, useRef, type ChangeEvent, type FormEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Armchair, 
@@ -20,7 +20,8 @@ import {
   Upload,
   ClipboardList,
   Calendar,
-  Search
+  Search,
+  Printer
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { supabase } from './lib/supabase';
@@ -52,6 +53,7 @@ interface CustomerRecord {
   name: string;
   phone: string;
   createdAt: Timestamp;
+  governorate?: string;
   // Extra fields saved at Step 1
   address?: string;
   deliveryAddress?: string;
@@ -76,6 +78,7 @@ interface Inspection {
   phone: string;
   address?: string;
   deliveryAddress?: string;
+  governorate?: string;
   visitDate: string;
   visitDateTo?: string;
   notes: string;
@@ -279,6 +282,7 @@ const mapCustomerFromDB = (dbCust: any): CustomerRecord => ({
   id: dbCust.id,
   name: dbCust.name,
   phone: dbCust.phone,
+  governorate: dbCust.governorate,
   address: dbCust.address,
   deliveryAddress: dbCust.delivery_address,
   visitDate: dbCust.visit_date,
@@ -297,6 +301,7 @@ const mapInspectionFromDB = (dbInsp: any): Inspection => ({
   deliveryAddress: dbInsp.delivery_address,
   visitDate: dbInsp.visit_date,
   notes: dbInsp.notes,
+  governorate: dbInsp.governorate,
   rooms: dbInsp.rooms,
   pieces: dbInsp.pieces || [],
   totalAmount: Number(dbInsp.total_amount || 0),
@@ -326,6 +331,39 @@ const sortContractedRecordsByContractDate = (records: Inspection[]) =>
 
     return (a.customerName || '').localeCompare(b.customerName || '', 'ar');
   });
+
+const playSound = async (type: 'success' | 'error' | 'delete') => {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    if (ctx.state === 'suspended') await ctx.resume();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    if (type === 'success') {
+      osc.frequency.setValueAtTime(523, ctx.currentTime);
+      osc.frequency.setValueAtTime(659, ctx.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.3);
+    } else if (type === 'error') {
+      osc.frequency.setValueAtTime(200, ctx.currentTime);
+      osc.frequency.setValueAtTime(150, ctx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.4);
+    } else if (type === 'delete') {
+      osc.frequency.setValueAtTime(400, ctx.currentTime);
+      osc.frequency.setValueAtTime(300, ctx.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.2);
+    }
+  } catch {}
+};
 
 export default function App() {
   const [lang, setLang] = useState<'en' | 'ar'>('ar');
@@ -363,6 +401,7 @@ export default function App() {
     address: '',
     deliveryAddress: '',
     phone: '',
+    governorate: '',
     visitDate: '',
     notes: '',
     rooms: 0,
@@ -392,12 +431,16 @@ export default function App() {
 
   const selectedSheet = catalogs.find((c: CatalogSheet) => c.id === selectedSheetId);
 
+  const currentUserRef = useRef(currentUser);
+  useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
+
   const [formData, setFormData] = useState({
     username: '', 
     password: '',
     name: '',
     phone: '',
-    pickupDate: ''
+    pickupDate: '',
+    governorate: ''
   });
 
   const clearDashboardData = () => {
@@ -476,6 +519,7 @@ export default function App() {
       const { error } = await supabase.from('inspections').delete().eq('id', id);
       if (error) throw error;
       await refreshAllData();
+      void playSound('delete');
       toast.success(lang === 'ar' ? "تم الحذف" : "Deleted");
     } catch (err: any) {
       toast.error(err?.message || "Error");
@@ -483,25 +527,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    let channels: any[] = [];
-
-    const unsubscribeChannels = () => {
-      channels.forEach(channel => channel.unsubscribe());
-      channels = [];
-    };
-
-    const subscribeToRealtime = () => {
-      unsubscribeChannels();
-      const tableNames = ['catalogs', 'customers', 'inspections', 'contracted_customers', 'non_contracted_customers'] as const;
-
-      channels = tableNames.map((tableName) =>
-        supabase.channel(`public:${tableName}`)
-          .on('postgres_changes', { event: '*', schema: 'public', table: tableName }, () => {
-            void refreshAllData();
-          })
-          .subscribe()
-      );
-    };
+    let pollingInterval: ReturnType<typeof setInterval> | null = null;
 
     const syncAuthorizedUser = async (user: User | null) => {
       setCurrentUser(user);
@@ -510,13 +536,11 @@ export default function App() {
       if (user && allowedEmails.includes(user.email ?? '')) {
         try {
           await refreshAllData();
-          subscribeToRealtime();
         } catch (error) {
           console.error('Failed to sync dashboard data', error);
           toast.error(lang === 'ar' ? "تعذر تحديث البيانات" : "Failed to refresh data");
         }
       } else {
-        unsubscribeChannels();
         clearDashboardData();
       }
     };
@@ -529,9 +553,17 @@ export default function App() {
       void syncAuthorizedUser(session?.user ?? null);
     });
 
+    // Start polling every 30s for reliability (replaces realtime channels)
+    const pollingId = setInterval(() => {
+      const u = currentUserRef.current;
+      if (u && allowedEmails.includes(u.email ?? '')) {
+        void refreshAllData();
+      }
+    }, 30000);
+
     return () => {
       authListener.unsubscribe();
-      unsubscribeChannels();
+      clearInterval(pollingId);
     };
   }, []);
 
@@ -557,6 +589,7 @@ export default function App() {
         const { data: newCat, error } = await supabase.from('catalogs').insert({ title, data }).select().single();
         if (error) throw error;
         await refreshAllData(newCat.id);
+        void playSound('success');
         toast.success(lang === 'ar' ? "تم النشر بنجاح" : "Sheet published successfully");
       } catch (error) { toast.error("Failed to parse Excel file"); }
       setIsLoading(false);
@@ -576,6 +609,7 @@ export default function App() {
           const { error } = await supabase.from('catalogs').delete().eq('id', id);
           if (error) throw error;
           await refreshAllData();
+          void playSound('delete');
           toast.success(lang === 'ar' ? "تم الحذف" : "Sheet deleted");
         } catch { toast.error("Failed to delete"); }
       }
@@ -603,6 +637,7 @@ export default function App() {
       const { error } = await supabase.from('catalogs').update({ data: newData }).eq('id', editingCatalogRow.sheetId);
       if (error) throw error;
       await refreshAllData(editingCatalogRow.sheetId);
+      void playSound('success');
       toast.success(lang === 'ar' ? "تم تحديث البيانات" : "Data updated");
       setIsEditCatalogModalOpen(false);
       setEditingCatalogRow(null);
@@ -659,6 +694,7 @@ export default function App() {
           const { error } = await supabase.from('customers').delete().eq('id', id);
           if (error) throw error;
           await refreshAllData();
+          void playSound('delete');
           toast.success(lang === 'ar' ? "تم حذف العميل" : "Customer removed");
         } catch { toast.error("Unauthorized"); }
       }
@@ -692,6 +728,7 @@ export default function App() {
           if (deleteError) throw deleteError;
 
           await refreshAllData();
+          void playSound('delete');
           toast.success(lang === 'ar' ? "تم نقل العميل إلى العملاء غير المتعاقدين" : "Customer moved to non-contracted customers");
         } catch (err: any) {
           console.error(err);
@@ -744,6 +781,7 @@ export default function App() {
             customer_name: inspectionFormData.customerName?.trim(),
             address: inspectionFormData.address?.trim(),
             delivery_address: inspectionFormData.deliveryAddress?.trim(),
+            governorate: inspectionFormData.governorate || null,
             phone: inspectionFormData.phone?.trim(),
             visit_date: inspectionFormData.visitDate,
             notes: inspectionFormData.notes,
@@ -763,6 +801,7 @@ export default function App() {
             phone: inspectionFormData.phone?.trim(),
             address: inspectionFormData.address?.trim(),
             delivery_address: inspectionFormData.deliveryAddress?.trim(),
+            governorate: inspectionFormData.governorate || null,
             visit_date: inspectionFormData.visitDate,
             notes: inspectionFormData.notes,
             pickup_date: inspectionFormData.pickupDate || null,
@@ -771,16 +810,19 @@ export default function App() {
           if (error) throw error;
         }
         await refreshAllData();
+        void playSound('success');
         toast.success(lang === 'ar' ? "تم الحفظ بنجاح" : "Saved successfully");
-        setIsInspectionModalOpen(false);
-        setInspectionStep(1);
-        setEditingId(null);
-        setEditingCollection(null);
-        setInspectionFormData({ 
-          customerName: '', address: '', deliveryAddress: '', phone: '', visitDate: '', 
-          notes: '', rooms: 0, pieces: [], totalAmount: 0, deliveryDate: '', pickupDate: '', 
-          portfolioDate: '', contractDate: '', portfolio: '' 
-        });
+        
+        // If editing a customer (from customers table), move to step 2
+        if (editingCollection === 'customers' || !inspectionFormData.id) {
+          setInspectionStep(2);
+        } else {
+          // If editing a finalized record, close modal
+          setIsInspectionModalOpen(false);
+          setInspectionStep(1);
+          setEditingId(null);
+          setEditingCollection(null);
+        }
       } catch (err: any) { toast.error(err.message); }
       setIsLoading(false);
       return;
@@ -793,6 +835,7 @@ export default function App() {
         customer_name: inspectionFormData.customerName?.trim(),
         address: inspectionFormData.address?.trim(),
         delivery_address: inspectionFormData.deliveryAddress?.trim(),
+        governorate: inspectionFormData.governorate || null,
         phone: inspectionFormData.phone?.trim(),
         visit_date: inspectionFormData.visitDate,
 
@@ -817,6 +860,7 @@ export default function App() {
       }
       
       await refreshAllData();
+      void playSound('success');
       toast.success(lang === 'ar' ? "تم نقل العميل إلى المعاينات" : "Customer moved to Inspections");
       setIsInspectionModalOpen(false);
       setInspectionStep(1);
@@ -842,6 +886,7 @@ export default function App() {
         customer_name: recordToSave.customerName?.trim(),
         address: recordToSave.address?.trim(),
         delivery_address: recordToSave.deliveryAddress?.trim(),
+        governorate: recordToSave.governorate || null,
         phone: recordToSave.phone?.trim(),
         visit_date: recordToSave.visitDate,
         notes: recordToSave.notes,
@@ -858,10 +903,13 @@ export default function App() {
       const { error } = await supabase.from(tableName).insert(dbData);
       if (error) throw error;
       await refreshAllData();
+      void playSound('success');
       toast.success(lang === 'ar' ? "تمت العملية بنجاح" : "Process completed");
       setIsInspectionModalOpen(false);
       setInspectionStep(1);
-      setInspectionFormData({ customerName: '', address: '', phone: '', visitDate: '',  notes: '', rooms: 0, pieces: [], totalAmount: 0 });
+      setEditingId(null);
+      setEditingCollection(null);
+      setInspectionFormData({ customerName: '', address: '', phone: '', visitDate: '',  notes: '', rooms: 0, pieces: [], totalAmount: 0, deliveryAddress: '', governorate: '' });
     } catch (err: any) { 
       toast.error(err.message); 
     }
@@ -879,6 +927,7 @@ export default function App() {
           const { error } = await supabase.from('contracted_customers').delete().eq('id', id);
           if (error) throw error;
           await refreshAllData();
+          void playSound('delete');
           toast.success(lang === 'ar' ? "تم الحذف" : "Deleted");
         } catch { toast.error("Unauthorized"); }
       }
@@ -896,6 +945,7 @@ export default function App() {
           const { error } = await supabase.from('non_contracted_customers').delete().eq('id', id);
           if (error) throw error;
           await refreshAllData();
+          void playSound('delete');
           toast.success(lang === 'ar' ? "تم الحذف" : "Deleted");
         } catch { toast.error("Unauthorized"); }
       }
@@ -936,9 +986,17 @@ export default function App() {
     setInspectionFormData({ ...inspectionFormData, pieces, totalAmount });
   };
 
-  const handleOpenAddModal = () => { setFormData({ ...formData, name: '', phone: '', pickupDate: '' }); setModalMode('add'); setEditingCollection(null); setIsModalOpen(true); };
+  const handleOpenAddModal = () => { setFormData({ ...formData, name: '', phone: '', pickupDate: '', governorate: '' }); setModalMode('add'); setEditingCollection(null); setIsModalOpen(true); };
 
-  const handleOpenEditModal = (record: any) => { setFormData({ ...formData, name: record.name, phone: record.phone, pickupDate: record.pickupDate || '' }); setEditingId(record.id); setEditingCollection('customers'); setModalMode('edit'); setIsModalOpen(true); };
+  const handleOpenEditModal = (record: any) => { setFormData({ ...formData, name: record.name, phone: record.phone, pickupDate: record.pickupDate || '', governorate: record.governorate || '' }); setEditingId(record.id); setEditingCollection('customers'); setModalMode('edit'); setIsModalOpen(true); };
+
+  const [governorateFilter, setGovernorateFilter] = useState<'all' | 'القاهرة' | 'الاسكندرية'>('all');
+
+  const matchesFilters = (r: any) => {
+    const searchMatch = !searchQuery || (String(r.name || r.customerName || '').toLowerCase().includes(searchQuery.toLowerCase())) || String(r.phone || '').includes(searchQuery);
+    const govMatch = governorateFilter === 'all' || ((r.governorate || '') === governorateFilter);
+    return searchMatch && govMatch;
+  };
 
   const openEditFinalizedRecord = (record: Inspection, collection: 'contracted_customers' | 'non_contracted_customers') => {
     setInspectionFormData({ ...record });
@@ -971,10 +1029,12 @@ export default function App() {
         const { error: insertError } = await supabase.from('customers').insert({
           name: formData.name.trim(),
           phone: formData.phone.trim(),
-          pickup_date: formData.pickupDate || null
+          pickup_date: formData.pickupDate || null,
+          governorate: formData.governorate || null
         });
         if (insertError) throw insertError;
         await refreshAllData();
+        void playSound('success');
         toast.success("Added success");
       } else {
         const { error: updateError } = await supabase
@@ -982,11 +1042,13 @@ export default function App() {
           .update({
             name: formData.name.trim(),
             phone: formData.phone.trim(),
-            pickup_date: formData.pickupDate || null
+            pickup_date: formData.pickupDate || null,
+            governorate: formData.governorate || null
           })
           .eq('id', editingId!);
         if (updateError) throw updateError;
         await refreshAllData();
+        void playSound('success');
         toast.success("Updated success");
       }
       setIsModalOpen(false);
@@ -1079,59 +1141,55 @@ export default function App() {
                            t.publishedSheets}
                         </h1>
                       </div>
-                      <div className="flex flex-wrap gap-4">
-                        {(adminSubView === 'customers' || adminSubView === 'contracted' || adminSubView === 'not-contracted') && currentUser?.email === ADMIN_EMAIL && (
-                          <div className="flex gap-2">
-                            <button onClick={handleOpenAddModal} className="btn-3d btn-3d-glass px-6 py-4 rounded-2xl flex items-center gap-3 font-bold text-xs uppercase"><Plus className="w-4 h-4" /> {t.addCustomerBtn}</button>
-                            {adminSubView === 'contracted' && (
-                              <button 
-                                onClick={() => handleExportExcel(contractedCustomers, `العملاء_المتعاقدين_${format(new Date(), 'yyyy-MM-dd')}`)} 
-                                className="btn-3d btn-3d-glass px-6 py-4 rounded-2xl flex items-center gap-3 font-bold text-xs uppercase text-accent-tan"
-                              >
-                                <Download className="w-4 h-4" /> {t.exportExcel}
-                              </button>
-                            )}
-                          </div>
-                        )}
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {(adminSubView === 'customers' || adminSubView === 'contracted' || adminSubView === 'not-contracted') && currentUser?.email === ADMIN_EMAIL && (
+                            <button onClick={handleOpenAddModal} className="btn-3d btn-3d-glass px-5 py-3.5 rounded-2xl flex items-center gap-2 font-bold text-xs uppercase"><Plus className="w-4 h-4" /> {t.addCustomerBtn}</button>
+                          )}
+                          {adminSubView === 'contracted' && (
+                            <button onClick={() => handleExportExcel(contractedCustomers, `العملاء_المتعاقدين_${format(new Date(), 'yyyy-MM-dd')}`)} className="btn-3d btn-3d-glass px-5 py-3.5 rounded-2xl flex items-center gap-2 font-bold text-xs uppercase text-accent-tan">
+                              <Download className="w-4 h-4" /> {t.exportExcel}
+                            </button>
+                          )}
+                          {adminSubView !== 'catalogs' && (
+                            <button onClick={() => window.print()} className="btn-3d btn-3d-glass px-5 py-3.5 rounded-2xl flex items-center gap-2 font-bold text-xs uppercase">
+                              <Printer className="w-4 h-4" />
+                              {lang === 'ar' ? 'طباعة' : 'Print'}
+                            </button>
+                          )}
+                          {adminSubView === 'catalogs' && currentUser?.email === ADMIN_EMAIL && (
+                            <label className="btn-3d btn-3d-glass px-5 py-3.5 rounded-2xl flex items-center gap-2 font-bold text-xs uppercase cursor-pointer"><Upload className="w-4 h-4" /> {t.uploadNew} <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleImportExcel} /></label>
+                          )}
+                        </div>
 
-                        <div className="relative flex items-center">
+                        <div className="flex items-center gap-2">
                           <div className="relative group">
-                            <Search className="absolute top-1/2 -translate-y-1/2 right-4 w-4 h-4 text-zinc-400 group-focus-within:text-zinc-700 transition-colors pointer-events-none z-10" />
+                            <Search className="absolute top-1/2 -translate-y-1/2 right-3 w-3.5 h-3.5 text-zinc-400 group-focus-within:text-zinc-700 transition-colors pointer-events-none z-10" />
                             <input
                               type="text"
                               placeholder={lang === 'ar' ? 'بحث...' : 'Search...'}
                               value={searchQuery}
                               onChange={e => setSearchQuery(e.target.value)}
-                              className="bg-white/70 backdrop-blur-md border border-white/80 shadow-md pr-11 pl-10 py-3.5 rounded-2xl text-sm font-medium outline-none w-56 focus:w-72 focus:shadow-xl focus:border-zinc-300 transition-all duration-300 placeholder:text-zinc-400 text-zinc-800"
+                              className="bg-white/70 backdrop-blur-md border border-white/80 shadow-sm pr-9 pl-8 py-3 rounded-2xl text-sm font-medium outline-none w-40 focus:w-52 focus:shadow-md focus:border-zinc-300 transition-all duration-300 placeholder:text-zinc-400 text-zinc-800"
                             />
                             {searchQuery && (
-                              <button
-                                onClick={() => setSearchQuery('')}
-                                className="absolute top-1/2 -translate-y-1/2 left-3 w-5 h-5 flex items-center justify-center rounded-full bg-zinc-200 hover:bg-zinc-300 text-zinc-500 transition-all"
-                              >
-                                <X className="w-3 h-3" />
+                              <button onClick={() => setSearchQuery('')} className="absolute top-1/2 -translate-y-1/2 left-2 w-4 h-4 flex items-center justify-center rounded-full bg-zinc-200 hover:bg-zinc-300 text-zinc-500 transition-all">
+                                <X className="w-2.5 h-2.5" />
                               </button>
                             )}
                           </div>
+                          {adminSubView !== 'inspections' && (
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => setGovernorateFilter('all')} className={`px-2.5 py-2 rounded-xl text-[11px] font-bold ${governorateFilter === 'all' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 bg-white/30'}`}>الكل</button>
+                              <button onClick={() => setGovernorateFilter('القاهرة')} className={`px-2.5 py-2 rounded-xl text-[11px] font-bold ${governorateFilter === 'القاهرة' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 bg-white/30'}`}>القاهرة</button>
+                              <button onClick={() => setGovernorateFilter('الاسكندرية')} className={`px-2.5 py-2 rounded-xl text-[11px] font-bold ${governorateFilter === 'الاسكندرية' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 bg-white/30'}`}>الاسكندرية</button>
+                            </div>
+                          )}
                         </div>
-                        {adminSubView === 'catalogs' && currentUser?.email === ADMIN_EMAIL && (
-                          <label className="btn-3d btn-3d-glass px-6 py-4 rounded-2xl flex items-center gap-3 font-bold text-xs uppercase cursor-pointer"><Upload className="w-4 h-4" /> {t.uploadNew} <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleImportExcel} /></label>
-                        )}
-                        <div className="glass p-5 rounded-2xl min-w-[140px]">
-                          <div className="text-[11px] uppercase font-bold text-zinc-400 mb-1">
-                            {adminSubView === 'customers' ? t.totalCustomers : 
-                             adminSubView === 'inspections' ? t.inspections :
-                             adminSubView === 'contracted' ? t.contracted :
-                             adminSubView === 'not-contracted' ? t.notContracted :
-                             t.publishedSheets}
-                          </div>
-                          <div className="text-3xl font-semibold">
-                            {adminSubView === 'customers' ? customerRecords.length : 
-                             adminSubView === 'inspections' ? inspections.length :
-                             adminSubView === 'contracted' ? contractedCustomers.length :
-                             adminSubView === 'not-contracted' ? notContractedCustomers.length :
-                             catalogs.length}
-                          </div>
+
+                        <div className="glass px-4 py-3 rounded-2xl min-w-[90px]">
+                          <div className="text-[10px] uppercase font-bold text-zinc-400">{adminSubView === 'customers' ? t.totalCustomers : adminSubView === 'inspections' ? t.inspections : adminSubView === 'contracted' ? t.contracted : adminSubView === 'not-contracted' ? t.notContracted : t.publishedSheets}</div>
+                          <div className="text-2xl font-semibold">{adminSubView === 'customers' ? customerRecords.filter(r => matchesFilters(r)).length : adminSubView === 'inspections' ? inspections.filter(r => matchesFilters(r)).length : adminSubView === 'contracted' ? contractedCustomers.filter(r => matchesFilters(r)).length : adminSubView === 'not-contracted' ? notContractedCustomers.filter(r => matchesFilters(r)).length : catalogs.length}</div>
                         </div>
                       </div>
                     </div>
@@ -1324,20 +1382,22 @@ export default function App() {
                           <table className="w-full text-left">
                             <thead>
                               <tr className="border-b border-black/5 text-[10px] font-bold uppercase text-zinc-400 tracking-widest">
-                                <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.userName}</th>
-                                <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.phoneNumber}</th>
-                                <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.pickupDate}</th>
-                                <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.loginDate}</th>
-                                <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.actions}</th>
-                              </tr>
+                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.userName}</th>
+                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.phoneNumber}</th>
+                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">المحافظة</th>
+                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.pickupDate}</th>
+                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.loginDate}</th>
+                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.actions}</th>
+                                </tr>
                             </thead>
                             <tbody className="divide-y divide-black/5">
-                              {customerRecords.filter(r => !searchQuery || r.name?.toLowerCase().includes(searchQuery.toLowerCase()) || r.phone?.includes(searchQuery)).map((r) => (
+                              {customerRecords.filter(r => matchesFilters(r)).map((r) => (
                                 <tr key={r.id} className="group hover:bg-black/5 transition-colors">
                                   <td className="px-4 py-6 font-bold text-zinc-900 text-center">{r.name}</td>
                                   <td className="px-4 py-6 text-center">
                                     <span className="bg-zinc-100 px-3 py-1.5 rounded-xl font-mono text-xs text-zinc-600 group-hover:bg-white transition-colors ">{r.phone}</span>
                                   </td>
+                                  <td className="px-4 py-6 text-center text-sm text-zinc-600">{r.governorate || '-'}</td>
                                   <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.pickupDate || '-'}</td>
                                   <td className="px-4 py-6 text-sm text-zinc-500 font-mono text-center">{r.createdAt ? format(r.createdAt.toDate(), 'yyyy/MM/dd HH:mm') : '...'}</td>
                                   <td className="px-4 py-4">
@@ -1393,12 +1453,13 @@ export default function App() {
                       </div>
 
                       <div className="grid grid-cols-1 gap-4 md:hidden">
-                        {customerRecords.filter(r => !searchQuery || r.name?.toLowerCase().includes(searchQuery.toLowerCase()) || r.phone?.includes(searchQuery)).map((r) => (
+                        {customerRecords.filter(r => matchesFilters(r)).map((r) => (
                           <div key={r.id} className="bg-white/80 backdrop-blur-xl p-6 rounded-[2rem] flex flex-col gap-4 border border-white/50 shadow-lg relative overflow-hidden group">
                             <div className="flex justify-between items-start">
                               <div>
                                 <h4 className="text-xl font-bold text-zinc-900 mb-1">{r.name}</h4>
                                 <p className="text-zinc-500 font-mono">{r.phone}</p>
+                                <p className="text-zinc-500 font-mono text-sm">{r.governorate || ''}</p>
                               </div>
                               <span className="text-[10px] text-zinc-400 font-mono">{r.createdAt ? format(r.createdAt.toDate(), 'yyyy/MM/dd HH:mm') : '...'}</span>
                             </div>
@@ -1469,16 +1530,18 @@ export default function App() {
                                 <tr className="border-b border-black/5">
                                   <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.customerName}</th>
                                   <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.phoneNumber}</th>
+                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">المحافظة</th>
                                   {isContractedView && <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.deliveryDate}</th>}
                                   {isContractedView && <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.contractDate}</th>}
                                   <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center w-px whitespace-nowrap">{t.actions}</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-black/5">
-                                {activeRecords.filter(r => !searchQuery || r.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) || r.phone?.includes(searchQuery)).map(r => (
+                                {activeRecords.filter(r => matchesFilters(r)).map(r => (
                                   <tr key={r.id} className="hover:bg-black/5 transition-colors">
                                     <td className="px-4 py-6 font-semibold text-center">{r.customerName}</td>
                                     <td className="px-4 py-6 text-center"><span className="bg-black/5 px-2 py-1 rounded font-mono text-sm inline-block">{r.phone}</span></td>
+                                    <td className="px-4 py-6 text-center text-sm text-zinc-600">{r.governorate || '-'}</td>
                                     {isContractedView && <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.deliveryDate || '-'}</td>}
                                     {isContractedView && <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.contractDate || '-'}</td>}
                                     {isInspectionView && <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.visitDate}</td>}
@@ -1513,12 +1576,13 @@ export default function App() {
                         </div>
 
                         <div className="grid grid-cols-1 gap-4 md:hidden">
-                          {activeRecords.filter(r => !searchQuery || r.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) || r.phone?.includes(searchQuery)).map(r => (
+                          {activeRecords.filter(r => matchesFilters(r)).map(r => (
                             <div key={r.id} className="bg-white/80 backdrop-blur-xl p-6 rounded-[2rem] flex flex-col gap-4 border border-white/50 shadow-lg relative overflow-hidden group">
                               <div className="flex justify-between items-start">
                                 <div>
                                   <h4 className="text-xl font-bold text-zinc-900 mb-1">{r.customerName}</h4>
                                   <p className="text-zinc-500 font-mono text-sm">{r.phone}</p>
+                                  <p className="text-zinc-500 font-mono text-sm">{r.governorate || ''}</p>
                                 </div>
                                 <div className="text-right">
                                   {isContractedView && <span className="text-[10px] text-zinc-400 font-mono block mb-1">{t.deliveryDate}</span>}
@@ -1588,9 +1652,9 @@ export default function App() {
       <AnimatePresence>
         {isInspectionModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => { setIsInspectionModalOpen(false); setEditingCollection(null); setEditingId(null); }} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => { setIsInspectionModalOpen(false); setEditingCollection(null); setEditingId(null); setInspectionStep(1); setInspectionFormData({ customerName: '', address: '', deliveryAddress: '', phone: '', governorate: '', visitDate: '', notes: '', rooms: 0, pieces: [], totalAmount: 0, deliveryDate: '', pickupDate: '', portfolioDate: '', contractDate: '', portfolio: '' }); }} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white rounded-[2.5rem] w-full max-w-2xl p-8 md:p-12 shadow-2xl relative z-10 overflow-hidden max-h-[90vh] overflow-y-auto">
-              <button onClick={() => { setIsInspectionModalOpen(false); setEditingCollection(null); setEditingId(null); }} className="absolute top-6 right-6 rtl:right-auto rtl:left-6 w-10 h-10 flex items-center justify-center rounded-2xl bg-zinc-100 hover:bg-zinc-900 text-zinc-400 hover:text-white transition-all duration-300 hover:rotate-90 hover:scale-110 shadow-sm group">
+              <button onClick={() => { setIsInspectionModalOpen(false); setEditingCollection(null); setEditingId(null); setInspectionStep(1); setInspectionFormData({ customerName: '', address: '', deliveryAddress: '', phone: '', governorate: '', visitDate: '', notes: '', rooms: 0, pieces: [], totalAmount: 0, deliveryDate: '', pickupDate: '', portfolioDate: '', contractDate: '', portfolio: '' }); }} className="absolute top-6 right-6 rtl:right-auto rtl:left-6 w-10 h-10 flex items-center justify-center rounded-2xl bg-zinc-100 hover:bg-zinc-900 text-zinc-400 hover:text-white transition-all duration-300 hover:rotate-90 hover:scale-110 shadow-sm group">
                 <X className="w-4 h-4 transition-transform duration-300" />
               </button>
               
@@ -1609,6 +1673,14 @@ export default function App() {
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.address}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.address} onChange={e => setInspectionFormData({ ...inspectionFormData, address: e.target.value })} /></div>
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.deliveryAddress}</label><input className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.deliveryAddress || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, deliveryAddress: e.target.value })} /></div>
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.phoneNumber}</label><input required type="tel" minLength={11} maxLength={11} pattern="[0-9]{11}" title={lang === 'ar' ? 'يجب أن يكون رقم الهاتف 11 رقماً بالضبط' : 'Phone number must be exactly 11 digits'} className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.phone} onChange={e => setInspectionFormData({ ...inspectionFormData, phone: e.target.value })} /></div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{lang === 'ar' ? 'المحافظة' : 'Governorate'}</label>
+                      <select value={inspectionFormData.governorate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, governorate: e.target.value })} className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl">
+                        <option value="">{lang === 'ar' ? 'اختر المحافظة' : 'Select governorate'}</option>
+                        <option value="القاهرة">القاهرة</option>
+                        <option value="الاسكندرية">الاسكندرية</option>
+                      </select>
+                    </div>
                      {(editingCollection === 'contracted_customers' || editingCollection === 'customers') && (
                        <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.deliveryDate}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.deliveryDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, deliveryDate: e.target.value })} /></div>
                      )}
@@ -1716,6 +1788,9 @@ export default function App() {
                     </button>
                     {inspectionStep === 1 && (
                       <button type="button" onClick={() => { setInspectionStep(2); }} className="flex-1 py-4 border border-zinc-200 rounded-2xl font-bold uppercase tracking-widest btn-3d btn-3d-glass">{lang === 'ar' ? 'التالي ←' : 'Next →'}</button>
+                    )}
+                    {inspectionStep === 2 && (
+                      <button type="button" onClick={() => setInspectionStep(3)} className="flex-1 py-4 border border-zinc-200 rounded-2xl font-bold uppercase tracking-widest btn-3d btn-3d-glass">{lang === 'ar' ? 'التالي ←' : 'Next →'}</button>
                     )}
                   </div>
                 )}
@@ -1891,6 +1966,14 @@ export default function App() {
               <form onSubmit={handleSaveRecord} className="space-y-6">
                 <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.fullName}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} /></div>
                 <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.phoneNumber}</label><input required type="tel" minLength={11} maxLength={11} pattern="[0-9]{11}" title={lang === 'ar' ? 'يجب أن يكون رقم الهاتف 11 رقماً بالضبط' : 'Phone number must be exactly 11 digits'} className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={formData.phone || ''} onChange={e => setFormData({ ...formData, phone: e.target.value })} /></div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{lang === 'ar' ? 'المحافظة' : 'Governorate'}</label>
+                  <select value={formData.governorate || ''} onChange={e => setFormData({ ...formData, governorate: e.target.value })} className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl">
+                    <option value="">{lang === 'ar' ? 'اختر المحافظة' : 'Select governorate'}</option>
+                    <option value="القاهرة">القاهرة</option>
+                    <option value="الاسكندرية">الاسكندرية</option>
+                  </select>
+                </div>
                 <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.pickupDate}</label><input type="text" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={formData.pickupDate || ''} onChange={e => setFormData({ ...formData, pickupDate: e.target.value })} /></div>
                 <button disabled={isLoading} type="submit" className="w-full bg-zinc-900 text-white py-5 rounded-3xl font-bold uppercase tracking-widest shadow-2xl btn-3d btn-3d-zinc">{isLoading ? t.processing : t.save}</button>
               </form>
