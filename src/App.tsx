@@ -343,31 +343,46 @@ const playSound = async (type: 'success' | 'error' | 'delete') => {
   try {
     const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
     if (ctx.state === 'suspended') await ctx.resume();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
+    const now = ctx.currentTime;
+
     if (type === 'success') {
-      osc.frequency.setValueAtTime(523, ctx.currentTime);
-      osc.frequency.setValueAtTime(659, ctx.currentTime + 0.1);
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.3);
+      [523, 659, 784].forEach((freq, i) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(freq, now + i * 0.08);
+        g.gain.setValueAtTime(0.01, now + i * 0.08);
+        g.gain.linearRampToValueAtTime(0.18, now + i * 0.08 + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.01, now + i * 0.08 + 0.25);
+        o.connect(g).connect(ctx.destination);
+        o.start(now + i * 0.08);
+        o.stop(now + i * 0.08 + 0.25);
+      });
     } else if (type === 'error') {
-      osc.frequency.setValueAtTime(200, ctx.currentTime);
-      osc.frequency.setValueAtTime(150, ctx.currentTime + 0.15);
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.4);
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(330, now);
+      o.frequency.linearRampToValueAtTime(260, now + 0.12);
+      g.gain.setValueAtTime(0.01, now);
+      g.gain.linearRampToValueAtTime(0.15, now + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+      o.connect(g).connect(ctx.destination);
+      o.start(now);
+      o.stop(now + 0.3);
     } else if (type === 'delete') {
-      osc.frequency.setValueAtTime(400, ctx.currentTime);
-      osc.frequency.setValueAtTime(300, ctx.currentTime + 0.1);
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.2);
+      [523, 440, 349].forEach((freq, i) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'triangle';
+        o.frequency.setValueAtTime(freq, now + i * 0.1);
+        g.gain.setValueAtTime(0.01, now + i * 0.1);
+        g.gain.linearRampToValueAtTime(0.14, now + i * 0.1 + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.01, now + i * 0.1 + 0.2);
+        o.connect(g).connect(ctx.destination);
+        o.start(now + i * 0.1);
+        o.stop(now + i * 0.1 + 0.2);
+      });
     }
   } catch {}
 };
