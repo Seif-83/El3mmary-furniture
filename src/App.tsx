@@ -235,7 +235,7 @@ const translations: Record<'en' | 'ar', Record<string, string>> = {
     step3: "التعاقد",
     customerName: "اسم العميل",
     address: "عنوان المعاينة",
-    deliveryAddress: "عنوان التسليم",
+    deliveryAddress: "عنوان الاستلام",
     visitDate: "تاريخ المعاينة",
     notes: "ملاحظات",
     rooms: "عدد الغرف",
@@ -485,9 +485,15 @@ export default function App() {
     password: '',
     name: '',
     phone: '',
+    phones: [''],
     pickupDate: '',
     governorate: ''
   });
+
+  const normalizePhoneList = (rawPhone: string | undefined) => {
+    const cleaned = String(rawPhone || '').split(/[,;\n]+/).map((p) => p.trim()).filter(Boolean);
+    return cleaned.length > 0 ? cleaned : [''];
+  };
 
   const clearDashboardData = () => {
     setCatalogs([]);
@@ -1036,9 +1042,16 @@ export default function App() {
     setInspectionFormData({ ...inspectionFormData, pieces, totalAmount });
   };
 
-  const handleOpenAddModal = () => { setFormData({ ...formData, name: '', phone: '', pickupDate: '', governorate: '' }); setModalMode('add'); setEditingCollection(null); setIsModalOpen(true); };
+  const handleOpenAddModal = () => { setFormData({ ...formData, name: '', phone: '', phones: [''], pickupDate: '', governorate: '' }); setModalMode('add'); setEditingCollection(null); setIsModalOpen(true); };
 
-  const handleOpenEditModal = (record: any) => { setFormData({ ...formData, name: record.name, phone: record.phone, pickupDate: record.pickupDate || '', governorate: record.governorate || '' }); setEditingId(record.id); setEditingCollection('customers'); setModalMode('edit'); setIsModalOpen(true); };
+  const handleOpenEditModal = (record: any) => {
+    const phones = normalizePhoneList(record.phone);
+    setFormData({ ...formData, name: record.name, phone: phones[0] || '', phones, pickupDate: record.pickupDate || '', governorate: record.governorate || '' });
+    setEditingId(record.id);
+    setEditingCollection('customers');
+    setModalMode('edit');
+    setIsModalOpen(true);
+  };
 
   const [governorateFilter, setGovernorateFilter] = useState<'all' | 'القاهرة' | 'الاسكندرية'>('all');
 
@@ -1059,14 +1072,16 @@ export default function App() {
   const handleSaveRecord = async (e: FormEvent) => {
     e.preventDefault();
     if (!ensureAdminAccess()) return;
-    if (!formData.name.trim() || !formData.phone.trim()) return toast.error("Please enter data");
+    const phones = (formData.phones || []).map((p: string) => p.trim()).filter(Boolean);
+    if (!formData.name.trim() || phones.length === 0) return toast.error("Please enter data");
+    const combinedPhone = phones.join(', ');
     setIsLoading(true);
     try {
       if (modalMode === 'add') {
         const { data: existing, error: checkError } = await supabase
           .from('customers')
           .select('id')
-          .eq('phone', formData.phone.trim())
+          .eq('phone', combinedPhone)
           .limit(1);
         
         if (checkError) throw checkError;
@@ -1078,7 +1093,7 @@ export default function App() {
         
         const { error: insertError } = await supabase.from('customers').insert({
           name: formData.name.trim(),
-          phone: formData.phone.trim(),
+          phone: combinedPhone,
           pickup_date: formData.pickupDate || null,
           governorate: formData.governorate || null
         });
@@ -1091,7 +1106,7 @@ export default function App() {
           .from('customers')
           .update({
             name: formData.name.trim(),
-            phone: formData.phone.trim(),
+            phone: combinedPhone,
             pickup_date: formData.pickupDate || null,
             governorate: formData.governorate || null
           })
@@ -2126,7 +2141,49 @@ export default function App() {
               <h2 className="text-3xl font-light mb-8 pe-12 rtl:pe-0 rtl:ps-12">{modalMode === 'add' ? t.addCustomer : t.editCustomer}</h2>
               <form onSubmit={handleSaveRecord} className="space-y-6">
                 <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.fullName}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} /></div>
-                <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.phoneNumber}</label><input required type="tel" minLength={11} maxLength={11} pattern="[0-9]{11}" title={lang === 'ar' ? 'يجب أن يكون رقم الهاتف 11 رقماً بالضبط' : 'Phone number must be exactly 11 digits'} className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={formData.phone || ''} onChange={e => setFormData({ ...formData, phone: e.target.value })} /></div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.phoneNumber}</label>
+                  <div className="space-y-3">
+                    {(formData.phones || ['']).map((phone, index) => (
+                      <div key={index} className="flex gap-2">
+                        <input
+                          required={index === 0}
+                          type="tel"
+                          minLength={11}
+                          maxLength={11}
+                          pattern="[0-9]{11}"
+                          title={lang === 'ar' ? 'يجب أن يكون رقم الهاتف 11 رقماً بالضبط' : 'Phone number must be exactly 11 digits'}
+                          className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl"
+                          value={phone}
+                          onChange={e => {
+                            const phones = [...(formData.phones || [])];
+                            phones[index] = e.target.value;
+                            setFormData({ ...formData, phones });
+                          }}
+                        />
+                        {index > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const phones = (formData.phones || []).filter((_: any, i: number) => i !== index);
+                              setFormData({ ...formData, phones: phones.length > 0 ? phones : [''] });
+                            }}
+                            className="px-4 rounded-2xl border border-red-200 text-red-500 bg-red-50"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, phones: [...(formData.phones || []), ''] })}
+                      className="text-sm font-semibold text-accent-tan hover:underline"
+                    >
+                      {lang === 'ar' ? 'إضافة رقم آخر' : 'Add another number'}
+                    </button>
+                  </div>
+                </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{lang === 'ar' ? 'المحافظة' : 'Governorate'}</label>
                   <select value={formData.governorate || ''} onChange={e => setFormData({ ...formData, governorate: e.target.value })} className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl">
