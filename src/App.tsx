@@ -21,7 +21,10 @@ import {
   ClipboardList,
   Calendar,
   Search,
-  Printer
+  Printer,
+  Menu,
+  MessageCircle,
+  PhoneCall
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { supabase } from './lib/supabase';
@@ -177,6 +180,8 @@ const translations: Record<'en' | 'ar', Record<string, string>> = {
     contractImg: "Contract Image",
     viewOnly: "Viewer (Read Only)",
     editor: "Editor (Full Access)",
+    phonebook: "Phonebook",
+    openWhatsApp: "Open WhatsApp",
   },
   ar: {
     brand: "مرحبا بكم في العماري",
@@ -248,6 +253,8 @@ const translations: Record<'en' | 'ar', Record<string, string>> = {
     contractImg: "صورة العقد",
     viewOnly: "مشاهد فقط",
     editor: "مسؤول (صلاحية كاملة)",
+    phonebook: "دليل الأرقام",
+    openWhatsApp: "واتساب",
     quantity: "العدد",
   }
 };
@@ -383,7 +390,7 @@ export default function App() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingCollection, setEditingCollection] = useState<'customers' | 'inspections' | 'contracted_customers' | 'non_contracted_customers' | null>(null);
   
-  const [adminSubView, setAdminSubView] = useState<'customers' | 'catalogs' | 'contracted' | 'not-contracted' | 'inspections'>('customers');
+  const [adminSubView, setAdminSubView] = useState<'customers' | 'catalogs' | 'contracted' | 'not-contracted' | 'inspections' | 'phonebook'>('customers');
   const [catalogs, setCatalogs] = useState<CatalogSheet[]>([]);
   const [customerRecords, setCustomerRecords] = useState<CustomerRecord[]>([]);
   const [inspections, setInspections] = useState<Inspection[]>([]);
@@ -428,6 +435,7 @@ export default function App() {
   const [isEditCatalogModalOpen, setIsEditCatalogModalOpen] = useState(false);
   const [editingCatalogRow, setEditingCatalogRow] = useState<{sheetId: string, rowIndex: number, data: any} | null>(null);
   const [expandedPieceDetails, setExpandedPieceDetails] = useState<number[]>([]);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const selectedSheet = catalogs.find((c: CatalogSheet) => c.id === selectedSheetId);
 
@@ -1057,10 +1065,23 @@ export default function App() {
   };
 
   if (isAuthChecking) return (
-    <div className="min-h-screen bg-[#f2eee8] flex items-center justify-center">
-      <motion.div animate={{ scale: [1, 1.1, 1], opacity: [0.5, 1, 0.5] }} transition={{ duration: 2, repeat: Infinity }}>
-        <Armchair className="w-12 h-12 text-[#d4a373]" />
-      </motion.div>
+    <div className="min-h-screen bg-[#f2eee8] flex items-center justify-center p-8">
+      <div className="w-full max-w-md space-y-6">
+        <div className="flex justify-center mb-8">
+          <motion.div animate={{ scale: [1, 1.05, 1], opacity: [0.5, 1, 0.5] }} transition={{ duration: 2, repeat: Infinity }}>
+            <Armchair className="w-10 h-10 text-[#d4a373]" />
+          </motion.div>
+        </div>
+        <div className="skeleton h-8 w-3/4 mx-auto" />
+        <div className="skeleton h-4 w-1/2 mx-auto" />
+        <div className="space-y-3 mt-8">
+          {[1,2,3].map(i => <div key={i} className="skeleton h-16 w-full" />)}
+        </div>
+        <div className="space-y-2 mt-4">
+          <div className="skeleton h-4 w-full" />
+          <div className="skeleton h-4 w-5/6" />
+        </div>
+      </div>
     </div>
   );
 
@@ -1074,6 +1095,13 @@ export default function App() {
         <div className="bg-blob bg-[#a5a58d]/15 bottom-[5%] right-[-5%]" style={{ animationDelay: '-5s' }} />
         <div className="bg-blob bg-white/30 top-[30%] right-[15%]" style={{ animationDelay: '-10s', width: '300px', height: '300px' }} />
       </div>
+      <Armchair style={{ position: 'fixed', width: '500px', height: '500px', top: '-10%', right: '-8%', transform: 'rotate(15deg)', opacity: 0.12, pointerEvents: 'none', zIndex: -1, color: '#d4a373' }} />
+      <Armchair style={{ position: 'fixed', width: '320px', height: '320px', top: '-5%', left: '-5%', transform: 'rotate(-25deg)', opacity: 0.08, pointerEvents: 'none', zIndex: -1, color: '#a5a58d' }} />
+      <Armchair style={{ position: 'fixed', width: '400px', height: '400px', bottom: '-10%', right: '5%', transform: 'rotate(-15deg)', opacity: 0.1, pointerEvents: 'none', zIndex: -1, color: '#d4a373' }} />
+      <Armchair style={{ position: 'fixed', width: '280px', height: '280px', bottom: '-5%', left: '-5%', transform: 'rotate(20deg)', opacity: 0.09, pointerEvents: 'none', zIndex: -1, color: '#a5a58d' }} />
+      <Armchair className="hidden lg:block" style={{ position: 'fixed', width: '180px', height: '180px', top: '30%', left: '10%', transform: 'rotate(40deg)', opacity: 0.07, pointerEvents: 'none', zIndex: -1, color: '#d4a373' }} />
+      <Armchair className="hidden lg:block" style={{ position: 'fixed', width: '150px', height: '150px', top: '60%', right: '5%', transform: 'rotate(-30deg)', opacity: 0.06, pointerEvents: 'none', zIndex: -1, color: '#a5a58d' }} />
+      <Armchair className="hidden md:block" style={{ position: 'fixed', width: '100px', height: '100px', top: '50%', left: '50%', transform: 'rotate(10deg)', opacity: 0.04, pointerEvents: 'none', zIndex: -1, color: '#d4a373' }} />
 
       <AnimatePresence mode="wait">
         {showSplash ? (
@@ -1094,25 +1122,33 @@ export default function App() {
           </motion.div>
         ) : (
           <motion.div key="app" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col md:flex-row w-full min-h-screen">
-            <aside className="w-full md:w-64 glass-dark shrink-0 flex flex-col p-8 gap-8 md:h-screen md:sticky md:top-0 z-50">
-              <div className="logo border-b-2 border-accent-tan pb-1 text-xl font-bold tracking-widest uppercase">{t.brand}</div>
-              <nav className="flex flex-col gap-4 flex-1">
+            <aside className="w-full md:w-64 glass-dark shrink-0 flex flex-col md:h-screen md:sticky md:top-0 z-50">
+              <div className="flex items-center justify-between p-6 md:p-8">
+                <div className="logo border-b-2 border-accent-tan pb-1 text-xl font-bold tracking-widest uppercase">{t.brand}</div>
+                <button onClick={() => setSidebarOpen(!sidebarOpen)} className="md:hidden p-2 rounded-xl hover:bg-black/5 transition-all">
+                  {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                </button>
+              </div>
+              <nav className={`flex-col gap-3 px-6 md:px-8 pb-6 md:pb-8 flex-1 ${sidebarOpen ? 'flex' : 'hidden md:flex'}`}>
                 {currentUser && isAuthorizedUser ? (
                   <>
-                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'customers' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'}`} onClick={() => setAdminSubView('customers')}>
+                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'customers' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('customers'); setSidebarOpen(false); }}>
                       <UserIcon className="w-4 h-4" /> {t.customers}
                     </div>
-                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'inspections' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'}`} onClick={() => setAdminSubView('inspections')}>
+                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'inspections' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('inspections'); setSidebarOpen(false); }}>
                       <ClipboardList className="w-4 h-4" /> {t.inspections}
                     </div>
-                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'contracted' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'}`} onClick={() => setAdminSubView('contracted')}>
+                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'contracted' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('contracted'); setSidebarOpen(false); }}>
                       <CheckCircle2 className="w-4 h-4" /> {t.contracted}
                     </div>
-                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'not-contracted' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'}`} onClick={() => setAdminSubView('not-contracted')}>
+                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'not-contracted' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('not-contracted'); setSidebarOpen(false); }}>
                       <X className="w-4 h-4" /> {t.notContracted}
                     </div>
-                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'catalogs' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'}`} onClick={() => setAdminSubView('catalogs')}>
+                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'catalogs' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('catalogs'); setSidebarOpen(false); }}>
                       <FileSpreadsheet className="w-4 h-4" /> {t.publishedSheets}
+                    </div>
+                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'phonebook' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('phonebook'); setSidebarOpen(false); }}>
+                      <PhoneCall className="w-4 h-4" /> {t.phonebook}
                     </div>
                   </>
                 ) : null}
@@ -1138,6 +1174,7 @@ export default function App() {
                            adminSubView === 'inspections' ? t.inspections :
                            adminSubView === 'contracted' ? t.contracted :
                            adminSubView === 'not-contracted' ? t.notContracted :
+                           adminSubView === 'phonebook' ? t.phonebook :
                            t.publishedSheets}
                         </h1>
                       </div>
@@ -1162,6 +1199,7 @@ export default function App() {
                           )}
                         </div>
 
+                        {adminSubView !== 'phonebook' && (
                         <div className="flex items-center gap-2">
                           <div className="relative group">
                             <Search className="absolute top-1/2 -translate-y-1/2 right-3 w-3.5 h-3.5 text-zinc-400 group-focus-within:text-zinc-700 transition-colors pointer-events-none z-10" />
@@ -1179,22 +1217,86 @@ export default function App() {
                             )}
                           </div>
                           {adminSubView !== 'inspections' && (
-                            <div className="flex items-center gap-1">
-                              <button onClick={() => setGovernorateFilter('all')} className={`px-2.5 py-2 rounded-xl text-[11px] font-bold ${governorateFilter === 'all' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 bg-white/30'}`}>الكل</button>
-                              <button onClick={() => setGovernorateFilter('القاهرة')} className={`px-2.5 py-2 rounded-xl text-[11px] font-bold ${governorateFilter === 'القاهرة' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 bg-white/30'}`}>القاهرة</button>
-                              <button onClick={() => setGovernorateFilter('الاسكندرية')} className={`px-2.5 py-2 rounded-xl text-[11px] font-bold ${governorateFilter === 'الاسكندرية' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 bg-white/30'}`}>الاسكندرية</button>
+                            <div className="flex items-center gap-1.5">
+                              <button onClick={() => setGovernorateFilter('all')} className={`filter-chip ${governorateFilter === 'all' ? 'filter-chip-active' : 'filter-chip-inactive'}`}>الكل</button>
+                              <button onClick={() => setGovernorateFilter('القاهرة')} className={`filter-chip ${governorateFilter === 'القاهرة' ? 'filter-chip-active' : 'filter-chip-inactive'}`}>القاهرة</button>
+                              <button onClick={() => setGovernorateFilter('الاسكندرية')} className={`filter-chip ${governorateFilter === 'الاسكندرية' ? 'filter-chip-active' : 'filter-chip-inactive'}`}>الاسكندرية</button>
                             </div>
                           )}
                         </div>
+                        )}
 
                         <div className="glass px-4 py-3 rounded-2xl min-w-[90px]">
-                          <div className="text-[10px] uppercase font-bold text-zinc-400">{adminSubView === 'customers' ? t.totalCustomers : adminSubView === 'inspections' ? t.inspections : adminSubView === 'contracted' ? t.contracted : adminSubView === 'not-contracted' ? t.notContracted : t.publishedSheets}</div>
-                          <div className="text-2xl font-semibold">{adminSubView === 'customers' ? customerRecords.filter(r => matchesFilters(r)).length : adminSubView === 'inspections' ? inspections.filter(r => matchesFilters(r)).length : adminSubView === 'contracted' ? contractedCustomers.filter(r => matchesFilters(r)).length : adminSubView === 'not-contracted' ? notContractedCustomers.filter(r => matchesFilters(r)).length : catalogs.length}</div>
+                          <div className="text-[10px] uppercase font-bold text-zinc-400">{adminSubView === 'customers' ? t.totalCustomers : adminSubView === 'inspections' ? t.inspections : adminSubView === 'contracted' ? t.contracted : adminSubView === 'not-contracted' ? t.notContracted : adminSubView === 'phonebook' ? (lang === 'ar' ? 'الأرقام' : 'Numbers') : t.publishedSheets}</div>
+                          <div className="text-2xl font-semibold">{adminSubView === 'customers' ? customerRecords.filter(r => matchesFilters(r)).length : adminSubView === 'inspections' ? inspections.filter(r => matchesFilters(r)).length : adminSubView === 'contracted' ? contractedCustomers.filter(r => matchesFilters(r)).length : adminSubView === 'not-contracted' ? notContractedCustomers.filter(r => matchesFilters(r)).length : adminSubView === 'phonebook' ? new Set([...customerRecords, ...inspections, ...contractedCustomers, ...notContractedCustomers].map(r => r.phone).filter(Boolean)).size : catalogs.length}</div>
                         </div>
                       </div>
                     </div>
 
-                    {adminSubView === 'catalogs' ? (
+                    {adminSubView === 'phonebook' ? (
+                      <div className="space-y-6">
+                        <div className="glass rounded-[2.5rem] p-6 md:p-10 shadow-xl border border-white/40 glass-table">
+                          <div className="flex items-center gap-3 mb-6">
+                            <PhoneCall className="w-6 h-6 text-accent-tan" />
+                            <h2 className="text-2xl font-bold text-zinc-900">{t.phonebook}</h2>
+                          </div>
+                          {(() => {
+                            const allNumbers = [
+                              ...customerRecords.map(r => ({ name: r.name, phone: r.phone, source: 'customers' as const })),
+                              ...inspections.map(r => ({ name: r.customerName, phone: r.phone, source: 'inspections' as const })),
+                              ...contractedCustomers.map(r => ({ name: r.customerName, phone: r.phone, source: 'contracted' as const })),
+                              ...notContractedCustomers.map(r => ({ name: r.customerName, phone: r.phone, source: 'not-contracted' as const })),
+                            ];
+                            const phoneMap = new Map<string, { name: string; phones: string[]; sources: string[] }>();
+                            allNumbers.forEach(entry => {
+                              const key = entry.phone?.trim();
+                              if (!key) return;
+                              const existing = phoneMap.get(key);
+                              if (existing) {
+                                if (!existing.phones.includes(entry.phone)) existing.phones.push(entry.phone);
+                                if (!existing.sources.includes(entry.source)) existing.sources.push(entry.source);
+                              } else {
+                                phoneMap.set(key, { name: entry.name, phones: [entry.phone], sources: [entry.source] });
+                              }
+                            });
+                            const sortedEntries = Array.from(phoneMap.entries()).sort((a, b) => a[1].name.localeCompare(b[1].name, 'ar'));
+                            return sortedEntries.length > 0 ? (
+                              <div className="space-y-2">
+                                {sortedEntries.map(([phone, data]) => {
+                                  const waNumber = phone.replace(/^0+/, '20');
+                                  const sourceLabel = data.sources.includes('contracted') ? (lang === 'ar' ? 'متعاقد' : 'Contracted') : data.sources.includes('inspections') ? (lang === 'ar' ? 'معاينة' : 'Inspection') : data.sources.includes('not-contracted') ? (lang === 'ar' ? 'غير متعاقد' : 'Not Contracted') : (lang === 'ar' ? 'عميل' : 'Customer');
+                                  return (
+                                    <div key={phone} className="flex items-center justify-between bg-white/60 p-4 rounded-2xl border border-white/80 hover:bg-white/90 transition-all gap-3">
+                                      <div className="flex items-center gap-4 min-w-0">
+                                        <div className="w-10 h-10 rounded-xl bg-accent-tan/10 flex items-center justify-center shrink-0">
+                                          <PhoneCall className="w-5 h-5 text-accent-tan" />
+                                        </div>
+                                        <div className="min-w-0">
+                                          <p className="font-bold text-zinc-900 truncate">{data.name}</p>
+                                          <p className="text-sm font-mono text-zinc-500" dir="ltr">{phone}</p>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        <span className="text-[10px] font-bold text-zinc-400 bg-zinc-100 px-2 py-1 rounded-lg">{sourceLabel}</span>
+                                        <a href={`https://wa.me/${waNumber}`} target="_blank" rel="noreferrer" className="btn-3d flex items-center gap-2 px-4 py-3 rounded-2xl text-xs font-bold uppercase text-white bg-[#25D366] hover:bg-[#1da851] transition-all shadow-md hover:shadow-lg">
+                                          <MessageCircle className="w-4 h-4" />
+                                          <span className="hidden sm:inline">{t.openWhatsApp}</span>
+                                        </a>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="py-16 text-center">
+                                <PhoneCall className="w-12 h-12 text-zinc-200 mx-auto mb-4" />
+                                <p className="text-zinc-400 font-semibold">{t.noRecords}</p>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    ) : adminSubView === 'catalogs' ? (
                       <div className="space-y-8">
                         {catalogs.length > 0 ? (
                           <>
@@ -1305,21 +1407,27 @@ export default function App() {
                                       </div>
                                     </>
                                   ) : (
-                                    <div className="p-20 text-center text-zinc-400 italic">
-                                      {lang === 'ar' ? 'لا توجد نتائج تطابق بحثك' : 'No results matching your search'}
+                                    <div className="py-20 text-center">
+                                      <Search className="w-12 h-12 text-zinc-200 mx-auto mb-4" />
+                                      <p className="text-zinc-400 font-semibold">{lang === 'ar' ? 'لا توجد نتائج تطابق بحثك' : 'No results matching your search'}</p>
                                     </div>
                                   )}
                                   
                                   {selectedSheet.data.length === 0 && (
-                                    <div className="p-20 text-center text-zinc-400 italic">
-                                      {lang === 'ar' ? 'هذا الملف فارغ' : 'This sheet is empty'}
+                                    <div className="py-20 text-center">
+                                      <FileSpreadsheet className="w-12 h-12 text-zinc-200 mx-auto mb-4" />
+                                      <p className="text-zinc-400 font-semibold">{lang === 'ar' ? 'هذا الملف فارغ' : 'This sheet is empty'}</p>
                                     </div>
                                   )}
                                 </div>
                               );
                             })()}
                           </>
-                        ) : <div className="glass rounded-[2rem] p-20 text-center text-zinc-400 italic">{t.noSheets}</div>}
+                        ) : <div className="glass rounded-[2rem] py-20 text-center">
+                          <Upload className="w-12 h-12 text-zinc-200 mx-auto mb-4" />
+                          <p className="text-zinc-400 font-semibold mb-2">{t.noSheets}</p>
+                          {currentUser?.email === ADMIN_EMAIL && <label className="btn-3d btn-3d-glass px-6 py-3 rounded-2xl text-xs font-bold uppercase cursor-pointer inline-flex items-center gap-2"><Upload className="w-4 h-4" /> {t.uploadNew} <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleImportExcel} /></label>}
+                        </div>}
                       </div>
                     ) : adminSubView === 'inspections' ? (
                     <div className="space-y-8">
@@ -1327,20 +1435,23 @@ export default function App() {
                         <div className="space-y-4">
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {inspections.filter(ins => !searchQuery || ins.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) || ins.phone?.includes(searchQuery)).map(ins => (
-                              <div id={`inspection-${ins.id}`} key={ins.id} className="bg-white/80 backdrop-blur-xl p-8 rounded-[2.5rem] flex flex-col gap-6 border border-white/50 shadow-xl hover:shadow-2xl transition-all group relative overflow-hidden">
+                              <div id={`inspection-${ins.id}`} key={ins.id} className="bg-white/80 backdrop-blur-xl p-8 rounded-[2.5rem] flex flex-col gap-6 border border-white/50 shadow-xl hover:shadow-2xl transition-all group relative overflow-hidden card-accent">
                                 <div className="absolute top-0 right-0 w-32 h-32 bg-accent-tan/5 rounded-full -mr-16 -mt-16 blur-3xl group-hover:bg-accent-tan/10 transition-colors" />
+                                <Armchair className="absolute bottom-2 left-2 text-accent-tan/5 w-16 h-16 -rotate-12 pointer-events-none" />
                                 
                                 <div className="flex justify-between items-start relative z-10">
                                   <div>
                                     <h4 className="text-2xl font-bold text-zinc-900 mb-1">{ins.customerName}</h4>
                                     <p className="text-zinc-500 font-mono tracking-wider">{ins.phone}</p>
                                   </div>
-                                  <div className="flex flex-col items-end gap-1">
+                                  <div className="flex flex-col items-end gap-1.5">
+                                    <div className={`status-badge ${ins.status === 'pending' ? 'status-badge-pending' : ins.status === 'contracted' ? 'status-badge-contracted' : 'status-badge-refused'}`}>
+                                      {ins.status === 'pending' ? (lang === 'ar' ? 'معلق' : 'Pending') : ins.status === 'contracted' ? (lang === 'ar' ? 'متعاقد' : 'Contracted') : (lang === 'ar' ? 'مرفوض' : 'Refused')}
+                                    </div>
                                     <div className="flex items-center gap-2 bg-zinc-100/80 px-3 py-1.5 rounded-xl text-[10px] font-bold text-zinc-600 uppercase">
                                       <Calendar className="w-3 h-3" />
                                       {ins.visitDate}
                                     </div>
-                                    
                                   </div>
                                 </div>
 
@@ -1373,24 +1484,27 @@ export default function App() {
                             ))}
                           </div>
                         </div>
-                      ) : <div className="glass rounded-[2rem] p-20 text-center text-zinc-400 italic">{lang === 'ar' ? 'لا توجد تعاقدات معلقة' : 'No pending contracts'}</div>}
+                      ) : <div className="glass rounded-[2rem] py-20 text-center">
+                        <ClipboardList className="w-12 h-12 text-zinc-200 mx-auto mb-4" />
+                        <p className="text-zinc-400 font-semibold">{lang === 'ar' ? 'لا توجد معاينات معلقة' : 'No pending inspections'}</p>
+                      </div>}
                     </div>
                     ) : adminSubView === 'customers' ? (
                     <div className="space-y-8">
-                      <div className="hidden md:block glass rounded-[2.5rem] overflow-hidden p-6 md:p-10 shadow-xl border border-white/40">
+                      <div className="hidden md:block glass glass-table rounded-[2.5rem] overflow-hidden p-6 md:p-10 shadow-xl border border-white/40">
                         <div className="overflow-x-auto">
-                          <table className="w-full text-left">
+                          <table className="w-full text-left table-zebra">
                             <thead>
                               <tr className="border-b border-black/5 text-[10px] font-bold uppercase text-zinc-400 tracking-widest">
-                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.userName}</th>
-                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.phoneNumber}</th>
-                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">المحافظة</th>
-                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.pickupDate}</th>
-                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.loginDate}</th>
-                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.actions}</th>
+                                  <th className="px-6 py-5 font-bold text-zinc-500 uppercase text-[13px] text-center">{t.userName}</th>
+                                  <th className="px-6 py-5 font-bold text-zinc-500 uppercase text-[13px] text-center">{t.phoneNumber}</th>
+                                  <th className="px-6 py-5 font-bold text-zinc-500 uppercase text-[13px] text-center">المحافظة</th>
+                                  <th className="px-6 py-5 font-bold text-zinc-500 uppercase text-[13px] text-center">{t.pickupDate}</th>
+                                  <th className="px-6 py-5 font-bold text-zinc-500 uppercase text-[13px] text-center">{t.loginDate}</th>
+                                  <th className="px-6 py-5 font-bold text-zinc-500 uppercase text-[13px] text-center">{t.actions}</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-black/5">
+                            <tbody>
                               {customerRecords.filter(r => matchesFilters(r)).map((r) => (
                                 <tr key={r.id} className="group hover:bg-black/5 transition-colors">
                                   <td className="px-4 py-6 font-bold text-zinc-900 text-center">{r.name}</td>
@@ -1446,7 +1560,7 @@ export default function App() {
                                   </td>
                                 </tr>
                               ))}
-                              {customerRecords.length === 0 && <tr><td colSpan={5} className="py-20 text-center italic text-zinc-400">{t.noRecords}</td></tr>}
+                              {customerRecords.length === 0 && <tr><td colSpan={6} className="py-20 text-center"><Users className="w-10 h-10 text-zinc-200 mx-auto mb-3" /><p className="text-zinc-400 font-semibold">{t.noRecords}</p></td></tr>}
                             </tbody>
                           </table>
                         </div>
@@ -1454,7 +1568,7 @@ export default function App() {
 
                       <div className="grid grid-cols-1 gap-4 md:hidden">
                         {customerRecords.filter(r => matchesFilters(r)).map((r) => (
-                          <div key={r.id} className="bg-white/80 backdrop-blur-xl p-6 rounded-[2rem] flex flex-col gap-4 border border-white/50 shadow-lg relative overflow-hidden group">
+                          <div key={r.id} className="bg-white/80 backdrop-blur-xl p-6 rounded-[2rem] flex flex-col gap-4 border border-white/50 shadow-lg relative overflow-hidden group card-accent">
                             <div className="flex justify-between items-start">
                               <div>
                                 <h4 className="text-xl font-bold text-zinc-900 mb-1">{r.name}</h4>
@@ -1518,32 +1632,32 @@ export default function App() {
                             </div>
                           </div>
                         ))}
-                        {customerRecords.length === 0 && <div className="py-20 text-center italic text-zinc-400">{t.noRecords}</div>}
+                        {customerRecords.length === 0 && <div className="py-20 text-center"><Users className="w-10 h-10 text-zinc-200 mx-auto mb-3" /><p className="text-zinc-400 font-semibold">{t.noRecords}</p></div>}
                       </div>
                     </div>
                     ) : (
                       <div className="space-y-4">
-                        <div className="hidden md:block glass rounded-3xl overflow-hidden p-4 md:p-8">
+                        <div className="hidden md:block glass glass-table rounded-3xl overflow-hidden p-4 md:p-8">
                           <div className="overflow-x-auto">
-                            <table className="w-full text-left">
+                            <table className="w-full text-left table-zebra">
                               <thead>
                                 <tr className="border-b border-black/5">
-                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.customerName}</th>
-                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.phoneNumber}</th>
-                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">المحافظة</th>
-                                  {isContractedView && <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.deliveryDate}</th>}
-                                  {isContractedView && <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center">{t.contractDate}</th>}
-                                  <th className="px-4 py-5 font-bold text-zinc-500 uppercase text-[18px] text-center w-px whitespace-nowrap">{t.actions}</th>
+                                  <th className="px-6 py-5 font-bold text-zinc-500 uppercase text-[13px] text-center">{t.customerName}</th>
+                                  <th className="px-6 py-5 font-bold text-zinc-500 uppercase text-[13px] text-center">{t.phoneNumber}</th>
+                                  <th className="px-6 py-5 font-bold text-zinc-500 uppercase text-[13px] text-center">المحافظة</th>
+                                  {isContractedView && <th className="px-6 py-5 font-bold text-zinc-500 uppercase text-[13px] text-center">{t.deliveryDate}</th>}
+                                  {isContractedView && <th className="px-6 py-5 font-bold text-zinc-500 uppercase text-[13px] text-center">{t.contractDate}</th>}
+                                  <th className="px-6 py-5 font-bold text-zinc-500 uppercase text-[13px] text-center w-px whitespace-nowrap">{t.actions}</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-black/5">
                                 {activeRecords.filter(r => matchesFilters(r)).map(r => (
-                                  <tr key={r.id} className="hover:bg-black/5 transition-colors">
-                                    <td className="px-4 py-6 font-semibold text-center">{r.customerName}</td>
-                                    <td className="px-4 py-6 text-center"><span className="bg-black/5 px-2 py-1 rounded font-mono text-sm inline-block">{r.phone}</span></td>
-                                    <td className="px-4 py-6 text-center text-sm text-zinc-600">{r.governorate || '-'}</td>
-                                    {isContractedView && <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.deliveryDate || '-'}</td>}
-                                    {isContractedView && <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.contractDate || '-'}</td>}
+                                  <tr key={r.id} className="transition-colors">
+                                    <td className="px-6 py-6 font-semibold text-center">{r.customerName}</td>
+                                    <td className="px-6 py-6 text-center"><span className="bg-black/5 px-2 py-1 rounded font-mono text-sm inline-block">{r.phone}</span></td>
+                                    <td className="px-6 py-6 text-center text-sm text-zinc-600">{r.governorate || '-'}</td>
+                                    {isContractedView && <td className="px-6 py-6 text-sm text-zinc-500 text-center">{r.deliveryDate || '-'}</td>}
+                                    {isContractedView && <td className="px-6 py-6 text-sm text-zinc-500 text-center">{r.contractDate || '-'}</td>}
                                     {isInspectionView && <td className="px-4 py-6 text-sm text-zinc-500 text-center">{r.visitDate}</td>}
                                     <td className="px-4 py-6 text-center flex gap-3 justify-center">
                                       {isInspectionView && currentUser?.email === ADMIN_EMAIL && (
@@ -1568,7 +1682,7 @@ export default function App() {
                                   </tr>
                                 ))}
                                 {activeRecords.length === 0 && (
-                                  <tr><td colSpan={5} className="py-20 text-center italic text-zinc-400">{t.noRecords}</td></tr>
+                                  <tr><td colSpan={6} className="py-20 text-center"><Users className="w-10 h-10 text-zinc-200 mx-auto mb-3" /><p className="text-zinc-400 font-semibold">{t.noRecords}</p></td></tr>
                                 )}
                               </tbody>
                             </table>
@@ -1577,7 +1691,7 @@ export default function App() {
 
                         <div className="grid grid-cols-1 gap-4 md:hidden">
                           {activeRecords.filter(r => matchesFilters(r)).map(r => (
-                            <div key={r.id} className="bg-white/80 backdrop-blur-xl p-6 rounded-[2rem] flex flex-col gap-4 border border-white/50 shadow-lg relative overflow-hidden group">
+                            <div key={r.id} className="bg-white/80 backdrop-blur-xl p-6 rounded-[2rem] flex flex-col gap-4 border border-white/50 shadow-lg relative overflow-hidden group card-accent">
                               <div className="flex justify-between items-start">
                                 <div>
                                   <h4 className="text-xl font-bold text-zinc-900 mb-1">{r.customerName}</h4>
@@ -1616,7 +1730,7 @@ export default function App() {
                             </div>
                           ))}
                           {activeRecords.length === 0 && (
-                            <div className="py-20 text-center italic text-zinc-400">{t.noRecords}</div>
+                            <div className="py-20 text-center"><Users className="w-10 h-10 text-zinc-200 mx-auto mb-3" /><p className="text-zinc-400 font-semibold">{t.noRecords}</p></div>
                           )}
                         </div>
                       </div>
