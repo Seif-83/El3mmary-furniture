@@ -403,13 +403,25 @@ export default function App() {
   
   // Unified customers list across tables with status
   const unifiedCustomers = useMemo(() => {
-    const map = new Map();
+    type CustomerStatus = 'customers' | 'inspections' | 'contracted' | 'not-contracted';
+    type UnifiedCustomer = {
+      id: string | null | undefined;
+      phone: string;
+      name: string;
+      governorate: string;
+      pickupDate: string;
+      source: string;
+      status: CustomerStatus;
+      raw: any;
+    };
 
-    const push = (key, entry, source, status) => {
+    const map = new Map<string, UnifiedCustomer>();
+
+    const push = (key: string | null | undefined, entry: any, source: string, status: CustomerStatus) => {
       const k = (key || '').toString().trim();
       if (!k) return;
       const existing = map.get(k);
-      const obj = {
+      const obj: UnifiedCustomer = {
         id: entry?.id,
         phone: k,
         name: entry?.name || entry?.customerName || '',
@@ -419,7 +431,7 @@ export default function App() {
         status,
         raw: entry
       };
-      const priority = { contracted: 4, 'not-contracted': 3, inspections: 2, customers: 1 };
+      const priority: Record<CustomerStatus, number> = { contracted: 4, 'not-contracted': 3, inspections: 2, customers: 1 };
       if (!existing) map.set(k, obj);
       else if (priority[status] > priority[existing.status]) map.set(k, obj);
     };
@@ -1600,20 +1612,22 @@ export default function App() {
                                                 rooms: 0, pieces: [], totalAmount: 0
                                               });
                                               setEditingCollection('customers');
-                                              setEditingId(r.id);
+                                              setEditingId(r.id ?? null);
                                               setInspectionStep(1);
                                               setIsInspectionModalOpen(true);
-                                              const el = document.getElementById(`inspection-${r.id}`);
+                                              const el = document.getElementById(`inspection-${r.id ?? ''}`);
                                               if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
                                             }, 120);
                                           }} className="ml-2 flex items-center gap-2 bg-accent-tan text-white px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-accent-tan/90 active:scale-95 transition-all duration-200 shadow-md">
                                             <Eye className="w-4 h-4" />
                                             <span>{lang === 'ar' ? 'بدء المعاينة' : 'Start Visit'}</span>
                                           </button>
-                                        <button onClick={() => handleDeleteCustomer(r.id)} className="btn-3d btn-3d-danger flex items-center gap-2 bg-white-50 text-white-500 border border-white-100 px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-white-500 hover:text-white active:scale-95 transition-all duration-200 hover:shadow-lg hover:shadow-white-100">
-                                          <Trash2 className="w-4 h-4" />
-                                          <span>{t.delete}</span>
-                                        </button>
+                                        {r.id && (
+                                          <button onClick={() => handleDeleteCustomer(r.id as string)} className="btn-3d btn-3d-danger flex items-center gap-2 bg-white-50 text-white-500 border border-white-100 px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-white-500 hover:text-white active:scale-95 transition-all duration-200 hover:shadow-lg hover:shadow-white-100">
+                                            <Trash2 className="w-4 h-4" />
+                                            <span>{t.delete}</span>
+                                          </button>
+                                        )}
                                         </>
                                       )}
                                     </div>
