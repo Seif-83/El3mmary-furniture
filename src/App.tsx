@@ -524,6 +524,7 @@ export default function App() {
     phone: '',
     phones: [''],
     pickupDate: '',
+    address: '',
     governorate: ''
   });
 
@@ -1119,11 +1120,11 @@ export default function App() {
     setInspectionFormData({ ...inspectionFormData, pieces, totalAmount });
   };
 
-  const handleOpenAddModal = () => { setFormData({ ...formData, name: '', phone: '', phones: [''], pickupDate: '', governorate: '' }); setModalMode('add'); setEditingCollection(null); setIsModalOpen(true); };
+  const handleOpenAddModal = () => { setFormData({ ...formData, name: '', phone: '', phones: [''], pickupDate: '', address: '', governorate: '' }); setModalMode('add'); setEditingCollection(null); setIsModalOpen(true); };
 
   const handleOpenEditModal = (record: any) => {
     const phones = normalizePhoneList(record.phone);
-    setFormData({ ...formData, name: record.name, phone: phones[0] || '', phones, pickupDate: record.pickupDate || '', governorate: record.governorate || '' });
+    setFormData({ ...formData, name: record.name, phone: phones[0] || '', phones, pickupDate: record.pickupDate || '', address: record.address || record.pickupDate || '', governorate: record.governorate || '' });
     setEditingId(record.id);
     setEditingCollection('customers');
     setModalMode('edit');
@@ -1171,6 +1172,7 @@ export default function App() {
         const { error: insertError } = await supabase.from('customers').insert({
           name: formData.name.trim(),
           phone: combinedPhone,
+          address: formData.address || null,
           pickup_date: formData.pickupDate || null,
           governorate: formData.governorate || null
         });
@@ -1184,6 +1186,7 @@ export default function App() {
           .update({
             name: formData.name.trim(),
             phone: combinedPhone,
+            address: formData.address || null,
             pickup_date: formData.pickupDate || null,
             governorate: formData.governorate || null
           })
@@ -1374,10 +1377,6 @@ export default function App() {
                             <PhoneCall className="w-6 h-6 text-accent-tan" />
                             <h2 className="text-2xl font-bold text-zinc-900">{t.phonebook}</h2>
                           </div>
-                          <div className="relative mb-6">
-                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-300" />
-                            <input type="text" placeholder={lang === 'ar' ? 'بحث بالاسم أو الرقم...' : 'Search by name or phone...'} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full px-12 py-4 bg-black/5 border border-black/5 rounded-2xl text-sm outline-none focus:border-accent-tan/40 transition-all" />
-                          </div>
                           {(() => {
                             const allNumbers = [
                               ...customerRecords.map(r => ({ name: r.name, phone: r.phone, source: 'customers' as const })),
@@ -1397,8 +1396,7 @@ export default function App() {
                                 phoneMap.set(key, { name: entry.name, phones: [entry.phone], sources: [entry.source] });
                               }
                             });
-                            const filtered = searchQuery ? Array.from(phoneMap.entries()).filter(([phone, data]) => data.name.toLowerCase().includes(searchQuery.toLowerCase()) || phone.includes(searchQuery)) : Array.from(phoneMap.entries());
-                            const sortedEntries = filtered.sort((a, b) => a[1].name.localeCompare(b[1].name, 'ar'));
+                            const sortedEntries = Array.from(phoneMap.entries()).sort((a, b) => a[1].name.localeCompare(b[1].name, 'ar'));
                             return sortedEntries.length > 0 ? (
                               <div className="space-y-2">
                                 {sortedEntries.map(([phone, data]) => {
@@ -2292,7 +2290,7 @@ export default function App() {
                     <option value="الاسكندرية">الاسكندرية</option>
                   </select>
                 </div>
-                <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{lang === 'ar' ? 'عنوان المعاينة' : 'Inspection Address'}</label><input type="text" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={formData.pickupDate || ''} onChange={e => setFormData({ ...formData, pickupDate: e.target.value })} /></div>
+                <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{lang === 'ar' ? 'عنوان المعاينة' : 'Inspection Address'}</label><input type="text" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={formData.address || ''} onChange={e => setFormData({ ...formData, address: e.target.value })} /></div>
                 <button disabled={isLoading} type="submit" className="w-full bg-zinc-900 text-white py-5 rounded-3xl font-bold uppercase tracking-widest shadow-2xl btn-3d btn-3d-zinc">{isLoading ? t.processing : t.save}</button>
               </form>
             </motion.div>
