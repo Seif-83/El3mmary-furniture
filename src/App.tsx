@@ -425,6 +425,11 @@ export default function App() {
       name: string;
       governorate: string;
       pickupDate: string;
+      visitDate: string;
+      visitDateTo: string;
+      address: string;
+      deliveryAddress: string;
+      notes: string;
       source: string;
       status: CustomerStatus;
       raw: any;
@@ -442,6 +447,11 @@ export default function App() {
         name: entry?.name || entry?.customerName || '',
         governorate: entry?.governorate || entry?.city || '',
         pickupDate: entry?.pickup_date || entry?.pickupDate || entry?.visitDate || '',
+        visitDate: entry?.visit_date || entry?.visitDate || '',
+        visitDateTo: entry?.visit_date_to || entry?.visitDateTo || '',
+        address: entry?.address || '',
+        deliveryAddress: entry?.delivery_address || entry?.deliveryAddress || '',
+        notes: entry?.notes || '',
         source,
         status,
         raw: entry
@@ -574,17 +584,17 @@ export default function App() {
   };
 
   const insertInspectionRecord = async (inspectionDbData: Record<string, any>) => {
-    const { error } = await supabase.from('inspections').insert(inspectionDbData);
+    const { data, error } = await supabase.from('inspections').insert(inspectionDbData).select('id').single();
 
-    if (!error) return;
+    if (!error) return data?.id;
 
     if (isLegacyInspectionStatusConstraintError(error)) {
-      const { error: legacyInsertError } = await supabase.from('inspections').insert({
+      const { data: legacyData, error: legacyInsertError } = await supabase.from('inspections').insert({
         ...inspectionDbData,
         status: 'scheduled',
-      });
+      }).select('id').single();
 
-      if (!legacyInsertError) return;
+      if (!legacyInsertError) return legacyData?.id;
       throw legacyInsertError;
     }
 
@@ -955,21 +965,34 @@ export default function App() {
         if (error) throw error;
       } else {
         // Create new inspection and remove from customers
-        await insertInspectionRecord(inspectionDbData);
+        const newId = await insertInspectionRecord(inspectionDbData);
         if (editingId) {
           try {
             const { error: deleteError } = await supabase.from('customers').delete().eq('id', editingId);
             if (deleteError) throw deleteError;
           } catch (err) { console.error("Failed to remove customer after creating inspection", err); }
         }
+        // If this was a customer-to-inspection promotion, advance to Step 3 for finalization
+        if (editingCollection === 'customers' && newId) {
+          setInspectionFormData(prev => ({ ...prev, id: newId }));
+          setEditingCollection(null);
+          setEditingId(null);
+          await refreshAllData();
+          void playSound('success');
+          toast.success(lang === 'ar' ? "تم نقل العميل إلى المعاينات" : "Customer moved to Inspections");
+          setInspectionStep(3);
+          setIsLoading(false);
+          return;
+        }
       }
       
       await refreshAllData();
       void playSound('success');
-      toast.success(lang === 'ar' ? "تم نقل العميل إلى المعاينات" : "Customer moved to Inspections");
+      toast.success(lang === 'ar' ? "تم حفظ بيانات المعاينة" : "Inspection data saved");
       setIsInspectionModalOpen(false);
       setInspectionStep(1);
       setEditingId(null);
+      setEditingCollection(null);
       setInspectionFormData({ 
         customerName: '', address: '', deliveryAddress: '', phone: '', visitDate: '', 
         notes: '', rooms: 0, pieces: [], totalAmount: 0, deliveryDate: '', pickupDate: '', 
@@ -1007,8 +1030,9 @@ export default function App() {
       };
       const { error } = await supabase.from(tableName).insert(dbData);
       if (error) throw error;
-      if (directRecord?.id) {
-        const { error: deleteError } = await supabase.from('inspections').delete().eq('id', directRecord.id);
+      const inspectionId = directRecord?.id || inspectionFormData.id;
+      if (inspectionId) {
+        const { error: deleteError } = await supabase.from('inspections').delete().eq('id', inspectionId);
         if (deleteError) throw deleteError;
       }
       await refreshAllData();
@@ -1350,6 +1374,10 @@ export default function App() {
                             <PhoneCall className="w-6 h-6 text-accent-tan" />
                             <h2 className="text-2xl font-bold text-zinc-900">{t.phonebook}</h2>
                           </div>
+                          <div className="relative mb-6">
+                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-300" />
+                            <input type="text" placeholder={lang === 'ar' ? 'بحث بالاسم أو الرقم...' : 'Search by name or phone...'} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full px-12 py-4 bg-black/5 border border-black/5 rounded-2xl text-sm outline-none focus:border-accent-tan/40 transition-all" />
+                          </div>
                           {(() => {
                             const allNumbers = [
                               ...customerRecords.map(r => ({ name: r.name, phone: r.phone, source: 'customers' as const })),
@@ -1369,7 +1397,8 @@ export default function App() {
                                 phoneMap.set(key, { name: entry.name, phones: [entry.phone], sources: [entry.source] });
                               }
                             });
-                            const sortedEntries = Array.from(phoneMap.entries()).sort((a, b) => a[1].name.localeCompare(b[1].name, 'ar'));
+                            const filtered = searchQuery ? Array.from(phoneMap.entries()).filter(([phone, data]) => data.name.toLowerCase().includes(searchQuery.toLowerCase()) || phone.includes(searchQuery)) : Array.from(phoneMap.entries());
+                            const sortedEntries = filtered.sort((a, b) => a[1].name.localeCompare(b[1].name, 'ar'));
                             return sortedEntries.length > 0 ? (
                               <div className="space-y-2">
                                 {sortedEntries.map(([phone, data]) => {
@@ -1644,12 +1673,13 @@ export default function App() {
                                                 customerName: r.name,
                                                 phone: r.phone,
                                                 id: undefined,
-                                                address: (r as any).address || (r as any).pickupDate || '',
-                                                pickupDate: (r as any).pickupDate || (r as any).address || '',
-                                                visitDate: (r as any).visitDate || '',
-                                                visitDateTo: (r as any).visitDateTo || '',
-                                                notes: (r as any).notes || '',
-                                                governorate: (r as any).governorate || '',
+                                                address: r.address || r.pickupDate || '',
+                                                deliveryAddress: r.deliveryAddress || '',
+                                                pickupDate: r.pickupDate || r.address || '',
+                                                visitDate: r.visitDate || '',
+                                                visitDateTo: r.visitDateTo || '',
+                                                notes: r.notes || '',
+                                                governorate: r.governorate || '',
                                                 rooms: 0, pieces: [], totalAmount: 0
                                               });
                                               setEditingCollection('customers');
@@ -1700,12 +1730,13 @@ export default function App() {
                                     customerName: r.name, 
                                     phone: r.phone,
                                     id: undefined,
-                                    address: (r as any).address || (r as any).pickupDate || '',
-                                    pickupDate: (r as any).pickupDate || (r as any).address || '',
-                                    visitDate: (r as any).visitDate || '',
-                                    visitDateTo: (r as any).visitDateTo || '',
-                                    notes: (r as any).notes || '',
-                                    governorate: (r as any).governorate || '',
+                                    address: r.address || r.pickupDate || '',
+                                    deliveryAddress: r.deliveryAddress || '',
+                                    pickupDate: r.pickupDate || r.address || '',
+                                    visitDate: r.visitDate || '',
+                                    visitDateTo: r.visitDateTo || '',
+                                    notes: r.notes || '',
+                                    governorate: r.governorate || '',
                                     rooms: 0, pieces: [], totalAmount: 0 
                                   });
                                   setEditingCollection('customers');
@@ -1724,13 +1755,16 @@ export default function App() {
                                       customerName: r.name,
                                       phone: r.phone,
                                       id: undefined,
-                                      address: (r as any).address || '',
-                                      visitDate: (r as any).visitDate || '',
-                                      visitDateTo: (r as any).visitDateTo || '',
-                                      notes: (r as any).notes || '',
-                                      governorate: (r as any).governorate || '',
+                                      address: r.address || '',
+                                      deliveryAddress: r.deliveryAddress || '',
+                                      pickupDate: r.pickupDate || '',
+                                      visitDate: r.visitDate || '',
+                                      visitDateTo: r.visitDateTo || '',
+                                      notes: r.notes || '',
+                                      governorate: r.governorate || '',
                                       rooms: 0, pieces: [], totalAmount: 0
                                     });
+                                    setEditingCollection('customers');
                                     setEditingId(r.id);
                                     setInspectionStep(1);
                                     setIsInspectionModalOpen(true);
