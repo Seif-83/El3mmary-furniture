@@ -161,7 +161,7 @@ const translations: Record<'en' | 'ar', Record<string, string>> = {
     step2: "During Visit",
     step3: "Contracting",
     customerName: "Customer Name",
-    address: "Pickup Address",
+    address: "Inspection / Pickup Address",
     deliveryAddress: "Delivery Address",
     visitDate: "Visit Date",
     notes: "Notes",
@@ -234,8 +234,8 @@ const translations: Record<'en' | 'ar', Record<string, string>> = {
     step2: "أثناء المعاينة",
     step3: "التعاقد",
     customerName: "اسم العميل",
-    address: "عنوان المعاينة",
-    deliveryAddress: "عنوان الاستلام",
+    address: "عنوان المعاينة / الاستلام",
+    deliveryAddress: "عنوان التسليم",
     visitDate: "تاريخ المعاينة",
     notes: "ملاحظات",
     rooms: "عدد الغرف",
@@ -247,7 +247,7 @@ const translations: Record<'en' | 'ar', Record<string, string>> = {
     refusedBtn: "لم يتم التعاقد",
     portfolio: "البورتفوليو",
     deliveryDate: "تاريخ التسليم",
-    pickupDate: "عنوان المعاينة",
+    pickupDate: "تاريخ الاستلام",
     portfolioDate: "تاريخ البورتفوليو",
     contractDate: "تاريخ العقد",
     contractImg: "صورة العقد",
@@ -892,11 +892,11 @@ export default function App() {
         void playSound('success');
         toast.success(lang === 'ar' ? "تم الحفظ بنجاح" : "Saved successfully");
         
-        // If editing a customer (from customers table), move to step 2
-        if (editingCollection === 'customers' || !inspectionFormData.id) {
+        // If editing a customer or contracted customer, move to step 2 for pieces
+        if (editingCollection === 'customers' || editingCollection === 'contracted_customers' || !inspectionFormData.id) {
           setInspectionStep(2);
         } else {
-          // If editing a finalized record, close modal
+          // If editing other finalized records, close modal
           setIsInspectionModalOpen(false);
           setInspectionStep(1);
           setEditingId(null);
@@ -907,9 +907,33 @@ export default function App() {
       return;
     }
 
-    // Step 2+: Move customer to 'inspections' table and remove from 'customers'
+    // Step 2+: save rooms, pieces, total
     setIsLoading(true);
     try {
+      if (editingCollection && editingCollection !== 'customers') {
+        // Editing contracted / non-contracted - update pieces/rooms/total
+        const { error } = await supabase.from(editingCollection).update({
+          rooms: inspectionFormData.rooms || 0,
+          pieces: inspectionFormData.pieces || [],
+          total_amount: inspectionFormData.totalAmount || 0,
+        }).eq('id', inspectionFormData.id);
+        if (error) throw error;
+        await refreshAllData();
+        void playSound('success');
+        toast.success(lang === 'ar' ? "تم الحفظ بنجاح" : "Saved successfully");
+        setIsInspectionModalOpen(false);
+        setInspectionStep(1);
+        setEditingId(null);
+        setEditingCollection(null);
+        setInspectionFormData({ 
+          customerName: '', address: '', deliveryAddress: '', phone: '', visitDate: '', 
+          notes: '', rooms: 0, pieces: [], totalAmount: 0, deliveryDate: '', pickupDate: '', 
+          portfolioDate: '', contractDate: '', portfolio: '' 
+        });
+        setIsLoading(false);
+        return;
+      }
+
       const inspectionDbData = {
         customer_name: inspectionFormData.customerName?.trim(),
         address: inspectionFormData.address?.trim(),
@@ -917,7 +941,9 @@ export default function App() {
         governorate: inspectionFormData.governorate || null,
         phone: inspectionFormData.phone?.trim(),
         visit_date: inspectionFormData.visitDate,
-
+        rooms: inspectionFormData.rooms || 0,
+        pieces: inspectionFormData.pieces || [],
+        total_amount: inspectionFormData.totalAmount || 0,
         pickup_date: inspectionFormData.pickupDate || null,
         portfolio_date: inspectionFormData.portfolio_date || null,
         contract_date: inspectionFormData.contractDate || null
@@ -1876,7 +1902,6 @@ export default function App() {
                   <div className="space-y-4">
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.customerName}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.customerName} onChange={e => setInspectionFormData({ ...inspectionFormData, customerName: e.target.value })} /></div>
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.address}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.address} onChange={e => setInspectionFormData({ ...inspectionFormData, address: e.target.value })} /></div>
-                    <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.deliveryAddress}</label><input className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.deliveryAddress || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, deliveryAddress: e.target.value })} /></div>
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.phoneNumber}</label><input required type="tel" minLength={11} maxLength={11} pattern="[0-9]{11}" title={lang === 'ar' ? 'يجب أن يكون رقم الهاتف 11 رقماً بالضبط' : 'Phone number must be exactly 11 digits'} className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.phone} onChange={e => setInspectionFormData({ ...inspectionFormData, phone: e.target.value })} /></div>
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{lang === 'ar' ? 'المحافظة' : 'Governorate'}</label>
@@ -1886,15 +1911,21 @@ export default function App() {
                         <option value="الاسكندرية">الاسكندرية</option>
                       </select>
                     </div>
-                     {(editingCollection === 'contracted_customers' || editingCollection === 'customers') && (
-                       <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.deliveryDate}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.deliveryDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, deliveryDate: e.target.value })} /></div>
-                     )}
-                     {editingCollection === 'contracted_customers' && <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.contractDate}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.contractDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, contractDate: e.target.value })} /></div>}
-                    {editingCollection === 'contracted_customers' && (
-                      <div className="space-y-4">
-                        <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.portfolio}</label><input className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" placeholder="https://drive.google.com/..." value={inspectionFormData.portfolio || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, portfolio: e.target.value })} /></div>
-                        <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.portfolioDate}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.portfolioDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, portfolioDate: e.target.value })} /></div>
-                      </div>
+
+                     {editingCollection === 'contracted_customers' && (
+                       <div className="space-y-4 bg-accent-tan/5 p-4 rounded-2xl border border-accent-tan/10">
+                         <div className="text-[10px] font-bold uppercase text-zinc-500 mb-2">{lang === 'ar' ? 'بيانات التعاقد' : 'Contract Data'}</div>
+                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                           <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.deliveryAddress}</label><input className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.deliveryAddress || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, deliveryAddress: e.target.value })} /></div>
+                           <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.deliveryDate}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.deliveryDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, deliveryDate: e.target.value })} /></div>
+                           <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.pickupDate}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.pickupDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, pickupDate: e.target.value })} /></div>
+                           <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.contractDate}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.contractDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, contractDate: e.target.value })} /></div>
+                         </div>
+                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                           <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.portfolio}</label><input className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" placeholder="https://drive.google.com/..." value={inspectionFormData.portfolio || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, portfolio: e.target.value })} /></div>
+                           <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.portfolioDate}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.portfolioDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, portfolioDate: e.target.value })} /></div>
+                         </div>
+                       </div>
                     )}
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.visitDate}</label><input required type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.visitDate} onChange={e => setInspectionFormData({ ...inspectionFormData, visitDate: e.target.value })} /></div>
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.notes}</label><textarea className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" rows={3} value={inspectionFormData.notes} onChange={e => setInspectionFormData({ ...inspectionFormData, notes: e.target.value })} /></div>
@@ -2001,9 +2032,15 @@ export default function App() {
                 )}
                 {inspectionStep < 3 && editingCollection && (
                   <div className="flex gap-4 pt-4">
+                    {inspectionStep === 2 && (
+                      <button type="button" onClick={() => setInspectionStep(prev => prev - 1)} className="flex-1 py-4 border border-zinc-200 rounded-2xl font-bold uppercase tracking-widest btn-3d btn-3d-glass">{lang === 'ar' ? 'السابق' : 'Back'}</button>
+                    )}
                     <button type="submit" disabled={isLoading} className="flex-1 bg-zinc-900 text-white py-4 rounded-2xl font-bold uppercase tracking-widest shadow-xl btn-3d btn-3d-zinc">
-                      {isLoading ? t.processing : (lang === 'ar' ? 'حفظ' : 'Save')}
+                      {isLoading ? t.processing : (inspectionStep === 1 ? (lang === 'ar' ? 'حفظ وانتقال' : 'Save & Next') : (lang === 'ar' ? 'حفظ' : 'Save'))}
                     </button>
+                    {inspectionStep === 1 && (
+                      <button type="button" onClick={() => setInspectionStep(2)} className="flex-1 py-4 border border-zinc-200 rounded-2xl font-bold uppercase tracking-widest btn-3d btn-3d-glass">{lang === 'ar' ? 'التالي ←' : 'Next →'}</button>
+                    )}
                   </div>
                 )}
               </form>
@@ -2221,7 +2258,7 @@ export default function App() {
                     <option value="الاسكندرية">الاسكندرية</option>
                   </select>
                 </div>
-                <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.pickupDate}</label><input type="text" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={formData.pickupDate || ''} onChange={e => setFormData({ ...formData, pickupDate: e.target.value })} /></div>
+                <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{lang === 'ar' ? 'عنوان المعاينة' : 'Inspection Address'}</label><input type="text" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={formData.pickupDate || ''} onChange={e => setFormData({ ...formData, pickupDate: e.target.value })} /></div>
                 <button disabled={isLoading} type="submit" className="w-full bg-zinc-900 text-white py-5 rounded-3xl font-bold uppercase tracking-widest shadow-2xl btn-3d btn-3d-zinc">{isLoading ? t.processing : t.save}</button>
               </form>
             </motion.div>
