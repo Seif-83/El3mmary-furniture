@@ -602,12 +602,26 @@ export default function App() {
     throw error;
   };
 
+  const deleteRecordById = async (
+    table: 'catalogs' | 'customers' | 'inspections' | 'contracted_customers' | 'non_contracted_customers',
+    id: string
+  ) => {
+    const { data, error } = await supabase.from(table).delete().eq('id', id).select('id');
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      throw new Error(
+        lang === 'ar'
+          ? "لم يتم حذف أي سجل. قد يكون السجل غير موجود أو لا تملك صلاحية الحذف."
+          : "No record was deleted. The record may not exist or you may not have permission."
+      );
+    }
+  };
+
   const handleDeleteInspection = async (id: string) => {
     if (!ensureAdminAccess()) return;
 
     try {
-      const { error } = await supabase.from('inspections').delete().eq('id', id);
-      if (error) throw error;
+      await deleteRecordById('inspections', id);
       await refreshAllData();
       void playSound('delete');
       toast.success(lang === 'ar' ? "تم الحذف" : "Deleted");
@@ -696,12 +710,11 @@ export default function App() {
       lang === 'ar' ? "هل أنت متأكد من حذف هذا الملف؟" : "Are you sure you want to delete this sheet?",
       async () => {
         try {
-          const { error } = await supabase.from('catalogs').delete().eq('id', id);
-          if (error) throw error;
+          await deleteRecordById('catalogs', id);
           await refreshAllData();
           void playSound('delete');
           toast.success(lang === 'ar' ? "تم الحذف" : "Sheet deleted");
-        } catch { toast.error("Failed to delete"); }
+        } catch (err: any) { toast.error(err?.message || "Failed to delete"); }
       }
     );
   };
@@ -773,22 +786,22 @@ export default function App() {
     setIsLoading(false);
   };
 
-  const handleDeleteCustomer = async (id: string) => {
+  const handleDeleteCustomer = async (id: string, confirmed?: boolean) => {
     if (!ensureAdminAccess()) return;
-
-    triggerConfirm(
-      lang === 'ar' ? "حذف العميل" : "Remove Customer",
-      lang === 'ar' ? "هل أنت متأكد؟" : "Are you sure?",
-      async () => {
-        try {
-          const { error } = await supabase.from('customers').delete().eq('id', id);
-          if (error) throw error;
-          await refreshAllData();
-          void playSound('delete');
-          toast.success(lang === 'ar' ? "تم حذف العميل" : "Customer removed");
-        } catch { toast.error("Unauthorized"); }
-      }
-    );
+    if (!confirmed) {
+      triggerConfirm(
+        lang === 'ar' ? "حذف العميل" : "Remove Customer",
+        lang === 'ar' ? "هل أنت متأكد؟" : "Are you sure?",
+        () => handleDeleteCustomer(id, true)
+      );
+      return;
+    }
+    try {
+      await deleteRecordById('customers', id);
+      await refreshAllData();
+      void playSound('delete');
+      toast.success(lang === 'ar' ? "تم حذف العميل" : "Customer removed");
+    } catch (err: any) { toast.error(err?.message || "Unauthorized"); }
   };
 
   const handleMoveCustomerToNonContracted = async (customer: CustomerRecord) => {
@@ -1058,12 +1071,11 @@ export default function App() {
       lang === 'ar' ? "هل أنت متأكد من حذف هذا السجل؟" : "Are you sure?",
       async () => {
         try {
-          const { error } = await supabase.from('contracted_customers').delete().eq('id', id);
-          if (error) throw error;
+          await deleteRecordById('contracted_customers', id);
           await refreshAllData();
           void playSound('delete');
           toast.success(lang === 'ar' ? "تم الحذف" : "Deleted");
-        } catch { toast.error("Unauthorized"); }
+        } catch (err: any) { toast.error(err?.message || "Unauthorized"); }
       }
     );
   };
@@ -1076,12 +1088,11 @@ export default function App() {
       lang === 'ar' ? "هل أنت متأكد من حذف هذا السجل؟" : "Are you sure?",
       async () => {
         try {
-          const { error } = await supabase.from('non_contracted_customers').delete().eq('id', id);
-          if (error) throw error;
+          await deleteRecordById('non_contracted_customers', id);
           await refreshAllData();
           void playSound('delete');
           toast.success(lang === 'ar' ? "تم الحذف" : "Deleted");
-        } catch { toast.error("Unauthorized"); }
+        } catch (err: any) { toast.error(err?.message || "Unauthorized"); }
       }
     );
   };
@@ -1259,32 +1270,101 @@ export default function App() {
           </motion.div>
         ) : (
           <motion.div key="app" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col md:flex-row w-full min-h-screen">
-            <aside className="w-full md:w-64 glass-dark shrink-0 flex flex-col md:h-screen md:sticky md:top-0 z-50">
-              <div className="flex items-center justify-between p-6 md:p-8">
-                <div className="logo border-b-2 border-accent-tan pb-1 text-xl font-bold tracking-widest uppercase">{t.brand}</div>
-                <button onClick={() => setSidebarOpen(!sidebarOpen)} className="md:hidden p-2 rounded-xl hover:bg-black/5 transition-all">
+            {/* Mobile Header Bar */}
+            {currentUser && isAuthorizedUser && (
+              <div className="md:hidden sticky top-0 w-full z-40 glass-dark flex items-center justify-between p-4 border-b border-black/5">
+                <div className="logo border-b-2 border-accent-tan pb-0.5 text-lg font-bold tracking-widest uppercase">{t.brand}</div>
+                <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 rounded-xl hover:bg-black/5 transition-all" id="mobile-menu-toggle">
                   {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
                 </button>
               </div>
-              <nav className={`flex-col gap-3 px-6 md:px-8 pb-6 md:pb-8 flex-1 ${sidebarOpen ? 'flex' : 'hidden md:flex'}`}>
+            )}
+
+            {/* Mobile Navigation Drawer */}
+            <AnimatePresence>
+              {sidebarOpen && (
+                <div className="fixed inset-0 z-50 md:hidden">
+                  {/* Backdrop */}
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    onClick={() => setSidebarOpen(false)}
+                    className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+                  />
+                  {/* Drawer Panel */}
+                  <motion.aside
+                    initial={{ x: lang === 'ar' ? '100%' : '-100%' }}
+                    animate={{ x: 0 }}
+                    exit={{ x: lang === 'ar' ? '100%' : '-100%' }}
+                    transition={{ type: 'spring', damping: 25, stiffness: 220 }}
+                    className="absolute top-0 bottom-0 right-0 rtl:right-0 ltr:left-0 ltr:right-auto w-72 max-w-full bg-[#f2eee8]/95 backdrop-blur-md border-x border-black/5 h-full flex flex-col p-6 shadow-2xl z-10"
+                    dir={lang === 'ar' ? 'rtl' : 'ltr'}
+                  >
+                    <div className="flex items-center justify-between mb-8 pb-4 border-b border-black/5">
+                      <div className="logo border-b-2 border-accent-tan pb-1 text-xl font-bold tracking-widest uppercase">{t.brand}</div>
+                      <button onClick={() => setSidebarOpen(false)} className="p-2 rounded-xl hover:bg-black/5 transition-all">
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <nav className="flex flex-col gap-3 flex-1 overflow-y-auto custom-scrollbar">
+                      {currentUser && isAuthorizedUser ? (
+                        <>
+                          <div className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === 'customers' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('customers'); setSidebarOpen(false); }}>
+                            <UserIcon className="w-4 h-4" /> {t.customers}
+                          </div>
+                          <div className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === 'inspections' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('inspections'); setSidebarOpen(false); }}>
+                            <ClipboardList className="w-4 h-4" /> {t.inspections}
+                          </div>
+                          <div className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === 'contracted' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('contracted'); setSidebarOpen(false); }}>
+                            <CheckCircle2 className="w-4 h-4" /> {t.contracted}
+                          </div>
+                          <div className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === 'not-contracted' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('not-contracted'); setSidebarOpen(false); }}>
+                            <X className="w-4 h-4" /> {t.notContracted}
+                          </div>
+                          <div className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === 'catalogs' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('catalogs'); setSidebarOpen(false); }}>
+                            <FileSpreadsheet className="w-4 h-4" /> {t.publishedSheets}
+                          </div>
+                          <div className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === 'phonebook' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('phonebook'); setSidebarOpen(false); }}>
+                            <PhoneCall className="w-4 h-4" /> {t.phonebook}
+                          </div>
+                        </>
+                      ) : null}
+                      {currentUser && (
+                        <button onClick={() => { handleLogout(); setSidebarOpen(false); }} className="mt-auto flex items-center justify-center gap-2 text-xs font-bold uppercase text-danger pt-4 btn-3d btn-3d-glass py-3.5 px-4 rounded-xl border-danger/20">
+                          <LogOut className="w-4 h-4" /> {t.signOut}
+                        </button>
+                      )}
+                    </nav>
+                  </motion.aside>
+                </div>
+              )}
+            </AnimatePresence>
+
+            {/* Desktop Sidebar (hidden on mobile) */}
+            <aside className="hidden md:flex w-64 glass-dark shrink-0 flex-col md:h-screen md:sticky md:top-0 z-40">
+              <div className="flex items-center justify-between p-6 md:p-8">
+                <div className="logo border-b-2 border-accent-tan pb-1 text-xl font-bold tracking-widest uppercase">{t.brand}</div>
+              </div>
+              <nav className="flex flex-col gap-3 px-6 md:px-8 pb-6 md:pb-8 flex-1">
                 {currentUser && isAuthorizedUser ? (
                   <>
-                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'customers' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('customers'); setSidebarOpen(false); }}>
+                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'customers' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => setAdminSubView('customers')}>
                       <UserIcon className="w-4 h-4" /> {t.customers}
                     </div>
-                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'inspections' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('inspections'); setSidebarOpen(false); }}>
+                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'inspections' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => setAdminSubView('inspections')}>
                       <ClipboardList className="w-4 h-4" /> {t.inspections}
                     </div>
-                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'contracted' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('contracted'); setSidebarOpen(false); }}>
+                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'contracted' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => setAdminSubView('contracted')}>
                       <CheckCircle2 className="w-4 h-4" /> {t.contracted}
                     </div>
-                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'not-contracted' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('not-contracted'); setSidebarOpen(false); }}>
+                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'not-contracted' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => setAdminSubView('not-contracted')}>
                       <X className="w-4 h-4" /> {t.notContracted}
                     </div>
-                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'catalogs' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('catalogs'); setSidebarOpen(false); }}>
+                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'catalogs' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => setAdminSubView('catalogs')}>
                       <FileSpreadsheet className="w-4 h-4" /> {t.publishedSheets}
                     </div>
-                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'phonebook' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('phonebook'); setSidebarOpen(false); }}>
+                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'phonebook' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => setAdminSubView('phonebook')}>
                       <PhoneCall className="w-4 h-4" /> {t.phonebook}
                     </div>
                   </>
@@ -1337,15 +1417,15 @@ export default function App() {
                         </div>
 
                         {adminSubView !== 'phonebook' && (
-                        <div className="flex items-center gap-2">
-                          <div className="relative group">
+                        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                          <div className="relative group w-full sm:w-auto">
                             <Search className="absolute top-1/2 -translate-y-1/2 right-3 w-3.5 h-3.5 text-zinc-400 group-focus-within:text-zinc-700 transition-colors pointer-events-none z-10" />
                             <input
                               type="text"
                               placeholder={lang === 'ar' ? 'بحث...' : 'Search...'}
                               value={searchQuery}
                               onChange={e => setSearchQuery(e.target.value)}
-                              className="bg-white/70 backdrop-blur-md border border-white/80 shadow-sm pr-9 pl-8 py-3 rounded-2xl text-sm font-medium outline-none w-40 focus:w-52 focus:shadow-md focus:border-zinc-300 transition-all duration-300 placeholder:text-zinc-400 text-zinc-800"
+                              className="bg-white/70 backdrop-blur-md border border-white/80 shadow-sm pr-9 pl-8 py-3 rounded-2xl text-sm font-medium outline-none w-full sm:w-40 sm:focus:w-52 focus:shadow-md focus:border-zinc-300 transition-all duration-300 placeholder:text-zinc-400 text-zinc-800"
                             />
                             {searchQuery && (
                               <button onClick={() => setSearchQuery('')} className="absolute top-1/2 -translate-y-1/2 left-2 w-4 h-4 flex items-center justify-center rounded-full bg-zinc-200 hover:bg-zinc-300 text-zinc-500 transition-all">
@@ -1354,7 +1434,7 @@ export default function App() {
                             )}
                           </div>
                           {adminSubView !== 'inspections' && (
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <button onClick={() => setGovernorateFilter('all')} className={`filter-chip ${governorateFilter === 'all' ? 'filter-chip-active' : 'filter-chip-inactive'}`}>الكل</button>
                               <button onClick={() => setGovernorateFilter('القاهرة')} className={`filter-chip ${governorateFilter === 'القاهرة' ? 'filter-chip-active' : 'filter-chip-inactive'}`}>القاهرة</button>
                               <button onClick={() => setGovernorateFilter('الاسكندرية')} className={`filter-chip ${governorateFilter === 'الاسكندرية' ? 'filter-chip-active' : 'filter-chip-inactive'}`}>الاسكندرية</button>
@@ -1657,15 +1737,14 @@ export default function App() {
                                     <div className="flex gap-4 justify-between items-center w-full">
                                       {isAdminUser && (
                                         <>
-                                          <button onClick={() => handleOpenEditModal(r)} className="flex items-center gap-2 bg-zinc-800 text-white px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-zinc-700 active:scale-95 transition-all duration-200 shadow-md shadow-zinc-200 hover:shadow-lg">
+                                          <button onClick={() => handleOpenEditModal(r.raw || r)} className="flex items-center gap-2 bg-zinc-800 text-white px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-zinc-700 active:scale-95 transition-all duration-200 shadow-md shadow-zinc-200 hover:shadow-lg">
                                             <Edit2 className="w-4 h-4" />
                                             <span>{lang === 'ar' ? 'تعديل' : 'Edit'}</span>
                                           </button>
                                           <button onClick={() => {
-                                            // Navigate to inspections view and prefill the inspection form for this customer,
-                                            // then open the inspection modal and smoothly scroll to the card.
                                             setAdminSubView('inspections');
-                                            // Delay to allow inspections view to render
+                                            const custRec = customerRecords.find(c => c.phone === r.phone);
+                                            const actualId = custRec?.id || r.raw?.id;
                                             setTimeout(() => {
                                               setInspectionFormData({
                                                 customerName: r.name,
@@ -1681,7 +1760,7 @@ export default function App() {
                                                 rooms: 0, pieces: [], totalAmount: 0
                                               });
                                               setEditingCollection('customers');
-                                              setEditingId(r.id ?? null);
+                                              setEditingId(actualId ?? null);
                                               setInspectionStep(1);
                                               setIsInspectionModalOpen(true);
                                               const el = document.getElementById(`inspection-${r.id ?? ''}`);
@@ -1691,12 +1770,17 @@ export default function App() {
                                             <Eye className="w-4 h-4" />
                                             <span>{lang === 'ar' ? 'بدء المعاينة' : 'Start Visit'}</span>
                                           </button>
-                                        {r.id && (
-                                          <button onClick={() => handleDeleteCustomer(r.id as string)} className="btn-3d btn-3d-danger flex items-center gap-2 bg-white-50 text-white-500 border border-white-100 px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-white-500 hover:text-white active:scale-95 transition-all duration-200 hover:shadow-lg hover:shadow-white-100">
+                                          <button onClick={() => {
+                                            const id = r.raw?.id;
+                                            if (!id) return;
+                                            if (r.status === 'customers') handleDeleteCustomer(id);
+                                            else if (r.status === 'inspections') void handleDeleteInspection(id);
+                                            else if (r.status === 'contracted') handleDeleteContracted(id);
+                                            else if (r.status === 'not-contracted') handleDeleteNonContracted(id);
+                                          }} className="btn-3d btn-3d-danger flex items-center gap-2 bg-white-50 text-white-500 border border-white-100 px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-white-500 hover:text-white active:scale-95 transition-all duration-200 hover:shadow-lg hover:shadow-white-100">
                                             <Trash2 className="w-4 h-4" />
                                             <span>{t.delete}</span>
                                           </button>
-                                        )}
                                         </>
                                       )}
                                     </div>
@@ -1710,52 +1794,36 @@ export default function App() {
                       </div>
 
                       <div className="grid grid-cols-1 gap-4 md:hidden">
-                        {customerRecords.filter(r => matchesFilters(r)).map((r) => (
-                          <div key={r.id} className="bg-white/80 backdrop-blur-xl p-6 rounded-[2rem] flex flex-col gap-4 border border-white/50 shadow-lg relative overflow-hidden group card-accent">
+                        {unifiedCustomers.filter(r => matchesFilters(r)).map((r) => (
+                          <div key={r.phone || r.id} className="bg-white/80 backdrop-blur-xl p-6 rounded-[2rem] flex flex-col gap-4 border border-white/50 shadow-lg relative overflow-hidden group card-accent">
                             <div className="flex justify-between items-start">
                               <div>
                                 <h4 className="text-xl font-bold text-zinc-900 mb-1">{r.name}</h4>
-                                <p className="text-zinc-500 font-mono">{r.phone}</p>
-                                <p className="text-zinc-500 font-mono text-sm">{r.governorate || ''}</p>
+                                <p className="text-zinc-500 font-mono text-sm">{r.phone}</p>
+                                <p className="text-zinc-500 font-mono text-xs">{r.governorate || ''}</p>
                               </div>
-                              
+                              <span className={`inline-flex items-center justify-center px-3 py-1.5 rounded-full text-xs font-semibold ${getStatusBadge(r.status).cls}`}>
+                                {getStatusBadge(r.status).label}
+                              </span>
                             </div>
-                            <div className="flex gap-2 pt-4 border-t border-zinc-100">
-                              {isAdminUser && (
-                                <>
-                                <button onClick={() => {
-                                  setInspectionFormData({ 
-                                    customerName: r.name, 
-                                    phone: r.phone,
-                                    id: undefined,
-                                    address: r.address || r.pickupDate || '',
-                                    deliveryAddress: r.deliveryAddress || '',
-                                    pickupDate: r.pickupDate || r.address || '',
-                                    visitDate: r.visitDate || '',
-                                    visitDateTo: r.visitDateTo || '',
-                                    notes: r.notes || '',
-                                    governorate: r.governorate || '',
-                                    rooms: 0, pieces: [], totalAmount: 0 
-                                  });
-                                  setEditingCollection('customers');
-                                  setEditingId(r.id);
-                                  setInspectionStep(1);
-                                  setIsInspectionModalOpen(true);
-                                }} className="flex-1 flex items-center justify-center gap-2 bg-zinc-900 text-white px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-zinc-700 active:scale-95 transition-all shadow-md">
+                            {isAdminUser && (
+                              <div className="flex gap-2 pt-4 border-t border-zinc-100 flex-wrap">
+                                <button onClick={() => handleOpenEditModal(r.raw || r)} className="flex-1 min-w-[80px] flex items-center justify-center gap-2 bg-zinc-900 text-white px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-zinc-700 active:scale-95 transition-all shadow-md">
                                   <Edit2 className="w-4 h-4" />
                                   <span>{lang === 'ar' ? 'تعديل' : 'Edit'}</span>
                                 </button>
-                                  <button onClick={() => {
+                                <button onClick={() => {
                                   setAdminSubView('inspections');
-                                  // Delay to allow inspections view to render
+                                  const custRec = customerRecords.find(c => c.phone === r.phone);
+                                  const actualId = custRec?.id || r.raw?.id;
                                   setTimeout(() => {
                                     setInspectionFormData({
                                       customerName: r.name,
                                       phone: r.phone,
                                       id: undefined,
-                                      address: r.address || '',
+                                      address: r.address || r.pickupDate || '',
                                       deliveryAddress: r.deliveryAddress || '',
-                                      pickupDate: r.pickupDate || '',
+                                      pickupDate: r.pickupDate || r.address || '',
                                       visitDate: r.visitDate || '',
                                       visitDateTo: r.visitDateTo || '',
                                       notes: r.notes || '',
@@ -1763,25 +1831,29 @@ export default function App() {
                                       rooms: 0, pieces: [], totalAmount: 0
                                     });
                                     setEditingCollection('customers');
-                                    setEditingId(r.id);
+                                    setEditingId(actualId ?? null);
                                     setInspectionStep(1);
                                     setIsInspectionModalOpen(true);
-                                    const el = document.getElementById(`inspection-${r.id}`);
-                                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
                                   }, 120);
-                                }} className="ml-2 flex items-center justify-center gap-2 bg-accent-tan text-white px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-accent-tan/90 active:scale-95 transition-all shadow-md">
+                                }} className="flex-1 min-w-[100px] flex items-center justify-center gap-2 bg-accent-tan text-white px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-accent-tan/90 active:scale-95 transition-all shadow-md">
                                   <Eye className="w-4 h-4" />
                                   <span>{lang === 'ar' ? 'بدء المعاينة' : 'Start Visit'}</span>
                                 </button>
-                                <button onClick={() => handleDeleteCustomer(r.id)} className="flex items-center justify-center gap-2 bg-red-50 text-red-500 border border-red-100 px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-red-500 hover:text-white active:scale-95 transition-all shadow-md">
+                                <button onClick={() => {
+                                  const id = r.raw?.id;
+                                  if (!id) return;
+                                  if (r.status === 'customers') handleDeleteCustomer(id);
+                                  else if (r.status === 'inspections') void handleDeleteInspection(id);
+                                  else if (r.status === 'contracted') handleDeleteContracted(id);
+                                  else if (r.status === 'not-contracted') handleDeleteNonContracted(id);
+                                }} className="flex items-center justify-center gap-2 bg-red-50 text-red-500 border border-red-100 px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-red-500 hover:text-white active:scale-95 transition-all shadow-md">
                                   <Trash2 className="w-4 h-4" />
                                 </button>
-                                </>
-                              )}
-                            </div>
+                              </div>
+                            )}
                           </div>
                         ))}
-                        {customerRecords.length === 0 && <div className="py-20 text-center"><Users className="w-10 h-10 text-zinc-200 mx-auto mb-3" /><p className="text-zinc-400 font-semibold">{t.noRecords}</p></div>}
+                        {unifiedCustomers.filter(r => matchesFilters(r)).length === 0 && <div className="py-20 text-center"><Users className="w-10 h-10 text-zinc-200 mx-auto mb-3" /><p className="text-zinc-400 font-semibold">{t.noRecords}</p></div>}
                       </div>
                     </div>
                     ) : (
@@ -1856,23 +1928,23 @@ export default function App() {
                                   {isInspectionView && <span className="text-xs font-bold text-zinc-600">{r.visitDate}</span>}
                                 </div>
                               </div>
-                              <div className="flex gap-2 pt-4 border-t border-zinc-100 justify-end">
+                              <div className="flex gap-2 pt-4 border-t border-zinc-100 justify-end flex-wrap">
                                 {isInspectionView && currentUser?.email === ADMIN_EMAIL && (
-                                  <button onClick={() => { setInspectionFormData(r); setInspectionStep(2); setIsInspectionModalOpen(true); }} className="flex-1 flex items-center justify-center text-zinc-600 border border-zinc-200 px-6 py-4 rounded-2xl text-sm font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all shadow-sm">{t.step2}</button>
+                                  <button onClick={() => { setInspectionFormData(r); setInspectionStep(2); setIsInspectionModalOpen(true); }} className="flex-1 min-w-[120px] flex items-center justify-center text-zinc-600 border border-zinc-200 px-4 py-3 rounded-2xl text-xs font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all shadow-sm">{t.step2}</button>
                                 )}
                                 {currentUser?.email === ADMIN_EMAIL && !isInspectionView && (
-                                  <button onClick={() => openEditFinalizedRecord(r, isContractedView ? 'contracted_customers' : 'non_contracted_customers')} className="flex items-center justify-center gap-2 bg-zinc-100 text-zinc-600 border border-zinc-200 px-6 py-4 rounded-2xl text-sm font-bold uppercase hover:bg-zinc-200 transition-all shadow-sm">
-                                    <Edit2 className="w-5 h-5" /> {lang === 'ar' ? 'تعديل' : 'Edit'}
+                                  <button onClick={() => openEditFinalizedRecord(r, isContractedView ? 'contracted_customers' : 'non_contracted_customers')} className="flex-1 min-w-[70px] flex items-center justify-center gap-2 bg-zinc-100 text-zinc-600 border border-zinc-200 px-4 py-3 rounded-2xl text-xs font-bold uppercase hover:bg-zinc-200 transition-all shadow-sm">
+                                    <Edit2 className="w-4 h-4" /> {lang === 'ar' ? 'تعديل' : 'Edit'}
                                   </button>
                                 )}
-                                <button onClick={() => { setSelectedRecord(r); setIsDetailModalOpen(true); }} className="flex-1 flex items-center justify-center gap-2 bg-zinc-100 text-zinc-600 px-6 py-4 rounded-2xl text-sm font-bold uppercase hover:bg-zinc-200 transition-all shadow-sm btn-3d btn-3d-glass"><Eye className="w-5 h-5" /> {lang === 'ar' ? 'عرض' : 'View'}</button>
+                                <button onClick={() => { setSelectedRecord(r); setIsDetailModalOpen(true); }} className="flex-1 min-w-[70px] flex items-center justify-center gap-2 bg-zinc-100 text-zinc-600 px-4 py-3 rounded-2xl text-xs font-bold uppercase hover:bg-zinc-200 transition-all shadow-sm btn-3d btn-3d-glass"><Eye className="w-4 h-4" /> {lang === 'ar' ? 'عرض' : 'View'}</button>
                                 {currentUser?.email === ADMIN_EMAIL && (
                                   <button onClick={() => {
                                     if (isContractedView) handleDeleteContracted(r.id);
                                     else if (adminSubView === 'not-contracted') handleDeleteNonContracted(r.id);
                                     else if (isInspectionView) void handleDeleteInspection(r.id);
-                                  }} className="flex items-center justify-center gap-2 bg-red-50 text-red-500 border border-red-100 px-6 py-4 rounded-2xl text-sm font-bold uppercase hover:bg-red-500 hover:text-white transition-all shadow-sm">
-                                    <Trash2 className="w-5 h-5" />
+                                  }} className="flex items-center justify-center gap-2 bg-red-50 text-red-500 border border-red-100 px-4 py-3 rounded-2xl text-xs font-bold uppercase hover:bg-red-500 hover:text-white transition-all shadow-sm">
+                                    <Trash2 className="w-4 h-4" />
                                   </button>
                                 )}
                               </div>
@@ -1927,14 +1999,14 @@ export default function App() {
                 ))}
               </div>
 
-              <h2 className="text-3xl font-light mb-8 pe-12 rtl:pe-0 rtl:ps-12">{inspectionStep === 1 ? t.step1 : inspectionStep === 2 ? t.step2 : t.step3}</h2>
+               <h2 className="text-3xl font-light mb-8 pe-12">{inspectionStep === 1 ? t.step1 : inspectionStep === 2 ? t.step2 : t.step3}</h2>
 
               <form onSubmit={handleInspectionSubmit} className="space-y-6">
                 {inspectionStep === 1 && (
                   <div className="space-y-4">
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.customerName}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.customerName} onChange={e => setInspectionFormData({ ...inspectionFormData, customerName: e.target.value })} /></div>
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.address}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.address} onChange={e => setInspectionFormData({ ...inspectionFormData, address: e.target.value })} /></div>
-                    <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.phoneNumber}</label><input required type="tel" minLength={11} maxLength={11} pattern="[0-9]{11}" title={lang === 'ar' ? 'يجب أن يكون رقم الهاتف 11 رقماً بالضبط' : 'Phone number must be exactly 11 digits'} className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.phone} onChange={e => setInspectionFormData({ ...inspectionFormData, phone: e.target.value })} /></div>
+                    <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.phoneNumber}</label><input required type="tel" minLength={11} maxLength={11} pattern="[0-9]{11}" title={lang === 'ar' ? 'يجب أن يكون رقم الهاتف 11 رقماً بالضبط' : 'Phone number must be exactly 11 digits'} className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.phone} onChange={e => setInspectionFormData({ ...inspectionFormData, phone: normalizePhone(e.target.value) })} /></div>
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{lang === 'ar' ? 'المحافظة' : 'Governorate'}</label>
                       <select value={inspectionFormData.governorate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, governorate: e.target.value })} className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl">
@@ -1983,12 +2055,12 @@ export default function App() {
                               <div className="flex-1 font-bold text-lg text-zinc-800">{p.name}</div>
                               <div className="flex items-center gap-3 w-full sm:w-auto">
                                 <div className="relative">
-                                  <span className="absolute top-1/2 -translate-y-1/2 left-3 text-[10px] font-bold text-zinc-400">العدد</span>
-                                  <input required type="number" min="1" className="w-20 pl-10 pr-3 py-3 bg-white border border-black/5 rounded-xl text-sm text-center font-bold shadow-sm" value={p.quantity || 1} onChange={e => updatePiece(idx, 'quantity', Number(e.target.value))} />
+                                  <span className="absolute top-1/2 -translate-y-1/2 start-3 text-[10px] font-bold text-zinc-400">العدد</span>
+                                  <input required type="number" min="1" className="w-20 ps-10 pe-3 py-3 bg-white border border-black/5 rounded-xl text-sm text-center font-bold shadow-sm" value={p.quantity || 1} onChange={e => updatePiece(idx, 'quantity', Number(e.target.value))} />
                                 </div>
                                 <div className="relative flex-1 sm:w-32">
-                                  <span className="absolute top-1/2 -translate-y-1/2 left-3 text-[10px] font-bold text-zinc-400">EGP</span>
-                                  <input required type="number" min="0" placeholder={t.price} className="w-full pl-10 pr-3 py-3 bg-white border border-black/5 rounded-xl text-sm text-center font-bold shadow-sm" value={p.price || ''} onChange={e => updatePiece(idx, 'price', Number(e.target.value))} />
+                                  <span className="absolute top-1/2 -translate-y-1/2 start-3 text-[10px] font-bold text-zinc-400">EGP</span>
+                                  <input required type="number" min="0" placeholder={t.price} className="w-full ps-10 pe-3 py-3 bg-white border border-black/5 rounded-xl text-sm text-center font-bold shadow-sm" value={p.price || ''} onChange={e => updatePiece(idx, 'price', Number(e.target.value))} />
                                 </div>
                                 <button
                                   type="button"
@@ -2091,7 +2163,7 @@ export default function App() {
                 <X className="w-4 h-4 transition-transform duration-300" />
               </button>
               
-              <h2 className="text-3xl font-light mb-8 pe-12 rtl:pe-0 rtl:ps-12">{selectedRecord.customerName || selectedRecord.name}</h2>
+              <h2 className="text-3xl font-light mb-8 pe-12">{selectedRecord.customerName || selectedRecord.name}</h2>
               
               <div className="space-y-8 pb-8">
                 {/* Section: Contact Information */}
@@ -2236,7 +2308,7 @@ export default function App() {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsModalOpen(false)} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-white rounded-[2.5rem] w-full max-w-md p-8 md:p-12 shadow-2xl relative z-10 overflow-hidden">
               <button onClick={() => setIsModalOpen(false)} className="absolute top-8 right-8 rtl:right-auto rtl:left-8 text-zinc-400 hover:text-zinc-600"><X className="w-6 h-6" /></button>
-              <h2 className="text-3xl font-light mb-8 pe-12 rtl:pe-0 rtl:ps-12">{modalMode === 'add' ? t.addCustomer : t.editCustomer}</h2>
+              <h2 className="text-3xl font-light mb-8 pe-12">{modalMode === 'add' ? t.addCustomer : t.editCustomer}</h2>
               <form onSubmit={handleSaveRecord} className="space-y-6">
                 <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.fullName}</label><input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} /></div>
                 <div className="space-y-1">
@@ -2255,7 +2327,7 @@ export default function App() {
                           value={phone}
                           onChange={e => {
                             const phones = [...(formData.phones || [])];
-                            phones[index] = e.target.value;
+                            phones[index] = normalizePhone(e.target.value);
                             setFormData({ ...formData, phones });
                           }}
                         />
