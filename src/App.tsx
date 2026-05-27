@@ -986,7 +986,6 @@ export default function App() {
             if (deleteError) throw deleteError;
           } catch (err) { console.error("Failed to remove customer after creating inspection", err); }
         }
-        // If this was a customer-to-inspection promotion, advance to Step 3 for finalization
         if (editingCollection === 'customers' && newId) {
           setInspectionFormData(prev => ({ ...prev, id: newId }));
           setEditingCollection(null);
@@ -994,7 +993,8 @@ export default function App() {
           await refreshAllData();
           void playSound('success');
           toast.success(lang === 'ar' ? "تم نقل العميل إلى المعاينات" : "Customer moved to Inspections");
-          setInspectionStep(3);
+          setIsInspectionModalOpen(false);
+          setInspectionStep(1);
           setIsLoading(false);
           return;
         }
@@ -1044,6 +1044,11 @@ export default function App() {
       };
       const { error } = await supabase.from(tableName).insert(dbData);
       if (error) throw error;
+      const inspectionId = directRecord?.id || inspectionFormData.id;
+      if (inspectionId) {
+        const { error: deleteError } = await supabase.from('inspections').delete().eq('id', inspectionId);
+        if (deleteError) throw deleteError;
+      }
       await refreshAllData();
       void playSound('success');
       toast.success(lang === 'ar' ? "تمت العملية بنجاح" : "Process completed");
@@ -1669,7 +1674,10 @@ export default function App() {
 
                                 {isAdminUser && (
                                   <div className="grid grid-cols-2 gap-3 relative z-10">
-                                    <button onClick={() => handleFinalizeInspection('contracted', ins)} className="btn-3d btn-3d-glass flex flex-col items-center justify-center gap-2 bg-white border border-zinc-100 text-zinc-400 p-4 rounded-3xl font-bold uppercase transition-all hover:scale-[1.02] active:scale-95 hover:text-emerald-600 hover:border-emerald-200">
+                                    <button onClick={async () => {
+                                      await handleFinalizeInspection('contracted', ins);
+                                      setAdminSubView('contracted');
+                                    }} className="btn-3d btn-3d-glass flex flex-col items-center justify-center gap-2 bg-white border border-zinc-100 text-zinc-400 p-4 rounded-3xl font-bold uppercase transition-all hover:scale-[1.02] active:scale-95 hover:text-emerald-600 hover:border-emerald-200">
                                       <CheckCircle2 className="w-5 h-5" />
                                       <span className="text-[11px] tracking-widest">{t.contractedBtn}</span>
                                     </button>
@@ -1991,7 +1999,7 @@ export default function App() {
                 ))}
               </div>
 
-               <h2 className="text-3xl font-light mb-8 pe-12">{inspectionStep === 1 ? t.step1 : inspectionStep === 2 ? t.step2 : t.step3}</h2>
+               <h2 className="text-3xl font-light mb-8 pe-12">{inspectionStep === 1 ? t.step1 : t.step2}</h2>
 
               <form onSubmit={handleInspectionSubmit} className="space-y-6">
                 {inspectionStep === 1 && (
@@ -2092,24 +2100,6 @@ export default function App() {
                   </div>
                 )}
 
-                {inspectionStep === 3 && (
-                  <div className="space-y-6">
-                    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.portfolio} (Google Drive Link)</label>
-                        <input required className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" placeholder="https://drive.google.com/..." value={inspectionFormData.portfolio || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, portfolio: e.target.value })} />
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.deliveryDate}</label><input required type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.deliveryDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, deliveryDate: e.target.value })} /></div>
-                        <div className="flex-1 space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.contractDate}</label><input required type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.contractDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, contractDate: e.target.value })} /></div>
-                      </div>
-                      <button disabled={isLoading} type="button" onClick={() => handleFinalizeInspection('contracted')} className="w-full bg-zinc-900 text-white py-5 rounded-3xl font-bold uppercase tracking-widest shadow-2xl flex items-center justify-center gap-3 btn-3d btn-3d-zinc">
-                        {t.save}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
                 {inspectionStep < 3 && !editingCollection && (
                   <div className="flex gap-4 pt-4">
                     {inspectionStep === 2 && (
@@ -2120,9 +2110,6 @@ export default function App() {
                     </button>
                     {inspectionStep === 1 && (
                       <button type="button" onClick={() => { setInspectionStep(2); }} className="flex-1 py-4 border border-zinc-200 rounded-2xl font-bold uppercase tracking-widest btn-3d btn-3d-glass">{lang === 'ar' ? 'التالي ←' : 'Next →'}</button>
-                    )}
-                    {inspectionStep === 2 && (
-                      <button type="button" onClick={() => setInspectionStep(3)} className="flex-1 py-4 border border-zinc-200 rounded-2xl font-bold uppercase tracking-widest btn-3d btn-3d-glass">{lang === 'ar' ? 'التالي ←' : 'Next →'}</button>
                     )}
                   </div>
                 )}
