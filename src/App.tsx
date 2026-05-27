@@ -1044,11 +1044,6 @@ export default function App() {
       };
       const { error } = await supabase.from(tableName).insert(dbData);
       if (error) throw error;
-      const inspectionId = directRecord?.id || inspectionFormData.id;
-      if (inspectionId) {
-        const { error: deleteError } = await supabase.from('inspections').delete().eq('id', inspectionId);
-        if (deleteError) throw deleteError;
-      }
       await refreshAllData();
       void playSound('success');
       toast.success(lang === 'ar' ? "تمت العملية بنجاح" : "Process completed");
@@ -1674,10 +1669,7 @@ export default function App() {
 
                                 {isAdminUser && (
                                   <div className="grid grid-cols-2 gap-3 relative z-10">
-                                    <button onClick={async () => {
-                                      await handleFinalizeInspection('contracted', ins);
-                                      setAdminSubView('contracted');
-                                    }} className="btn-3d btn-3d-glass flex flex-col items-center justify-center gap-2 bg-white border border-zinc-100 text-zinc-400 p-4 rounded-3xl font-bold uppercase transition-all hover:scale-[1.02] active:scale-95 hover:text-emerald-600 hover:border-emerald-200">
+                                    <button onClick={() => handleFinalizeInspection('contracted', ins)} className="btn-3d btn-3d-glass flex flex-col items-center justify-center gap-2 bg-white border border-zinc-100 text-zinc-400 p-4 rounded-3xl font-bold uppercase transition-all hover:scale-[1.02] active:scale-95 hover:text-emerald-600 hover:border-emerald-200">
                                       <CheckCircle2 className="w-5 h-5" />
                                       <span className="text-[11px] tracking-widest">{t.contractedBtn}</span>
                                     </button>
