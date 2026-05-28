@@ -338,3 +338,53 @@ html {
   }
   .print-header { display: block !important; text-align: center; margin-bottom: 20px; }
 }
+
+/* iOS Date Input Fixes */
+input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-height: 46px;
+  line-height: 1.4;
+  display: block;
+  padding: 0.625rem 1rem;
+  font-size: 1rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  color: #3d3d3d;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+input[type="date"]::-webkit-date-and-time-value {
+  text-align: right;
+  display: block;
+  min-height: 1.4em;
+  line-height: 1.4;
+}
+input[type="date"]::-webkit-datetime-edit {
+  display: block;
+  padding: 0;
+  line-height: 1.4;
+}
+input[type="date"]::-webkit-datetime-edit-fields-wrapper {
+  display: flex;
+  direction: ltr;
+}
+input[type="date"]::-webkit-inner-spin-button,
+input[type="date"]::-webkit-clear-button {
+  display: none;
+}
+input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0.6;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+}
+input[type="date"]:focus {
+  outline: none;
+  border-color: #d4a373;
+  box-shadow: 0 0 0 3px rgba(212, 164, 115, 0.2);
+}
