@@ -32,6 +32,34 @@ View your app in AI Studio: https://ai.studio/apps/eeb87e46-c984-42d4-80a4-4d1ac
 5. Run the app:
    `npm run dev`
 
+## Database migrations (new schema)
+
+This project tracks migrations under `supabase/migrations/`.
+
+To apply all local migrations to your Supabase project using the CLI (recommended):
+
+1. Install the Supabase CLI and login: https://supabase.com/docs/guides/cli
+2. Link to your project and apply migrations. Example commands:
+
+```bash
+# link (interactive)
+npx supabase link
+
+# apply migrations (run from repo root)
+npx supabase db push
+```
+
+If you prefer running SQL files directly you can use the query helper (replace `--file` with the migration path):
+
+```bash
+npx supabase db query --file supabase/migrations/0005_add_full_order_model.sql
+npx supabase db query --file supabase/migrations/0006_policies_and_seed.sql
+```
+
+Notes:
+- `0005_add_full_order_model.sql` creates the `clients`, `visits`, `visit_rooms`, `visit_room_items`, `documents`, `payments`, `activity_logs`, `production_stages`, and supporting types/tables.
+- `0006_policies_and_seed.sql` enables row-level security and creates basic policies. It seeds `app_settings` and an example `user_profiles` row (fill `auth_uid` once you create the Supabase Auth user for the admin).
+
 ## Deploy To Vercel
 
 This repo now uses Supabase only. There is no Firebase code in the current source or in the current production build output.

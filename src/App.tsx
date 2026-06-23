@@ -24,10 +24,14 @@ import {
   Printer,
   Menu,
   MessageCircle,
-  PhoneCall
+  PhoneCall,
+  LayoutDashboard,
+  Settings,
+  Activity,
+  Wrench
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { supabase } from './lib/supabase';
+import { supabase, supabaseAdmin } from './lib/supabase';
 import { User } from '@supabase/supabase-js';
 
 interface FakeTimestamp {
@@ -43,6 +47,7 @@ const toTimestamp = (isoString: string | null | undefined): FakeTimestamp => {
 type Timestamp = FakeTimestamp;
 import toast, { Toaster } from 'react-hot-toast';
 import { format } from 'date-fns';
+import NewApp from './NewApp';
 
 interface CatalogSheet {
   id: string;
@@ -92,12 +97,49 @@ interface Inspection {
   createdAt: Timestamp;
   // Contracting details
   portfolio?: string;
+  room_types?: string[];
   deliveryDate?: string;
   pickupDate?: string;
   portfolioDate?: string;
   portfolio_date?: string;
   contractDate?: string;
 }
+
+type RoomDraftItem = {
+  item_name: string;
+  custom_item: boolean;
+  quantity: number;
+  dimensions: string;
+  price: number;
+  notes: string;
+  aro_veneer_addon: boolean;
+  aro_surcharge: number;
+};
+
+type RoomDraft = {
+  id?: string;
+  room_type: string;
+  aro_veneer: boolean;
+  items: RoomDraftItem[];
+};
+
+const ROOM_TYPES = [
+  { key: 'bedroom', ar: 'غرفة نوم', en: 'Bedroom', defaults: ['سرير', 'كومود', 'دولاب', 'تسريحة', 'شيفونيرة', 'شماعة', 'كرسي/بف'] },
+  { key: 'dining', ar: 'سفرة', en: 'Dining room', defaults: ['كرسي', 'سفرة', 'بوفيه', 'نيش'] },
+  { key: 'kids', ar: 'أطفال', en: 'Kids room', defaults: ['سرير', 'كومود', 'دولاب', 'تسريحة', 'شيفونيرة', 'شماعة', 'كرسي/بف', 'مكتب'] },
+  { key: 'salon', ar: 'صالون', en: 'Salon', defaults: ['كنبة كبيرة', 'كنبة صغيرة', 'كرسي', 'كُوفي تيبل'] },
+  { key: 'antrei', ar: 'أنتريه', en: 'Antrei', defaults: ['كنبة كبيرة', 'كنبة صغيرة', 'كرسي', 'كُوفي تيبل'] },
+  { key: 'other', ar: 'أخرى', en: 'Other', defaults: ['مكتب', 'مكتبة', 'تي في يونيت'] }
+] as const;
+
+const STAGE_ORDER = [
+  { key: 'received', ar: 'استلام', en: 'Received' },
+  { key: 'carpentry', ar: 'نجارة', en: 'Carpentry' },
+  { key: 'finishing', ar: 'تشطيب', en: 'Finishing' },
+  { key: 'painting', ar: 'دهان', en: 'Painting' },
+  { key: 'upholstery', ar: 'تنجيد', en: 'Upholstery' },
+  { key: 'delivery', ar: 'تسليم', en: 'Delivery' }
+] as const;
 
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "admin@gmail.com") as string;
 const VIEWER_EMAIL = (process.env.VIEWER_EMAIL || "view@gmail.com") as string;
@@ -182,6 +224,13 @@ const translations: Record<'en' | 'ar', Record<string, string>> = {
     editor: "Editor (Full Access)",
     phonebook: "Phonebook",
     openWhatsApp: "Open WhatsApp",
+    workflow: "Workflow",
+    workflowCount: "Workflow Items",
+    dashboard: "Dashboard",
+    production: "Production",
+    payments: "Payments",
+    activities: "Activity Log",
+    settings: "Settings",
   },
   ar: {
     brand: "مرحبا بكم في العماري",
@@ -255,8 +304,458 @@ const translations: Record<'en' | 'ar', Record<string, string>> = {
     editor: "مسؤول (صلاحية كاملة)",
     phonebook: "دليل الأرقام",
     openWhatsApp: "واتساب",
+    workflow: "العمل",
+    workflowCount: "عناصر العمل",
     quantity: "العدد",
+    dashboard: "الرئيسية",
+    production: "الإنتاج",
+    payments: "المدفوعات",
+    activities: "سجل الأنشطة",
+    settings: "الإعدادات",
   }
+};
+
+// Production Page Component - Shows contracted customers with production tracking
+const ProductionPage: React.FC<{
+  contractedCustomers: Inspection[];
+  inspections: Inspection[];
+  lang: 'en' | 'ar';
+  isAdmin: boolean;
+  t: Record<string, string>;
+  stages: any[];
+  onStageUpdate: (stageId: string, status: string) => void;
+}> = ({ contractedCustomers, inspections, lang, isAdmin, t, stages, onStageUpdate }) => {
+  const allProductionData = [...contractedCustomers];
+  
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+        <div>
+          <h1 className="text-3xl md:text-4xl font-light">{lang === 'ar' ? 'الإنتاج والورشة' : 'Production Tracker'}</h1>
+          <p className="text-zinc-500 mt-2">{lang === 'ar' ? 'تابع مراحل إنتاج الطلبات المتعاقدة' : 'Track production stages for contracted orders'}</p>
+        </div>
+        <div className="glass px-4 py-3 rounded-2xl min-w-[90px]">
+          <div className="text-[10px] uppercase font-bold text-zinc-400">{lang === 'ar' ? 'إجمالي الطلبات' : 'Total Orders'}</div>
+          <div className="text-2xl font-semibold">{allProductionData.length}</div>
+        </div>
+      </div>
+
+      {allProductionData.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {allProductionData.map((order) => {
+            const orderPhone = order.phone;
+            const matchingStage = orderPhone ? stages.find((s: any) => s.client?.phones?.includes(orderPhone)) : null;
+            const orderClientId = matchingStage?.client_id || null;
+            const orderStages = orderClientId
+              ? stages.filter((s: any) => s.client_id === orderClientId)
+              : [];
+            return (
+              <div key={order.id} className="glass rounded-[2.5rem] p-6 shadow-xl border border-white/40">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="text-xl font-bold text-zinc-900">{order.customerName}</h3>
+                    <p className="text-sm text-zinc-500 font-mono">{order.phone}</p>
+                  </div>
+                  <div className="bg-accent-tan/10 px-3 py-1 rounded-full text-xs font-bold text-accent-tan">
+                    {order.contractDate ? new Date(order.contractDate).toLocaleDateString('ar-EG') : (lang === 'ar' ? 'بدون تاريخ' : 'No date')}
+                  </div>
+                </div>
+                
+                <div className="space-y-3">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-zinc-500">{lang === 'ar' ? 'الغرف' : 'Rooms'}</span>
+                    <span className="font-bold">{order.rooms || 0}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-zinc-500">{lang === 'ar' ? 'القيمة' : 'Value'}</span>
+                    <span className="font-bold">{order.totalAmount?.toLocaleString() || 0} EGP</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-zinc-500">{lang === 'ar' ? 'تاريخ التسليم' : 'Delivery Date'}</span>
+                    <span className="font-bold">{order.deliveryDate || (lang === 'ar' ? 'غير محدد' : 'Not set')}</span>
+                  </div>
+                </div>
+
+                <div className="mt-6 pt-4 border-t border-zinc-100">
+                  <div className="text-[10px] font-bold text-zinc-400 uppercase mb-3">{lang === 'ar' ? 'المراحل' : 'Stages'}</div>
+                  <div className="flex items-center justify-between">
+                    {STAGE_ORDER.map((stageDef, idx) => {
+                      const stageRecord = orderStages.find((s: any) => s.stage === stageDef.key);
+                      const stageStatus = stageRecord?.status || 'not_started';
+                      const isDone = stageStatus === 'done';
+                      const isInProgress = stageStatus === 'in_progress';
+                      const circleColor = isDone ? 'bg-emerald-500 text-white' : isInProgress ? 'bg-amber-500 text-white' : 'bg-zinc-200 text-zinc-500';
+                      return (
+                        <div key={stageDef.key} className="flex flex-col items-center gap-1 relative group">
+                          <button
+                            onClick={() => stageRecord && isAdmin && onStageUpdate(stageRecord.id, isDone ? 'not_started' : isInProgress ? 'done' : 'in_progress')}
+                            disabled={!isAdmin}
+                            className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${circleColor} ${isAdmin && stageRecord ? 'cursor-pointer hover:scale-110 active:scale-95' : 'cursor-default'}`}
+                          >
+                            {isDone ? '✓' : idx + 1}
+                          </button>
+                          <span className="text-[9px] text-zinc-500">{lang === 'ar' ? stageDef.ar : stageDef.en}</span>
+                          {isAdmin && stageRecord && (
+                            <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 bg-zinc-900 text-white text-[8px] rounded-xl px-2 py-1 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                              {isDone ? (lang === 'ar' ? 'إلغاء' : 'Undo') : isInProgress ? (lang === 'ar' ? 'إكمال' : 'Complete') : (lang === 'ar' ? 'بدء' : 'Start')}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="glass rounded-[2rem] py-20 text-center">
+          <Wrench className="w-12 h-12 text-zinc-200 mx-auto mb-4" />
+          <p className="text-zinc-400 font-semibold">{lang === 'ar' ? 'لا توجد طلبات إنتاج حالياً' : 'No production orders at the moment'}</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Payments Page Component - Shows payment tracking for contracted customers
+const PaymentsPage: React.FC<{
+  contractedCustomers: Inspection[];
+  lang: 'en' | 'ar';
+  isAdmin: boolean;
+  t: Record<string, string>;
+}> = ({ contractedCustomers, lang, isAdmin, t }) => {
+  const totalContractValue = contractedCustomers.reduce((sum, c) => sum + (c.totalAmount || 0), 0);
+  
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+        <div>
+          <h1 className="text-3xl md:text-4xl font-light">{lang === 'ar' ? 'المدفوعات' : 'Payments'}</h1>
+          <p className="text-zinc-500 mt-2">{lang === 'ar' ? 'تابع حالة المدفوعات للعملاء المتعاقدين' : 'Track payment status for contracted customers'}</p>
+        </div>
+        <div className="flex gap-4">
+          <div className="glass px-4 py-3 rounded-2xl min-w-[120px]">
+            <div className="text-[10px] uppercase font-bold text-zinc-400">{lang === 'ar' ? 'إجمالي العقود' : 'Total Contracts'}</div>
+            <div className="text-2xl font-semibold">{contractedCustomers.length}</div>
+          </div>
+          <div className="glass px-4 py-3 rounded-2xl min-w-[120px]">
+            <div className="text-[10px] uppercase font-bold text-zinc-400">{lang === 'ar' ? 'قيمة العقود' : 'Contract Value'}</div>
+            <div className="text-2xl font-semibold">{totalContractValue.toLocaleString()} EGP</div>
+          </div>
+        </div>
+      </div>
+
+      {contractedCustomers.length > 0 ? (
+        <>
+          {/* Desktop table */}
+          <div className="hidden md:block glass rounded-[2.5rem] overflow-hidden p-6 md:p-10 shadow-xl border border-white/40">
+            <div className="overflow-x-auto">
+              <table className="w-full text-right">
+                <thead>
+                  <tr className="border-b border-black/5 text-[10px] font-bold uppercase text-zinc-400 tracking-widest">
+                    <th className="px-6 py-4">{lang === 'ar' ? 'العميل' : 'Customer'}</th>
+                    <th className="px-6 py-4">{lang === 'ar' ? 'الهاتف' : 'Phone'}</th>
+                    <th className="px-6 py-4">{lang === 'ar' ? 'قيمة العقد' : 'Contract Value'}</th>
+                    <th className="px-6 py-4">{lang === 'ar' ? 'تاريخ التعاقد' : 'Contract Date'}</th>
+                    <th className="px-6 py-4">{lang === 'ar' ? 'حالة الدفع' : 'Payment Status'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {contractedCustomers.map((customer) => (
+                    <tr key={customer.id} className="border-b border-black/5 hover:bg-black/5 transition-colors">
+                      <td className="px-6 py-4 font-bold text-zinc-900">{customer.customerName}</td>
+                      <td className="px-6 py-4 text-zinc-600 font-mono">{customer.phone}</td>
+                      <td className="px-6 py-4 font-bold text-zinc-900">{customer.totalAmount?.toLocaleString() || 0} EGP</td>
+                      <td className="px-6 py-4 text-zinc-600">{customer.contractDate || '-'}</td>
+                      <td className="px-6 py-4">
+                        <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-xs font-bold">
+                          {lang === 'ar' ? 'متعاقد' : 'Contracted'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Mobile cards */}
+          <div className="grid grid-cols-1 gap-4 md:hidden">
+            {contractedCustomers.map((customer) => (
+              <div key={customer.id} className="bg-white/80 backdrop-blur-xl p-6 rounded-[2rem] border border-white/50 shadow-lg relative overflow-hidden group card-accent">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h4 className="text-xl font-bold text-zinc-900 mb-1">{customer.customerName}</h4>
+                    <p className="text-zinc-500 font-mono text-sm">{customer.phone}</p>
+                  </div>
+                  <span className="bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-full text-xs font-bold">
+                    {lang === 'ar' ? 'متعاقد' : 'Contracted'}
+                  </span>
+                </div>
+                <div className="space-y-3 pt-4 border-t border-zinc-100">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-zinc-400 font-bold uppercase tracking-wider">{lang === 'ar' ? 'قيمة العقد' : 'Contract Value'}</span>
+                    <span className="text-lg font-bold text-zinc-900">{customer.totalAmount?.toLocaleString() || 0} EGP</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-zinc-400 font-bold uppercase tracking-wider">{lang === 'ar' ? 'تاريخ التعاقد' : 'Contract Date'}</span>
+                    <span className="text-sm font-semibold text-zinc-600">{customer.contractDate || '-'}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="glass rounded-[2rem] py-20 text-center">
+          <CheckCircle2 className="w-12 h-12 text-zinc-200 mx-auto mb-4" />
+          <p className="text-zinc-400 font-semibold">{lang === 'ar' ? 'لا توجد مدفوعات مسجلة' : 'No payments recorded'}</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Activities Page Component - Shows activity log
+const ACTIVITY_LABELS: Record<string, { ar: string; en: string }> = {
+  login: { ar: 'تسجيل دخول', en: 'Login' },
+  logout: { ar: 'تسجيل خروج', en: 'Logout' },
+  delete: { ar: 'حذف', en: 'Delete' },
+  delete_sheet: { ar: 'حذف ملف', en: 'Delete Sheet' },
+  contract: { ar: 'تعاقد', en: 'Contract' },
+  refuse: { ar: 'رفض', en: 'Refuse' },
+  create_inspection: { ar: 'معاينة جديدة', en: 'New Inspection' },
+  move_to_inspection: { ar: 'نقل لمعاينة', en: 'Move to Inspection' },
+  update_inspection: { ar: 'تحديث معاينة', en: 'Update Inspection' },
+  update_contract: { ar: 'تحديث تعاقد', en: 'Update Contract' },
+  upload_sheet: { ar: 'نشر ملف', en: 'Upload Sheet' },
+  edit_sheet: { ar: 'تعديل ملف', en: 'Edit Sheet' },
+};
+
+const ACTIVITY_ICONS: Record<string, { icon: string; color: string }> = {
+  login: { icon: '🔑', color: 'text-blue-600 bg-blue-100' },
+  logout: { icon: '🚪', color: 'text-zinc-600 bg-zinc-100' },
+  delete: { icon: '🗑️', color: 'text-red-600 bg-red-100' },
+  delete_sheet: { icon: '📄', color: 'text-red-600 bg-red-100' },
+  contract: { icon: '✓', color: 'text-emerald-600 bg-emerald-100' },
+  refuse: { icon: '✗', color: 'text-rose-600 bg-rose-100' },
+  create_inspection: { icon: '📋', color: 'text-amber-600 bg-amber-100' },
+  move_to_inspection: { icon: '📋', color: 'text-amber-600 bg-amber-100' },
+  update_inspection: { icon: '✏️', color: 'text-amber-600 bg-amber-100' },
+  update_contract: { icon: '✏️', color: 'text-emerald-600 bg-emerald-100' },
+  upload_sheet: { icon: '📤', color: 'text-teal-600 bg-teal-100' },
+  edit_sheet: { icon: '✏️', color: 'text-teal-600 bg-teal-100' },
+};
+
+const ActivitiesPage: React.FC<{
+  lang: 'en' | 'ar';
+  t: Record<string, string>;
+  settings: Record<string, string>;
+  isAdmin: boolean;
+}> = ({ lang, t, settings, isAdmin }) => {
+  const [activities, setActivities] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchActivities = async () => {
+    try {
+      const { data } = await supabase
+        .from('activity_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100);
+      setActivities(data || []);
+    } catch (err) {
+      console.error('Failed to fetch activities', err);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchActivities();
+  }, []);
+
+  const [notifyPhone, setNotifyPhone] = useState('01221915144');
+  const [sendingId, setSendingId] = useState<string | null>(null);
+
+  const sendActivityNotification = (phone: string, activity: any) => {
+    const dateStr = activity.created_at ? new Date(activity.created_at).toLocaleDateString('ar-EG') : '-';
+    const message = `[${activity.type}] ${activity.message} - ${dateStr}`;
+    const cleanPhone = phone.replace(/\D/g, '');
+    const fullPhone = cleanPhone.startsWith('2') ? cleanPhone : `2${cleanPhone}`;
+    window.open(`https://wa.me/${fullPhone}?text=${encodeURIComponent(message)}`, '_blank');
+    toast.success(lang === 'ar' ? 'تم فتح واتساب' : 'WhatsApp opened');
+  };
+
+  const handleSendOne = async (activity: typeof activities[0]) => {
+    if (!isAdmin || !notifyPhone) return;
+    setSendingId(activity.id);
+    await sendActivityNotification(notifyPhone, activity);
+    setSendingId(null);
+  };
+
+  const handleSendAll = async () => {
+    if (!isAdmin || !notifyPhone) return;
+    setSendingId('all');
+    for (const a of activities) {
+      await sendActivityNotification(notifyPhone, a);
+    }
+    setSendingId(null);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+        <div>
+          <h1 className="text-3xl md:text-4xl font-light">{lang === 'ar' ? 'سجل الأنشطة' : 'Activity Log'}</h1>
+          <p className="text-zinc-500 mt-2">{lang === 'ar' ? 'تابع جميع الأنشطة الحديثة في النظام' : 'Track all recent activities in the system'}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button onClick={fetchActivities} className="glass p-3 rounded-2xl border border-white/40 hover:shadow-md transition-all" title={lang === 'ar' ? 'تحديث' : 'Refresh'}>
+            <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+          </button>
+          <div className="glass px-4 py-3 rounded-2xl min-w-[90px]">
+            <div className="text-[10px] uppercase font-bold text-zinc-400">{lang === 'ar' ? 'النشاط' : 'Activities'}</div>
+            <div className="text-2xl font-semibold">{activities.length}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Notification Bar */}
+      {isAdmin && (
+        <div className="glass rounded-[2rem] p-5 shadow-sm border border-white/40 flex flex-col sm:flex-row items-center gap-4">
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <MessageCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+            <input value={notifyPhone} onChange={e => setNotifyPhone(e.target.value)} className="w-full sm:w-52 rounded-2xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-mono" placeholder="Phone number" />
+          </div>
+          <button onClick={handleSendAll} disabled={sendingId === 'all' || activities.length === 0} className="w-full sm:w-auto py-2.5 px-6 rounded-2xl bg-zinc-900 text-white font-bold text-xs uppercase tracking-wider disabled:opacity-40 flex items-center justify-center gap-2">
+            <MessageCircle className="w-4 h-4" />
+            {sendingId === 'all' ? (lang === 'ar' ? 'جاري الإرسال...' : 'Sending...') : (lang === 'ar' ? 'إرسال الكل' : 'Send All')}
+          </button>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="glass rounded-[2rem] py-20 text-center">
+          <div className="w-8 h-8 border-2 border-accent-tan border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-zinc-400 font-semibold">{lang === 'ar' ? 'جاري التحميل...' : 'Loading...'}</p>
+        </div>
+      ) : activities.length > 0 ? (
+        <div className="space-y-4">
+          {activities.map((activity) => {
+            const iconDef = ACTIVITY_ICONS[activity.type] || { icon: '📌', color: 'text-zinc-600 bg-zinc-100' };
+            const [textColor, bgColor] = iconDef.color.split(' ');
+            return (
+              <div key={activity.id} className="glass rounded-[2rem] p-6 shadow-sm border border-white/40 flex items-center gap-4">
+                <div className={`w-12 h-12 rounded-2xl ${bgColor} ${textColor} flex items-center justify-center text-xl`}>
+                  {iconDef.icon}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className={`text-xs font-bold ${textColor} uppercase`}>{ACTIVITY_LABELS[activity.type]?.[lang] || activity.type}</span>
+                    <span className="text-xs text-zinc-400">{activity.created_at ? new Date(activity.created_at).toLocaleDateString('ar-EG') : '-'}</span>
+                  </div>
+                  <p className="font-bold text-zinc-900 mt-1 truncate">{activity.message}</p>
+                </div>
+                {isAdmin && (
+                  <button onClick={() => handleSendOne(activity)} disabled={sendingId === activity.id} className="w-10 h-10 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 transition-all disabled:opacity-40">
+                    {sendingId === activity.id ? <span className="text-xs animate-pulse">...</span> : <MessageCircle className="w-5 h-5" />}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="glass rounded-[2rem] py-20 text-center">
+          <Activity className="w-12 h-12 text-zinc-200 mx-auto mb-4" />
+          <p className="text-zinc-400 font-semibold">{lang === 'ar' ? 'لا توجد أنشطة حديثة' : 'No recent activities'}</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Settings Page Component
+const SettingsPage: React.FC<{
+  lang: 'en' | 'ar';
+  setLang: (v: 'en' | 'ar') => void;
+  isAdmin: boolean;
+  t: Record<string, string>;
+  settings: Record<string, string>;
+  currentUserEmail?: string;
+}> = ({ lang, setLang, isAdmin, t, settings, currentUserEmail }) => {
+  const [saving, setSaving] = useState(false);
+
+  const saveSetting = async (key: string, value: string) => {
+    const { error } = await supabase.from('app_settings').upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    if (error) throw error;
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+        <div>
+          <h1 className="text-3xl md:text-4xl font-light">{lang === 'ar' ? 'الإعدادات' : 'Settings'}</h1>
+          <p className="text-zinc-500 mt-2">{lang === 'ar' ? 'إعدادات النظام والتطبيق' : 'System and application settings'}</p>
+        </div>
+      </div>
+
+      <div className="space-y-8">
+        {/* Language */}
+        <div className="w-full glass rounded-[3rem] p-10 md:p-14 shadow-2xl border border-white/40">
+          <div className="flex items-center gap-5 mb-8">
+            <div className="w-16 h-16 rounded-2xl bg-accent-tan/10 flex items-center justify-center">
+              <Languages className="w-8 h-8 text-accent-tan" />
+            </div>
+            <div>
+              <h3 className="text-2xl md:text-3xl font-bold text-zinc-900">{lang === 'ar' ? 'اللغة' : 'Language'}</h3>
+              <p className="text-base text-zinc-500">{lang === 'ar' ? 'لغة واجهة التطبيق' : 'Interface language'}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <button onClick={() => setLang('ar')} className={`flex items-center justify-center gap-3 py-5 rounded-2xl font-bold text-lg transition-all ${lang === 'ar' ? 'bg-zinc-900 text-white shadow-lg scale-[1.02]' : 'bg-white border-2 border-zinc-200 text-zinc-600 hover:bg-zinc-50 hover:border-zinc-300'}`}>
+               العربية
+            </button>
+            <button onClick={() => setLang('en')} className={`flex items-center justify-center gap-3 py-5 rounded-2xl font-bold text-lg transition-all ${lang === 'en' ? 'bg-zinc-900 text-white shadow-lg scale-[1.02]' : 'bg-white border-2 border-zinc-200 text-zinc-600 hover:bg-zinc-50 hover:border-zinc-300'}`}>
+               English
+            </button>
+          </div>
+        </div>
+
+        {/* Account */}
+        <div className="w-full glass rounded-[3rem] p-10 md:p-14 shadow-2xl border border-white/40">
+          <div className="flex items-center gap-5 mb-8">
+            <div className="w-16 h-16 rounded-2xl bg-accent-sage/10 flex items-center justify-center">
+              <Users className="w-8 h-8 text-accent-sage" />
+            </div>
+            <div>
+              <h3 className="text-2xl md:text-3xl font-bold text-zinc-900">{lang === 'ar' ? 'الحساب' : 'Account'}</h3>
+              <p className="text-base text-zinc-500">{lang === 'ar' ? 'معلومات حسابك' : 'Your account info'}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-white/60 p-6 rounded-2xl border border-white/60">
+              <div className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2">{lang === 'ar' ? 'البريد الإلكتروني' : 'Email'}</div>
+              <div className="text-lg font-bold text-zinc-900 truncate">{currentUserEmail || (lang === 'ar' ? 'غير مسجل' : 'Not signed in')}</div>
+            </div>
+            <div className="bg-white/60 p-6 rounded-2xl border border-white/60">
+              <div className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2">{lang === 'ar' ? 'نوع الحساب' : 'Role'}</div>
+              <div className={`text-lg font-bold ${isAdmin ? 'text-amber-600' : 'text-zinc-900'}`}>{isAdmin ? (lang === 'ar' ? 'مسؤول' : 'Admin') : (lang === 'ar' ? 'مشاهد' : 'Viewer')}</div>
+            </div>
+            <div className="bg-white/60 p-6 rounded-2xl border border-white/60">
+              <div className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2">{lang === 'ar' ? 'الحالة' : 'Status'}</div>
+              <div className="inline-flex items-center gap-2 bg-emerald-100 text-emerald-700 px-4 py-2 rounded-full text-sm font-bold">
+                <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                {lang === 'ar' ? 'نشط' : 'Active'}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 const normalizePhone = (p: any) => {
@@ -314,6 +813,7 @@ const mapInspectionFromDB = (dbInsp: any): Inspection => ({
   totalAmount: Number(dbInsp.total_amount || 0),
   status: dbInsp.status,
   portfolio: dbInsp.portfolio,
+  room_types: Array.isArray(dbInsp.room_types) ? dbInsp.room_types : [],
   deliveryDate: dbInsp.delivery_date,
   pickupDate: dbInsp.pickup_date,
   portfolioDate: dbInsp.portfolio_date,
@@ -338,6 +838,21 @@ const sortContractedRecordsByContractDate = (records: Inspection[]) =>
 
     return (a.customerName || '').localeCompare(b.customerName || '', 'ar');
   });
+
+const isMissingRoomTypesColumnError = (error: any) => {
+  const raw = [error?.code, error?.message, error?.details, error?.hint].filter(Boolean).join(' ').toLowerCase();
+  return raw.includes('room_types') && (
+    raw.includes('schema cache') ||
+    raw.includes('could not find') ||
+    raw.includes('column') ||
+    raw.includes('pgrst204')
+  );
+};
+
+const withoutRoomTypes = (payload: Record<string, any>) => {
+  const { room_types, ...rest } = payload;
+  return rest;
+};
 
 const playSound = async (type: 'success' | 'error' | 'delete') => {
   try {
@@ -405,7 +920,7 @@ export default function App() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingCollection, setEditingCollection] = useState<'customers' | 'inspections' | 'contracted_customers' | 'non_contracted_customers' | null>(null);
   
-  const [adminSubView, setAdminSubView] = useState<'customers' | 'catalogs' | 'contracted' | 'not-contracted' | 'inspections' | 'phonebook'>('customers');
+  const [adminSubView, setAdminSubView] = useState<'dashboard' | 'customers' | 'catalogs' | 'contracted' | 'not-contracted' | 'inspections' | 'phonebook' | 'production' | 'payments' | 'activities' | 'settings'>('dashboard');
   const [catalogs, setCatalogs] = useState<CatalogSheet[]>([]);
   const [customerRecords, setCustomerRecords] = useState<CustomerRecord[]>([]);
   const [inspections, setInspections] = useState<Inspection[]>([]);
@@ -487,12 +1002,93 @@ export default function App() {
     visitDate: '',
     notes: '',
     rooms: 0,
+    room_types: [],
     pieces: [],
     totalAmount: 0
   });
 
+  const [stages, setStages] = useState<any[]>([]);
+  const [settings, setSettings] = useState<Record<string, string>>({});
+
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<any>(null);
+  const [quoteDrafts, setQuoteDrafts] = useState<RoomDraft[]>([]);
+  const [customPieceName, setCustomPieceName] = useState('');
+  const [customPieceQty, setCustomPieceQty] = useState(1);
+  const [customPiecePrice, setCustomPiecePrice] = useState('');
+  const quoteRoomSubtotal = (room: RoomDraft) => {
+    return room.items.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 1)) + (item.aro_veneer_addon ? Number(item.aro_surcharge || 0) : 0), 0);
+  };
+  const quoteTotal = () => quoteDrafts.reduce((sum, r) => sum + quoteRoomSubtotal(r), 0);
+
+  useEffect(() => {
+    if (!selectedRecord) {
+      setQuoteDrafts([]);
+      return;
+    }
+    // Initialize quoteDrafts from selectedRecord.pieces (flattened) when available,
+    // otherwise create empty rooms based on selectedRecord.rooms
+    const pieces = Array.isArray(selectedRecord.pieces) ? selectedRecord.pieces : [];
+    if (pieces.length > 0) {
+      // put all pieces into a single room by default (preserve name/quantity/price/details)
+      const items: RoomDraftItem[] = pieces.map((p: any) => ({
+        item_name: p.name || p.item_name || '',
+        custom_item: p.custom_item || false,
+        quantity: Number(p.quantity || 1),
+        dimensions: p.details || p.dimensions || '',
+        price: Number(p.price || 0),
+        notes: p.notes || '',
+        aro_veneer_addon: Boolean(p.aro_veneer_addon),
+        aro_surcharge: Number(p.aro_surcharge || 0)
+      }));
+      setQuoteDrafts([{ room_type: 'other', aro_veneer: false, items }]);
+      return;
+    }
+
+    const defaultRooms = Array.from({ length: Number(selectedRecord.rooms || 0) }).map((_, idx) => ({ room_type: 'other', aro_veneer: false, items: [] as RoomDraftItem[] }));
+    setQuoteDrafts(defaultRooms);
+  }, [selectedRecord]);
+
+  const setRoomField = (roomIndex: number, field: keyof RoomDraft, value: any) => {
+    setQuoteDrafts(prev => prev.map((room, index) => index === roomIndex ? { ...room, [field]: value } : room));
+  };
+
+  const setRoomItemField = (roomIndex: number, itemIndex: number, field: keyof RoomDraftItem, value: any) => {
+    setQuoteDrafts(prev => prev.map((room, index) => {
+      if (index !== roomIndex) return room;
+      return {
+        ...room,
+        items: room.items.map((item, itemIdx) => itemIdx === itemIndex ? { ...item, [field]: value } : item)
+      };
+    }));
+  };
+
+  const addRoom = (type: string) => setQuoteDrafts(prev => [...prev, { room_type: type, aro_veneer: false, items: [] }]);
+  const removeRoom = (roomIndex: number) => setQuoteDrafts(prev => prev.filter((_, i) => i !== roomIndex));
+  const addDefaultItem = (roomIndex: number, itemName: string) => setQuoteDrafts(prev => prev.map((room, index) => index === roomIndex ? { ...room, items: [...room.items, { item_name: itemName, custom_item: false, quantity: 1, dimensions: '', price: 0, notes: '', aro_veneer_addon: false, aro_surcharge: 0 }] } : room));
+  const addCustomItem = (roomIndex: number) => setQuoteDrafts(prev => prev.map((room, index) => index === roomIndex ? { ...room, items: [...room.items, { item_name: '', custom_item: true, quantity: 1, dimensions: '', price: 0, notes: '', aro_veneer_addon: false, aro_surcharge: 0 }] } : room));
+  const removeRoomItem = (roomIndex: number, itemIndex: number) => setQuoteDrafts(prev => prev.map((room, index) => index === roomIndex ? { ...room, items: room.items.filter((_, idx) => idx !== itemIndex) } : room));
+
+  const handleSaveQuote = async () => {
+    if (!selectedRecord) return;
+    if (!isAdminUser) { toast.error(t.noPermission || 'Admin only'); return; }
+    try {
+      setIsLoading(true);
+      const pieces = quoteDrafts.flatMap(r => r.items.map(it => ({ name: it.item_name, quantity: it.quantity, price: it.price, details: it.dimensions || it.notes || '', room_type: r.room_type })));
+      const totalAmount = pieces.reduce((s, p) => s + (Number(p.price || 0) * Number(p.quantity || 1)), 0);
+      const { error } = await supabase.from('inspections').update({ pieces, total_amount: totalAmount, rooms: quoteDrafts.length }).eq('id', selectedRecord.id);
+      if (error) throw error;
+      toast.success(lang === 'ar' ? 'تم حفظ العرض' : 'Quote saved');
+      await refreshAllData();
+      // refresh selectedRecord
+      const refreshed = (await supabase.from('inspections').select('*').eq('id', selectedRecord.id).single()).data;
+      setSelectedRecord(refreshed || selectedRecord);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.message || (lang === 'ar' ? 'فشل حفظ العرض' : 'Failed saving quote'));
+    }
+    setIsLoading(false);
+  };
   const [searchQuery, setSearchQuery] = useState('');
   
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
@@ -577,6 +1173,14 @@ export default function App() {
     const { data: nonContrData, error: nonContrError } = await supabase.from('non_contracted_customers').select('*').order('finalized_at', { ascending: false });
     if (nonContrError) throw nonContrError;
     setNotContractedCustomers((nonContrData || []).map(mapInspectionFromDB));
+
+    const { data: stagesData } = await supabase.from('production_stages').select('*, client:client_id(phones)');
+    setStages(stagesData || []);
+
+    const { data: settingsData } = await supabase.from('app_settings').select('*');
+    const settingsMap: Record<string, string> = {};
+    (settingsData || []).forEach((s: any) => { settingsMap[s.key] = s.value; });
+    setSettings(settingsMap);
   };
 
   const isLegacyInspectionStatusConstraintError = (error: any) => {
@@ -602,6 +1206,47 @@ export default function App() {
     throw error;
   };
 
+  const updateRecordWithOptionalRoomTypes = async (
+    tableName: 'inspections' | 'contracted_customers' | 'non_contracted_customers',
+    payload: Record<string, any>,
+    id: string
+  ) => {
+    const { error } = await supabase.from(tableName).update(payload).eq('id', id);
+    if (!error) return;
+
+    if ('room_types' in payload && isMissingRoomTypesColumnError(error)) {
+      console.warn(
+        `Supabase column ${tableName}.room_types is missing; retrying without room types. Apply supabase/migrations/0006_add_inspection_room_types.sql to persist room categories.`,
+        error
+      );
+      const { error: retryError } = await supabase.from(tableName).update(withoutRoomTypes(payload)).eq('id', id);
+      if (retryError) throw retryError;
+      return;
+    }
+
+    throw error;
+  };
+
+  const insertRecordWithOptionalRoomTypes = async (
+    tableName: 'contracted_customers' | 'non_contracted_customers',
+    payload: Record<string, any>
+  ) => {
+    const { error } = await supabase.from(tableName).insert(payload);
+    if (!error) return;
+
+    if ('room_types' in payload && isMissingRoomTypesColumnError(error)) {
+      console.warn(
+        `Supabase column ${tableName}.room_types is missing; retrying without room types. Apply supabase/migrations/0006_add_inspection_room_types.sql to persist room categories.`,
+        error
+      );
+      const { error: retryError } = await supabase.from(tableName).insert(withoutRoomTypes(payload));
+      if (retryError) throw retryError;
+      return;
+    }
+
+    throw error;
+  };
+
   const deleteRecordById = async (
     table: 'catalogs' | 'customers' | 'inspections' | 'contracted_customers' | 'non_contracted_customers',
     id: string
@@ -617,14 +1262,59 @@ export default function App() {
     }
   };
 
+  const sendWhatsAppMessage = (phone: string, message: string) => {
+    const cleanPhone = phone.replace(/\D/g, '');
+    const fullPhone = cleanPhone.startsWith('2') ? cleanPhone : `2${cleanPhone}`;
+    window.open(`https://wa.me/${fullPhone}?text=${encodeURIComponent(message)}`, '_blank');
+  };
+
+  const handleStageUpdate = async (stageId: string, status: string) => {
+    if (!ensureAdminAccess()) return;
+    const updates: any = { status };
+    if (status === 'done') {
+      updates.completed_at = new Date().toISOString();
+    } else {
+      updates.completed_at = null;
+    }
+    const { error } = await supabase.from('production_stages').update(updates).eq('id', stageId);
+    if (error) {
+      toast.error(lang === 'ar' ? 'فشل تحديث المرحلة' : 'Stage update failed');
+      return;
+    }
+    const currentStage = stages.find(s => s.id === stageId);
+    if (status === 'done' && currentStage) {
+      const currentIdx = STAGE_ORDER.findIndex(s => s.key === currentStage.stage);
+      const nextStage = STAGE_ORDER[currentIdx + 1];
+      if (nextStage) {
+        const nextStageRecord = stages.find(s => s.client_id === currentStage.client_id && s.stage === nextStage.key);
+        if (nextStageRecord && nextStageRecord.status === 'not_started') {
+          await supabase.from('production_stages').update({ status: 'in_progress' }).eq('id', nextStageRecord.id);
+        }
+      }
+      const { data: clientData } = await supabase.from('clients').select('name,phones').eq('id', currentStage.client_id).limit(1).single();
+      if (clientData) {
+        const stageName = lang === 'ar' ? STAGE_ORDER.find(s => s.key === currentStage.stage)?.ar : STAGE_ORDER.find(s => s.key === currentStage.stage)?.en;
+        const message = lang === 'ar'
+          ? `تم الانتهاء من مرحلة "${stageName}" في مصنع العماري للأثاث. شكراً لثقتكم.`
+          : `The "${stageName}" stage has been completed at El-Amary Furniture. Thank you for your trust.`;
+        const phone = clientData.phones?.[0];
+        if (phone) await sendWhatsAppMessage(phone, message);
+      }
+    }
+    await refreshAllData();
+    toast.success(lang === 'ar' ? 'تم تحديث المرحلة' : 'Stage updated');
+  };
+
   const handleDeleteInspection = async (id: string) => {
     if (!ensureAdminAccess()) return;
 
     try {
+      const rec = inspections.find(i => i.id === id);
       await deleteRecordById('inspections', id);
       await refreshAllData();
       void playSound('delete');
       toast.success(lang === 'ar' ? "تم الحذف" : "Deleted");
+      await logActivity('delete', `${lang === 'ar' ? 'حذف معاينة' : 'Deleted inspection'} ${rec?.customerName || id}`);
     } catch (err: any) {
       toast.error(err?.message || "Error");
     }
@@ -695,6 +1385,7 @@ export default function App() {
         await refreshAllData(newCat.id);
         void playSound('success');
         toast.success(lang === 'ar' ? "تم النشر بنجاح" : "Sheet published successfully");
+        await logActivity('upload_sheet', `${lang === 'ar' ? 'نشر ملف' : 'Published sheet'} "${title}"`);
       } catch (error) { toast.error("Failed to parse Excel file"); }
       setIsLoading(false);
     };
@@ -710,10 +1401,12 @@ export default function App() {
       lang === 'ar' ? "هل أنت متأكد من حذف هذا الملف؟" : "Are you sure you want to delete this sheet?",
       async () => {
         try {
+          const rec = catalogs.find(c => c.id === id);
           await deleteRecordById('catalogs', id);
           await refreshAllData();
           void playSound('delete');
           toast.success(lang === 'ar' ? "تم الحذف" : "Sheet deleted");
+          await logActivity('delete_sheet', `${lang === 'ar' ? 'حذف ملف' : 'Deleted sheet'} ${rec?.title || id}`);
         } catch (err: any) { toast.error(err?.message || "Failed to delete"); }
       }
     );
@@ -742,12 +1435,27 @@ export default function App() {
       await refreshAllData(editingCatalogRow.sheetId);
       void playSound('success');
       toast.success(lang === 'ar' ? "تم تحديث البيانات" : "Data updated");
+      await logActivity('edit_sheet', `${lang === 'ar' ? 'تعديل ملف' : 'Edited sheet'} ${sheet?.title || editingCatalogRow.sheetId}`);
       setIsEditCatalogModalOpen(false);
       setEditingCatalogRow(null);
     } catch (err: any) {
       toast.error(err.message);
     }
     setIsLoading(false);
+  };
+
+  const logActivity = async (type: string, message: string, details?: Record<string, any>) => {
+    try {
+      await supabase.from('activity_logs').insert({
+        type,
+        message,
+        success: true,
+        details: details || null,
+        created_at: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error('Failed to log activity:', err);
+    }
   };
 
   const handleAdminLogin = async (e: FormEvent) => {
@@ -773,6 +1481,7 @@ export default function App() {
       setIsAuthChecking(false);
       toast.success(lang === 'ar' ? "تم تسجيل الدخول" : "Logged in successfully");
       setFormData({ ...formData, username: '', password: '' });
+      await logActivity('login', `${targetEmail} ${lang === 'ar' ? 'سجل دخول' : 'logged in'}`);
     } catch (error: any) {
       console.error('Supabase sign-in error:', error);
       const rawMessage = error?.message || error?.msg || error?.error_description || null;
@@ -797,10 +1506,12 @@ export default function App() {
       return;
     }
     try {
+      const rec = customerRecords.find(c => c.id === id);
       await deleteRecordById('customers', id);
       await refreshAllData();
       void playSound('delete');
       toast.success(lang === 'ar' ? "تم حذف العميل" : "Customer removed");
+      await logActivity('delete', `${lang === 'ar' ? 'حذف عميل' : 'Deleted customer'} ${rec?.name || id}`);
     } catch (err: any) { toast.error(err?.message || "Unauthorized"); }
   };
 
@@ -833,6 +1544,7 @@ export default function App() {
           await refreshAllData();
           void playSound('delete');
           toast.success(lang === 'ar' ? "تم نقل العميل إلى العملاء غير المتعاقدين" : "Customer moved to non-contracted customers");
+          await logActivity('refuse', `${lang === 'ar' ? 'نقل إلى غير متعاقدين' : 'Moved to non-contracted'} ${customer.name}`);
         } catch (err: any) {
           console.error(err);
           toast.error(err?.message || (lang === 'ar' ? "فشل النقل" : "Move failed"));
@@ -841,7 +1553,11 @@ export default function App() {
     );
   };
 
-  const handleLogout = async () => { await supabase.auth.signOut(); toast.success("Logged out"); };
+  const handleLogout = async () => {
+    await logActivity('logout', `${currentUser?.email || 'Unknown'} ${lang === 'ar' ? 'سجل خروج' : 'logged out'}`);
+    await supabase.auth.signOut();
+    toast.success("Logged out");
+  };
   
   const handleExportExcel = (data: any[], fileName: string) => {
     try {
@@ -879,8 +1595,9 @@ export default function App() {
       setIsLoading(true);
       try {
         if (inspectionFormData.id) {
-          const tableName = editingCollection || 'inspections';
-          const { error } = await supabase.from(tableName).update({
+          const tableName = editingCollection && editingCollection !== 'customers' ? editingCollection : 'inspections';
+          const isInspectionsTable = tableName === 'inspections';
+          const baseUpdateData: Record<string, any> = {
             customer_name: inspectionFormData.customerName?.trim(),
             address: inspectionFormData.address?.trim(),
             delivery_address: inspectionFormData.deliveryAddress?.trim(),
@@ -896,8 +1613,12 @@ export default function App() {
             portfolio_date: inspectionFormData.portfolio_date || null,
             contract_date: inspectionFormData.contractDate || null,
             portfolio: inspectionFormData.portfolio || null,
-          }).eq('id', inspectionFormData.id);
-          if (error) throw error;
+          };
+          // room_types does NOT exist in the inspections table, only in finalized tables
+          if (!isInspectionsTable) {
+            baseUpdateData.room_types = inspectionFormData.room_types || [];
+          }
+          await updateRecordWithOptionalRoomTypes(tableName, baseUpdateData, inspectionFormData.id);
         } else if (editingId) {
           const { error } = await supabase.from('customers').update({
             name: inspectionFormData.customerName?.trim(),
@@ -915,6 +1636,23 @@ export default function App() {
         await refreshAllData();
         void playSound('success');
         toast.success(lang === 'ar' ? "تم الحفظ بنجاح" : "Saved successfully");
+        
+        // Notify customer about visit date when step 1 is saved
+        if (inspectionFormData.phone && inspectionFormData.visitDate) {
+          const dateStr = new Date(inspectionFormData.visitDate).toLocaleDateString('ar-EG');
+          const msg = lang === 'ar'
+            ? `السلام عليكم، تم تحديد معاد معاينتك يوم ${dateStr} لمصنع العماري للأثاث. برجاء التكرم بالحضور في المعاد المحدد. شكراً لثقتكم.`
+            : `Hello, your inspection appointment has been scheduled for ${dateStr} at El-Amary Furniture. Please attend on the specified date. Thank you for your trust.`;
+          sendWhatsAppMessage(inspectionFormData.phone, msg);
+        }
+        // Notify customer about portfolio date when set for contracted customers
+        if (editingCollection === 'contracted_customers' && inspectionFormData.phone && inspectionFormData.portfolioDate) {
+          const dateStr = new Date(inspectionFormData.portfolioDate).toLocaleDateString('ar-EG');
+          const msg = lang === 'ar'
+            ? `السلام عليكم، تم تحديد معاد البورتفوليو يوم ${dateStr} لمصنع العماري للأثاث. برجاء التكرم بالحضور في المعاد المحدد. شكراً لثقتكم.`
+            : `Hello, your portfolio appointment has been scheduled for ${dateStr} at El-Amary Furniture. Please attend on the specified date. Thank you for your trust.`;
+          sendWhatsAppMessage(inspectionFormData.phone, msg);
+        }
         
         // If editing a customer or contracted customer, move to step 2 for pieces
         if (editingCollection === 'customers' || editingCollection === 'contracted_customers' || !inspectionFormData.id) {
@@ -935,16 +1673,24 @@ export default function App() {
     setIsLoading(true);
     try {
       if (editingCollection && editingCollection !== 'customers') {
-        // Editing contracted / non-contracted - update pieces/rooms/total
-        const { error } = await supabase.from(editingCollection).update({
+        // Editing inspections / contracted / non-contracted - update pieces/rooms/total
+        const step2Payload: Record<string, any> = {
           rooms: inspectionFormData.rooms || 0,
           pieces: inspectionFormData.pieces || [],
           total_amount: inspectionFormData.totalAmount || 0,
-        }).eq('id', inspectionFormData.id);
-        if (error) throw error;
+        };
+        // room_types only exists on contracted_customers / non_contracted_customers, NOT on inspections
+        if (editingCollection !== 'inspections') {
+          step2Payload.room_types = inspectionFormData.room_types || [];
+        }
+        await updateRecordWithOptionalRoomTypes(editingCollection, step2Payload, inspectionFormData.id);
         await refreshAllData();
         void playSound('success');
         toast.success(lang === 'ar' ? "تم الحفظ بنجاح" : "Saved successfully");
+        await logActivity(
+          editingCollection === 'contracted_customers' ? 'update_contract' : 'update_inspection',
+          `${lang === 'ar' ? 'تحديث بيانات' : 'Updated'} ${inspectionFormData.customerName}`
+        );
         setIsInspectionModalOpen(false);
         setInspectionStep(1);
         setEditingId(null);
@@ -958,6 +1704,8 @@ export default function App() {
         return;
       }
 
+      // NOTE: The 'inspections' table does NOT have a 'room_types' column.
+      // rooms, pieces, total_amount DO exist in inspections.
       const inspectionDbData = {
         customer_name: inspectionFormData.customerName?.trim(),
         address: inspectionFormData.address?.trim(),
@@ -986,13 +1734,14 @@ export default function App() {
             if (deleteError) throw deleteError;
           } catch (err) { console.error("Failed to remove customer after creating inspection", err); }
         }
-        if (editingCollection === 'customers' && newId) {
+          if (editingCollection === 'customers' && newId) {
           setInspectionFormData(prev => ({ ...prev, id: newId }));
           setEditingCollection(null);
           setEditingId(null);
           await refreshAllData();
           void playSound('success');
           toast.success(lang === 'ar' ? "تم نقل العميل إلى المعاينات" : "Customer moved to Inspections");
+          await logActivity('move_to_inspection', `${lang === 'ar' ? 'نقل' : 'Moved'} ${inspectionFormData.customerName} ${lang === 'ar' ? 'إلى المعاينات' : 'to inspections'}`);
           setIsInspectionModalOpen(false);
           setInspectionStep(1);
           setIsLoading(false);
@@ -1003,15 +1752,16 @@ export default function App() {
       await refreshAllData();
       void playSound('success');
       toast.success(lang === 'ar' ? "تم حفظ بيانات المعاينة" : "Inspection data saved");
+      await logActivity('create_inspection', `${lang === 'ar' ? 'إنشاء معاينة لـ' : 'Created inspection for'} ${inspectionFormData.customerName}`);
       setIsInspectionModalOpen(false);
       setInspectionStep(1);
       setEditingId(null);
       setEditingCollection(null);
-      setInspectionFormData({ 
-        customerName: '', address: '', deliveryAddress: '', phone: '', visitDate: '', 
-        notes: '', rooms: 0, pieces: [], totalAmount: 0, deliveryDate: '', pickupDate: '', 
-        portfolioDate: '', contractDate: '', portfolio: '' 
-      });
+        setInspectionFormData({ 
+          customerName: '', address: '', deliveryAddress: '', phone: '', visitDate: '', 
+          notes: '', rooms: 0, room_types: [], pieces: [], totalAmount: 0, deliveryDate: '', pickupDate: '',
+          portfolioDate: '', contractDate: '', portfolio: '' 
+        });
     } catch (err: any) { toast.error(err.message); }
     setIsLoading(false);
   };
@@ -1033,6 +1783,7 @@ export default function App() {
         visit_date: recordToSave.visitDate,
         notes: recordToSave.notes,
         rooms: recordToSave.rooms || 0,
+        room_types: recordToSave.room_types || [],
         pieces: recordToSave.pieces || [],
         total_amount: recordToSave.totalAmount || 0,
         status,
@@ -1042,21 +1793,47 @@ export default function App() {
         portfolio_date: recordToSave.portfolioDate || null,
         contract_date: recordToSave.contractDate || null,
       };
-      const { error } = await supabase.from(tableName).insert(dbData);
-      if (error) throw error;
+      await insertRecordWithOptionalRoomTypes(tableName, dbData);
       const inspectionId = directRecord?.id || inspectionFormData.id;
       if (inspectionId) {
         const { error: deleteError } = await supabase.from('inspections').delete().eq('id', inspectionId);
         if (deleteError) throw deleteError;
       }
+      if (status === 'contracted') {
+        const phone = recordToSave.phone?.trim();
+        const name = recordToSave.customerName?.trim();
+        if (phone) {
+          const { data: existingClient } = await supabase.from('clients').select('id').eq('phones', `{${phone}}`).limit(1);
+          let clientId = existingClient?.[0]?.id || null;
+          if (!clientId) {
+            const { data: newClient } = await supabase.from('clients').insert({ name: name || phone, phones: [phone] }).select('id').single();
+            if (newClient) clientId = newClient.id;
+          }
+          if (clientId) {
+            await supabase.from('production_stages').insert(STAGE_ORDER.map(stage => ({
+              client_id: clientId, visit_id: null, stage: stage.key, status: 'not_started'
+            })));
+          }
+        }
+      }
       await refreshAllData();
+      if (status === 'contracted' && recordToSave.phone) {
+        const msg = lang === 'ar'
+          ? `السلام عليكم، تم التعاقد مع مصنع العماري للأثاث. سيتم التواصل معكم قريباً لترتيب معاد البورتفوليو وتجهيز طلبكم. شكراً لثقتكم.`
+          : `Hello, the contract has been signed with El-Amary Furniture. We will contact you soon to arrange a portfolio appointment and prepare your order. Thank you for your trust.`;
+        sendWhatsAppMessage(recordToSave.phone, msg);
+      }
       void playSound('success');
       toast.success(lang === 'ar' ? "تمت العملية بنجاح" : "Process completed");
+      await logActivity(
+        status === 'contracted' ? 'contract' : 'refuse',
+        `${status === 'contracted' ? (lang === 'ar' ? 'تعاقد مع' : 'Contracted with') : (lang === 'ar' ? 'رفض' : 'Refused')} ${recordToSave.customerName}`
+      );
       setIsInspectionModalOpen(false);
       setInspectionStep(1);
       setEditingId(null);
       setEditingCollection(null);
-      setInspectionFormData({ customerName: '', address: '', phone: '', visitDate: '',  notes: '', rooms: 0, pieces: [], totalAmount: 0, deliveryAddress: '', governorate: '' });
+      setInspectionFormData({ customerName: '', address: '', phone: '', visitDate: '',  notes: '', rooms: 0, room_types: [], pieces: [], totalAmount: 0, deliveryAddress: '', governorate: '' });
     } catch (err: any) { 
       toast.error(err.message); 
     }
@@ -1071,10 +1848,12 @@ export default function App() {
       lang === 'ar' ? "هل أنت متأكد من حذف هذا السجل؟" : "Are you sure?",
       async () => {
         try {
+          const rec = contractedCustomers.find(c => c.id === id);
           await deleteRecordById('contracted_customers', id);
           await refreshAllData();
           void playSound('delete');
           toast.success(lang === 'ar' ? "تم الحذف" : "Deleted");
+          await logActivity('delete', `${lang === 'ar' ? 'حذف متعاقد' : 'Deleted contracted'} ${rec?.customerName || id}`);
         } catch (err: any) { toast.error(err?.message || "Unauthorized"); }
       }
     );
@@ -1088,10 +1867,12 @@ export default function App() {
       lang === 'ar' ? "هل أنت متأكد من حذف هذا السجل؟" : "Are you sure?",
       async () => {
         try {
+          const rec = notContractedCustomers.find(c => c.id === id);
           await deleteRecordById('non_contracted_customers', id);
           await refreshAllData();
           void playSound('delete');
           toast.success(lang === 'ar' ? "تم الحذف" : "Deleted");
+          await logActivity('delete', `${lang === 'ar' ? 'حذف غير متعاقد' : 'Deleted non-contracted'} ${rec?.customerName || id}`);
         } catch (err: any) { toast.error(err?.message || "Unauthorized"); }
       }
     );
@@ -1109,6 +1890,14 @@ export default function App() {
     
     const totalAmount = pieces.reduce((sum, p) => sum + (Number(p.price || 0) * Number(p.quantity || 1)), 0);
     setInspectionFormData({ ...inspectionFormData, pieces, totalAmount });
+  };
+
+  const toggleRoomType = (roomKey: string) => {
+    const roomTypes = inspectionFormData.room_types || [];
+    const nextRoomTypes = roomTypes.includes(roomKey)
+      ? roomTypes.filter(key => key !== roomKey)
+      : [...roomTypes, roomKey];
+    setInspectionFormData({ ...inspectionFormData, room_types: nextRoomTypes });
   };
 
   const updatePiece = (index: number, field: string, value: any) => {
@@ -1156,6 +1945,42 @@ export default function App() {
     setEditingCollection(collection);
     setInspectionStep(1);
     setIsInspectionModalOpen(true);
+  };
+
+  const handlePortfolioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type !== 'application/pdf') {
+      toast.error(lang === 'ar' ? 'يجب اختيار ملف PDF' : 'Please select a PDF file');
+      return;
+    }
+    try {
+      const fileName = `${Date.now()}-${file.name}`;
+      const serviceKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+      const resp = await fetch(
+        `https://ullktwxxxrknyqrmmyfn.supabase.co/storage/v1/object/portfolios/${fileName}`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${serviceKey}`,
+            'x-upsert': 'false',
+            'content-type': file.type,
+          },
+          body: file,
+        }
+      );
+      if (!resp.ok) {
+        const errBody = await resp.text();
+        throw new Error(errBody);
+      }
+      const result = await resp.json();
+      const publicUrl = `https://ullktwxxxrknyqrmmyfn.supabase.co/storage/v1/object/public/portfolios/${fileName}`;
+      setInspectionFormData(prev => ({ ...prev, portfolio: publicUrl }));
+      toast.success(lang === 'ar' ? 'تم رفع البورتفوليو' : 'Portfolio uploaded');
+    } catch (err: any) {
+      console.error('Upload error:', err);
+      toast.error(lang === 'ar' ? `فشل رفع الملف: ${err.message}` : `Upload failed: ${err.message}`);
+    }
   };
 
   const handleSaveRecord = async (e: FormEvent) => {
@@ -1310,6 +2135,9 @@ export default function App() {
                     <nav className="flex flex-col gap-3 flex-1 overflow-y-auto custom-scrollbar">
                       {currentUser && isAuthorizedUser ? (
                         <>
+                          <div className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === 'dashboard' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('dashboard'); setSidebarOpen(false); }}>
+                            <LayoutDashboard className="w-4 h-4" /> {t.dashboard}
+                          </div>
                           <div className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === 'customers' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('customers'); setSidebarOpen(false); }}>
                             <UserIcon className="w-4 h-4" /> {t.customers}
                           </div>
@@ -1322,11 +2150,23 @@ export default function App() {
                           <div className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === 'not-contracted' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('not-contracted'); setSidebarOpen(false); }}>
                             <X className="w-4 h-4" /> {t.notContracted}
                           </div>
+                          <div className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === 'production' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('production'); setSidebarOpen(false); }}>
+                            <Wrench className="w-4 h-4" /> {t.production}
+                          </div>
+                          <div className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === 'payments' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('payments'); setSidebarOpen(false); }}>
+                            <CheckCircle2 className="w-4 h-4" /> {t.payments}
+                          </div>
+                          <div className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === 'activities' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('activities'); setSidebarOpen(false); }}>
+                            <Activity className="w-4 h-4" /> {t.activities}
+                          </div>
                           <div className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === 'catalogs' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('catalogs'); setSidebarOpen(false); }}>
                             <FileSpreadsheet className="w-4 h-4" /> {t.publishedSheets}
                           </div>
                           <div className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === 'phonebook' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('phonebook'); setSidebarOpen(false); }}>
                             <PhoneCall className="w-4 h-4" /> {t.phonebook}
+                          </div>
+                          <div className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === 'settings' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => { setAdminSubView('settings'); setSidebarOpen(false); }}>
+                            <Settings className="w-4 h-4" /> {t.settings}
                           </div>
                         </>
                       ) : null}
@@ -1349,6 +2189,9 @@ export default function App() {
               <nav className="flex flex-col gap-3 px-6 md:px-8 pb-6 md:pb-8 flex-1">
                 {currentUser && isAuthorizedUser ? (
                   <>
+                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'dashboard' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => setAdminSubView('dashboard')}>
+                      <LayoutDashboard className="w-4 h-4" /> {t.dashboard}
+                    </div>
                     <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'customers' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => setAdminSubView('customers')}>
                       <UserIcon className="w-4 h-4" /> {t.customers}
                     </div>
@@ -1361,11 +2204,23 @@ export default function App() {
                     <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'not-contracted' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => setAdminSubView('not-contracted')}>
                       <X className="w-4 h-4" /> {t.notContracted}
                     </div>
+                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'production' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => setAdminSubView('production')}>
+                      <Wrench className="w-4 h-4" /> {t.production}
+                    </div>
+                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'payments' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => setAdminSubView('payments')}>
+                      <CheckCircle2 className="w-4 h-4" /> {t.payments}
+                    </div>
+                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'activities' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => setAdminSubView('activities')}>
+                      <Activity className="w-4 h-4" /> {t.activities}
+                    </div>
                     <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'catalogs' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => setAdminSubView('catalogs')}>
                       <FileSpreadsheet className="w-4 h-4" /> {t.publishedSheets}
                     </div>
                     <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'phonebook' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => setAdminSubView('phonebook')}>
                       <PhoneCall className="w-4 h-4" /> {t.phonebook}
+                    </div>
+                    <div className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === 'settings' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500 hover:bg-white/30'}`} onClick={() => setAdminSubView('settings')}>
+                      <Settings className="w-4 h-4" /> {t.settings}
                     </div>
                   </>
                 ) : null}
@@ -1381,74 +2236,76 @@ export default function App() {
               <AnimatePresence mode="wait">
                 {currentUser && isAuthorizedUser ? (
                   <motion.div key={adminSubView} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-8">
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
-                      <div>
-                        <span className={`text-[10px] font-bold ${isAdminUser ? 'bg-zinc-800' : 'bg-accent-sage'} text-white px-2 py-1 rounded inline-block uppercase tracking-wider mb-1`}>
-                          {isAdminUser ? t.editor : t.viewOnly}
-                        </span>
-                        <h1 className="text-3xl md:text-4xl font-light">
-                          {adminSubView === 'customers' ? t.customers : 
-                           adminSubView === 'inspections' ? t.inspections :
-                           adminSubView === 'contracted' ? t.contracted :
-                           adminSubView === 'not-contracted' ? t.notContracted :
-                           adminSubView === 'phonebook' ? t.phonebook :
-                           t.publishedSheets}
-                        </h1>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-3">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {(adminSubView === 'customers' || adminSubView === 'contracted' || adminSubView === 'not-contracted') && currentUser?.email === ADMIN_EMAIL && (
-                            <button onClick={handleOpenAddModal} className="btn-3d btn-3d-glass px-5 py-3.5 rounded-2xl flex items-center gap-2 font-bold text-xs uppercase"><Plus className="w-4 h-4" /> {t.addCustomerBtn}</button>
-                          )}
-                          {adminSubView === 'contracted' && (
-                            <button onClick={() => handleExportExcel(contractedCustomers, `العملاء_المتعاقدين_${format(new Date(), 'yyyy-MM-dd')}`)} className="btn-3d btn-3d-glass px-5 py-3.5 rounded-2xl flex items-center gap-2 font-bold text-xs uppercase text-accent-tan">
-                              <Download className="w-4 h-4" /> {t.exportExcel}
-                            </button>
-                          )}
-                          {adminSubView !== 'catalogs' && (
-                            <button onClick={() => window.print()} className="btn-3d btn-3d-glass px-5 py-3.5 rounded-2xl flex items-center gap-2 font-bold text-xs uppercase">
-                              <Printer className="w-4 h-4" />
-                              {lang === 'ar' ? 'طباعة' : 'Print'}
-                            </button>
-                          )}
-                          {adminSubView === 'catalogs' && currentUser?.email === ADMIN_EMAIL && (
-                            <label className="btn-3d btn-3d-glass px-5 py-3.5 rounded-2xl flex items-center gap-2 font-bold text-xs uppercase cursor-pointer"><Upload className="w-4 h-4" /> {t.uploadNew} <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleImportExcel} /></label>
-                          )}
+                    {adminSubView !== 'production' && adminSubView !== 'payments' && adminSubView !== 'activities' && adminSubView !== 'settings' && adminSubView !== 'dashboard' && (
+                      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+                        <div>
+                          <span className={`text-[10px] font-bold ${isAdminUser ? 'bg-zinc-800' : 'bg-accent-sage'} text-white px-2 py-1 rounded inline-block uppercase tracking-wider mb-1`}>
+                            {isAdminUser ? t.editor : t.viewOnly}
+                          </span>
+                          <h1 className="text-3xl md:text-4xl font-light">
+                            {adminSubView === 'customers' ? t.customers : 
+                             adminSubView === 'inspections' ? t.inspections :
+                             adminSubView === 'contracted' ? t.contracted :
+                             adminSubView === 'not-contracted' ? t.notContracted :
+                             adminSubView === 'phonebook' ? t.phonebook :
+                             t.publishedSheets}
+                          </h1>
                         </div>
-
-                        {adminSubView !== 'phonebook' && (
-                        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                          <div className="relative group w-full sm:w-auto">
-                            <Search className="absolute top-1/2 -translate-y-1/2 right-3 w-3.5 h-3.5 text-zinc-400 group-focus-within:text-zinc-700 transition-colors pointer-events-none z-10" />
-                            <input
-                              type="text"
-                              placeholder={lang === 'ar' ? 'بحث...' : 'Search...'}
-                              value={searchQuery}
-                              onChange={e => setSearchQuery(e.target.value)}
-                              className="bg-white/70 backdrop-blur-md border border-white/80 shadow-sm pr-9 pl-8 py-3 rounded-2xl text-sm font-medium outline-none w-full sm:w-40 sm:focus:w-52 focus:shadow-md focus:border-zinc-300 transition-all duration-300 placeholder:text-zinc-400 text-zinc-800"
-                            />
-                            {searchQuery && (
-                              <button onClick={() => setSearchQuery('')} className="absolute top-1/2 -translate-y-1/2 left-2 w-4 h-4 flex items-center justify-center rounded-full bg-zinc-200 hover:bg-zinc-300 text-zinc-500 transition-all">
-                                <X className="w-2.5 h-2.5" />
+                        <div className="flex flex-wrap items-center gap-3">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {(adminSubView === 'customers' || adminSubView === 'contracted' || adminSubView === 'not-contracted') && currentUser?.email === ADMIN_EMAIL && (
+                              <button onClick={handleOpenAddModal} className="btn-3d btn-3d-glass px-5 py-3.5 rounded-2xl flex items-center gap-2 font-bold text-xs uppercase"><Plus className="w-4 h-4" /> {t.addCustomerBtn}</button>
+                            )}
+                            {adminSubView === 'contracted' && (
+                              <button onClick={() => handleExportExcel(contractedCustomers, `العملاء_المتعاقدين_${format(new Date(), 'yyyy-MM-dd')}`)} className="btn-3d btn-3d-glass px-5 py-3.5 rounded-2xl flex items-center gap-2 font-bold text-xs uppercase text-accent-tan">
+                                <Download className="w-4 h-4" /> {t.exportExcel}
                               </button>
                             )}
+                            {adminSubView !== 'catalogs' && (
+                              <button onClick={() => window.print()} className="btn-3d btn-3d-glass px-5 py-3.5 rounded-2xl flex items-center gap-2 font-bold text-xs uppercase">
+                                <Printer className="w-4 h-4" />
+                                {lang === 'ar' ? 'طباعة' : 'Print'}
+                              </button>
+                            )}
+                            {adminSubView === 'catalogs' && currentUser?.email === ADMIN_EMAIL && (
+                              <label className="btn-3d btn-3d-glass px-5 py-3.5 rounded-2xl flex items-center gap-2 font-bold text-xs uppercase cursor-pointer"><Upload className="w-4 h-4" /> {t.uploadNew} <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleImportExcel} /></label>
+                            )}
                           </div>
-                          {adminSubView !== 'inspections' && (
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <button onClick={() => setGovernorateFilter('all')} className={`filter-chip ${governorateFilter === 'all' ? 'filter-chip-active' : 'filter-chip-inactive'}`}>الكل</button>
-                              <button onClick={() => setGovernorateFilter('القاهرة')} className={`filter-chip ${governorateFilter === 'القاهرة' ? 'filter-chip-active' : 'filter-chip-inactive'}`}>القاهرة</button>
-                              <button onClick={() => setGovernorateFilter('الاسكندرية')} className={`filter-chip ${governorateFilter === 'الاسكندرية' ? 'filter-chip-active' : 'filter-chip-inactive'}`}>الاسكندرية</button>
-                            </div>
-                          )}
-                        </div>
-                        )}
 
-                        <div className="glass px-4 py-3 rounded-2xl min-w-[90px]">
-                          <div className="text-[10px] uppercase font-bold text-zinc-400">{adminSubView === 'customers' ? t.totalCustomers : adminSubView === 'inspections' ? t.inspections : adminSubView === 'contracted' ? t.contracted : adminSubView === 'not-contracted' ? t.notContracted : adminSubView === 'phonebook' ? (lang === 'ar' ? 'الأرقام' : 'Numbers') : t.publishedSheets}</div>
-                          <div className="text-2xl font-semibold">{adminSubView === 'customers' ? unifiedCustomers.filter(r => matchesFilters(r)).length : adminSubView === 'inspections' ? inspections.filter(r => matchesFilters(r)).length : adminSubView === 'contracted' ? contractedCustomers.filter(r => matchesFilters(r)).length : adminSubView === 'not-contracted' ? notContractedCustomers.filter(r => matchesFilters(r)).length : adminSubView === 'phonebook' ? new Set([...customerRecords, ...inspections, ...contractedCustomers, ...notContractedCustomers].map(r => r.phone).filter(Boolean)).size : catalogs.length}</div>
+                          {adminSubView !== 'phonebook' && (
+                          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                            <div className="relative group w-full sm:w-auto">
+                              <Search className="absolute top-1/2 -translate-y-1/2 right-3 w-3.5 h-3.5 text-zinc-400 group-focus-within:text-zinc-700 transition-colors pointer-events-none z-10" />
+                              <input
+                                type="text"
+                                placeholder={lang === 'ar' ? 'بحث...' : 'Search...'}
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                                className="bg-white/70 backdrop-blur-md border border-white/80 shadow-sm pr-9 pl-8 py-3 rounded-2xl text-sm font-medium outline-none w-full sm:w-40 sm:focus:w-52 focus:shadow-md focus:border-zinc-300 transition-all duration-300 placeholder:text-zinc-400 text-zinc-800"
+                              />
+                              {searchQuery && (
+                                <button onClick={() => setSearchQuery('')} className="absolute top-1/2 -translate-y-1/2 left-2 w-4 h-4 flex items-center justify-center rounded-full bg-zinc-200 hover:bg-zinc-300 text-zinc-500 transition-all">
+                                  <X className="w-2.5 h-2.5" />
+                                </button>
+                              )}
+                            </div>
+                            {adminSubView !== 'inspections' && (
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <button onClick={() => setGovernorateFilter('all')} className={`filter-chip ${governorateFilter === 'all' ? 'filter-chip-active' : 'filter-chip-inactive'}`}>الكل</button>
+                                <button onClick={() => setGovernorateFilter('القاهرة')} className={`filter-chip ${governorateFilter === 'القاهرة' ? 'filter-chip-active' : 'filter-chip-inactive'}`}>القاهرة</button>
+                                <button onClick={() => setGovernorateFilter('الاسكندرية')} className={`filter-chip ${governorateFilter === 'الاسكندرية' ? 'filter-chip-active' : 'filter-chip-inactive'}`}>الاسكندرية</button>
+                              </div>
+                            )}
+                          </div>
+                          )}
+
+                          <div className="glass px-4 py-3 rounded-2xl min-w-[90px]">
+                            <div className="text-[10px] uppercase font-bold text-zinc-400">{adminSubView === 'customers' ? t.totalCustomers : adminSubView === 'inspections' ? t.inspections : adminSubView === 'contracted' ? t.contracted : adminSubView === 'not-contracted' ? t.notContracted : adminSubView === 'phonebook' ? (lang === 'ar' ? 'الأرقام' : 'Numbers') : t.publishedSheets}</div>
+                            <div className="text-2xl font-semibold">{adminSubView === 'customers' ? unifiedCustomers.filter(r => matchesFilters(r)).length : adminSubView === 'inspections' ? inspections.filter(r => matchesFilters(r)).length : adminSubView === 'contracted' ? contractedCustomers.filter(r => matchesFilters(r)).length : adminSubView === 'not-contracted' ? notContractedCustomers.filter(r => matchesFilters(r)).length : adminSubView === 'phonebook' ? new Set([...customerRecords, ...inspections, ...contractedCustomers, ...notContractedCustomers].map(r => r.phone).filter(Boolean)).size : catalogs.length}</div>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
 
                     {adminSubView === 'phonebook' ? (
                       <div className="space-y-6">
@@ -1706,6 +2563,124 @@ export default function App() {
                         <p className="text-zinc-400 font-semibold">{lang === 'ar' ? 'لا توجد معاينات معلقة' : 'No pending inspections'}</p>
                       </div>}
                     </div>
+                    ) : adminSubView === 'dashboard' ? (
+                      <div className="space-y-6 md:space-y-8">
+                        {/* Header */}
+                        <div className="relative overflow-hidden glass rounded-[2rem] md:rounded-[3rem] p-6 md:p-8 lg:p-14 shadow-2xl border border-white/40 bg-gradient-to-br from-zinc-50 via-white to-accent-tan/5">
+                          <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_top_right,rgba(251,191,36,0.06),transparent_60%)]" />
+                          <div className="relative flex flex-col md:flex-row justify-between items-start md:items-end gap-4 md:gap-6">
+                            <div className="space-y-1 md:space-y-2">
+                              <div className="flex items-center gap-2 md:gap-3">
+                                <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-widest bg-accent-tan/10 text-accent-tan px-2 py-1 md:px-3 md:py-1.5 rounded-full">
+                                  {isAdminUser ? t.editor : t.viewOnly}
+                                </span>
+                                <span className="text-[9px] md:text-[11px] text-zinc-400 font-medium">{new Date().toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US')}</span>
+                              </div>
+                              <h1 className="text-4xl md:text-4xl lg:text-6xl font-bold text-zinc-900 tracking-tight">
+                                {lang === 'ar' ? 'الرئيسية' : 'Dashboard'}
+                              </h1>
+                              <p className="text-xs md:text-sm lg:text-base text-zinc-500">{lang === 'ar' ? 'نظرة عامة على جميع العمليات' : 'Overview of all operations'}</p>
+                            </div>
+                            <div className="flex gap-2 md:gap-3 w-full md:w-auto">
+                              <button onClick={() => setAdminSubView('inspections')} className="flex-1 md:flex-none bg-zinc-900 hover:bg-zinc-800 text-white px-8 py-4 md:px-6 lg:px-8 md:py-3 lg:py-4 rounded-2xl md:rounded-2xl text-[15px] md:text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-xl">
+                                <Calendar className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                                {lang === 'ar' ? 'معاينات' : 'Inspections'}
+                              </button>
+                              <button onClick={() => setAdminSubView('production')} className="flex-1 md:flex-none glass border border-white/40 px-4 py-3 md:px-6 lg:px-8 md:py-3 lg:py-4 rounded-2xl md:rounded-2xl text-[15px] md:text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-xl">
+                                <Wrench className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                                {lang === 'ar' ? 'الإنتاج' : 'Production'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Stats Grid */}
+                        <div className="grid gap-3 md:gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+                          {[
+                            { label: lang === 'ar' ? 'إجمالي العملاء' : 'Total Customers', value: unifiedCustomers.length, icon: 'Users', color: 'text-blue-600', bg: 'bg-blue-100', hover: 'rgba(37,99,235,0.06)', borderHover: 'hover:border-blue-200/50' },
+                            { label: lang === 'ar' ? 'المعاينات المعلقة' : 'Pending Inspections', value: inspections.filter(i => i.status === 'pending').length, icon: 'Calendar', color: 'text-amber-600', bg: 'bg-amber-100', hover: 'rgba(217,119,6,0.06)', borderHover: 'hover:border-amber-200/50' },
+                            { label: lang === 'ar' ? 'العملاء المتعاقدين' : 'Contracted', value: contractedCustomers.length, icon: 'CheckCircle2', color: 'text-emerald-600', bg: 'bg-emerald-100', hover: 'rgba(5,150,105,0.06)', borderHover: 'hover:border-emerald-200/50' },
+                            { label: lang === 'ar' ? 'غير متعاقدين' : 'Non-Contracted', value: notContractedCustomers.length, icon: 'X', color: 'text-rose-600', bg: 'bg-rose-100', hover: 'rgba(225,29,72,0.06)', borderHover: 'hover:border-rose-200/50' },
+                            { label: lang === 'ar' ? 'أرقام الدليل' : 'Phonebook Numbers', value: new Set([...customerRecords, ...inspections, ...contractedCustomers, ...notContractedCustomers].map(r => r.phone).filter(Boolean)).size, icon: 'PhoneCall', color: 'text-violet-600', bg: 'bg-violet-100', hover: 'rgba(124,58,237,0.06)', borderHover: 'hover:border-violet-200/50' },
+                            { label: lang === 'ar' ? 'الملفات المنشورة' : 'Published Sheets', value: catalogs.length, icon: 'FileSpreadsheet', color: 'text-teal-600', bg: 'bg-teal-100', hover: 'rgba(13,148,136,0.06)', borderHover: 'hover:border-teal-200/50' }
+                          ].map(card => (
+                            <div key={card.label} className={`group relative glass rounded-[2rem] p-5 md:p-6 lg:p-10 shadow-md md:shadow-lg lg:shadow-xl border border-white/40 ${card.borderHover} hover:shadow-lg md:hover:shadow-xl lg:hover:shadow-2xl hover:-translate-y-0.5 md:hover:-translate-y-1 transition-all duration-300 overflow-hidden`}>
+                              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-[2rem]" style={{ background: `linear-gradient(135deg, transparent, ${card.hover})` }} />
+                              <div className="relative flex items-center gap-5 md:gap-5 lg:gap-8">
+                                <div className={`w-14 h-14 md:w-16 md:h-16 lg:w-20 lg:h-20 rounded-2xl md:rounded-2xl lg:rounded-3xl ${card.bg} ${card.color} flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-300`}>
+                                  {card.icon === 'Users' && <Users className="w-6 h-6 md:w-7 md:h-7 lg:w-9 lg:h-9" />}
+                                  {card.icon === 'Calendar' && <Calendar className="w-6 h-6 md:w-7 md:h-7 lg:w-9 lg:h-9" />}
+                                  {card.icon === 'CheckCircle2' && <CheckCircle2 className="w-6 h-6 md:w-7 md:h-7 lg:w-9 lg:h-9" />}
+                                  {card.icon === 'X' && <X className="w-6 h-6 md:w-7 md:h-7 lg:w-9 lg:h-9" />}
+                                  {card.icon === 'PhoneCall' && <PhoneCall className="w-6 h-6 md:w-7 md:h-7 lg:w-9 lg:h-9" />}
+                                  {card.icon === 'FileSpreadsheet' && <FileSpreadsheet className="w-6 h-6 md:w-7 md:h-7 lg:w-9 lg:h-9" />}
+                                </div>
+                                <div>
+                                  <div className="relative text-3xl md:text-4xl lg:text-5xl font-bold text-zinc-900 mb-0.5 md:mb-1">{card.value}</div>
+                                  <div className="relative text-sm md:text-base lg:text-lg text-zinc-500">{card.label}</div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Welcome */}
+                        <div className="relative overflow-hidden glass rounded-[2rem] md:rounded-[3rem] p-6 md:p-8 shadow-2xl border border-white/40 bg-gradient-to-br from-accent-tan/5 via-white to-accent-sage/5">
+                          <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_top_left,rgba(251,191,36,0.04),transparent_50%)]" />
+                          <div className="relative flex flex-col md:flex-row items-center justify-between gap-4 md:gap-6">
+                            <div className="space-y-1 text-center md:text-right">
+                              <h2 className="text-2xl md:text-2xl lg:text-3xl font-bold text-zinc-900">{lang === 'ar' ? 'لوحة تحكم العماري' : 'EL3mmary Dashboard'}</h2>
+                              <p className="text-xs md:text-sm lg:text-base text-zinc-500">{lang === 'ar' ? 'يمكنك متابعة العملاء والإنتاج والمدفوعات من هنا' : 'Track customers, production, and payments from here'}</p>
+                            </div>
+                            <div className="flex gap-2 md:gap-3 w-full md:w-auto">
+                              <button onClick={() => setAdminSubView('inspections')} className="flex-1 md:flex-none bg-zinc-900 hover:bg-zinc-800 text-white px-4 py-2.5 md:px-6 lg:px-8 md:py-3 lg:py-3.5 rounded-xl md:rounded-2xl text-[15px] md:text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-lg">
+                                {lang === 'ar' ? 'المعاينات' : 'Inspections'}
+                              </button>
+                              <button onClick={() => setAdminSubView('production')} className="flex-1 md:flex-none glass border border-white/40 px-4 py-2.5 md:px-6 lg:px-8 md:py-3 lg:py-3.5 rounded-xl md:rounded-2xl text-[15px] md:text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-lg hover:shadow-xl">
+                                <Wrench className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                                {lang === 'ar' ? 'الإنتاج' : 'Production'}
+                              </button>
+                              <button onClick={() => setAdminSubView('settings')} className="flex-1 md:flex-none glass border border-white/40 px-4 py-2.5 md:px-6 lg:px-8 md:py-3 lg:py-3.5 rounded-xl md:rounded-2xl text-[15px] md:text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-lg hover:shadow-xl">
+                                <Settings className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                                {lang === 'ar' ? 'الإعدادات' : 'Settings'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : adminSubView === 'production' ? (
+                      <ProductionPage 
+                        contractedCustomers={contractedCustomers} 
+                        inspections={inspections}
+                        lang={lang}
+                        isAdmin={isAdminUser}
+                        t={t}
+                        stages={stages}
+                        onStageUpdate={handleStageUpdate}
+                      />
+                    ) : adminSubView === 'payments' ? (
+                      <PaymentsPage 
+                        contractedCustomers={contractedCustomers} 
+                        lang={lang}
+                        isAdmin={isAdminUser}
+                        t={t}
+                      />
+                    ) : adminSubView === 'activities' ? (
+                      <ActivitiesPage 
+                        lang={lang}
+                        t={t}
+                        settings={settings}
+                        isAdmin={isAdminUser}
+                      />
+                    ) : adminSubView === 'settings' ? (
+                      <SettingsPage 
+                        lang={lang}
+                        setLang={setLang}
+                        isAdmin={isAdminUser}
+                        t={t}
+                        settings={settings}
+                        currentUserEmail={currentUser?.email}
+                      />
                     ) : adminSubView === 'customers' ? (
                     <div className="space-y-8">
                       <div className="hidden md:block glass glass-table rounded-[2.5rem] overflow-hidden p-6 md:p-10 shadow-xl border border-white/40">
@@ -1984,6 +2959,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
+
       <AnimatePresence>
         {isInspectionModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
@@ -2026,7 +3002,19 @@ export default function App() {
                            <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.contractDate}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.contractDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, contractDate: e.target.value })} /></div>
                          </div>
                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                           <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.portfolio}</label><input className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" placeholder="https://drive.google.com/..." value={inspectionFormData.portfolio || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, portfolio: e.target.value })} /></div>
+                            <div className="space-y-1">
+                              <label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.portfolio}</label>
+                              {inspectionFormData.portfolio ? (
+                                <div className="flex items-center gap-2">
+                                  <span className="flex-1 truncate text-sm px-5 py-4 bg-black/5 border border-black/5 rounded-2xl">{inspectionFormData.portfolio.split('/').pop() || inspectionFormData.portfolio}</span>
+                                  <button type="button" onClick={() => setInspectionFormData({ ...inspectionFormData, portfolio: '' })} className="p-4 rounded-2xl bg-red-50 text-red-500 hover:bg-red-100 text-xs font-bold">✕</button>
+                                </div>
+                              ) : (
+                                <div className="relative">
+                                  <input type="file" accept=".pdf" onChange={handlePortfolioUpload} className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl file:mr-4 file:py-2 file:px-4 file:rounded-2xl file:border-0 file:bg-zinc-900 file:text-white file:text-xs file:font-bold cursor-pointer" />
+                                </div>
+                              )}
+                            </div>
                            <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.portfolioDate}</label><input type="date" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.portfolioDate || ''} onChange={e => setInspectionFormData({ ...inspectionFormData, portfolioDate: e.target.value })} /></div>
                          </div>
                        </div>
@@ -2039,15 +3027,84 @@ export default function App() {
                 {inspectionStep === 2 && (
                   <div className="space-y-6">
                     <div className="space-y-1"><label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.rooms}</label><input required type="number" className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl" value={inspectionFormData.rooms} onChange={e => setInspectionFormData({ ...inspectionFormData, rooms: parseInt(e.target.value) })} /></div>
-                    
+
                     <div className="space-y-4">
-                      <label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.pieces}</label>
-                      <div className="flex flex-wrap gap-2">
-                        {FURNITURE_OPTIONS.map(opt => (
-                          <button key={opt} type="button" onClick={() => addPiece(opt)} className="px-4 py-2 bg-zinc-100 hover:bg-zinc-200 rounded-xl text-xs font-bold transition-all btn-3d btn-3d-glass">{opt}</button>
-                        ))}
+                      <div className="rounded-3xl border border-black/10 bg-[#faf7f1] p-4">
+                        <div className="text-sm font-semibold mb-3">{lang === 'ar' ? 'فئات الغرف' : 'Room categories'}</div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          {ROOM_TYPES.map(room => {
+                            const selected = inspectionFormData.room_types?.includes(room.key);
+                            return (
+                              <button key={room.key} type="button" onClick={() => toggleRoomType(room.key)} className={`px-3 py-2 rounded-3xl text-sm font-bold transition-all ${selected ? 'bg-zinc-900 text-white' : 'bg-white border border-black/10 text-zinc-700 hover:bg-zinc-100'}`}>
+                                {room.ar}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {inspectionFormData.room_types?.length ? (
+                          <div className="text-xs text-zinc-500 mt-3">{lang === 'ar' ? 'الغرف المحددة:' : 'Selected rooms:'} {inspectionFormData.room_types.map(key => ROOM_TYPES.find(room => room.key === key)?.ar || key).join(', ')}</div>
+                        ) : (
+                          <div className="text-xs text-zinc-500 mt-3">{lang === 'ar' ? 'اختر الفئات التي ستشملها المعاينة.' : 'Pick the room categories to include in this visit.'}</div>
+                        )}
                       </div>
-                      
+
+                      {inspectionFormData.room_types?.length ? (
+                        <div className="rounded-3xl border border-black/10 bg-white p-4">
+                          <div className="text-sm font-semibold mb-3">{lang === 'ar' ? 'القائمة الافتراضية لكل غرفة' : 'Default checklist per room'}</div>
+                          <div className="space-y-4">
+                            {inspectionFormData.room_types.map(roomKey => {
+                              const room = ROOM_TYPES.find(r => r.key === roomKey);
+                              if (!room) return null;
+                              return (
+                                <div key={roomKey} className="rounded-3xl border border-black/10 p-4 bg-[#faf7f1]">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <div>
+                                      <div className="text-base font-semibold">{room.ar}</div>
+                                      <div className="text-[11px] text-zinc-500">{room.en}</div>
+                                    </div>
+                                  </div>
+                                  <div className="flex flex-wrap gap-2">
+                                    {room.defaults.map(itemName => (
+                                      <button key={itemName} type="button" onClick={() => addPiece(itemName)} className="rounded-full border border-black/10 bg-white px-3 py-2 text-xs font-bold text-zinc-700 hover:bg-zinc-100 transition-all">{itemName}</button>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <div className="rounded-3xl border border-black/10 bg-white p-4">
+                        <div className="text-sm font-semibold mb-3">{lang === 'ar' ? 'عنصر مخصص' : 'Custom item'}</div>
+                        <div className="grid gap-3 sm:grid-cols-[1fr_90px]">
+                          <input value={customPieceName} onChange={e => setCustomPieceName(e.target.value)} placeholder={lang === 'ar' ? 'اسم العنصر' : 'Item name'} className="rounded-3xl border border-black/10 px-4 py-3" />
+                          <input type="number" min={1} value={customPieceQty} onChange={e => setCustomPieceQty(Number(e.target.value))} placeholder={lang === 'ar' ? 'الكمية' : 'Qty'} className="rounded-3xl border border-black/10 px-4 py-3" />
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-[1fr_120px] mt-3">
+                          <input type="number" min={0} value={customPiecePrice} onChange={e => setCustomPiecePrice(e.target.value)} placeholder={lang === 'ar' ? 'السعر' : 'Price'} className="rounded-3xl border border-black/10 px-4 py-3" />
+                          <button type="button" onClick={() => {
+                            if (!customPieceName.trim()) return;
+                            const name = customPieceName.trim();
+                            const qty = Math.max(1, customPieceQty);
+                            const price = Number(customPiecePrice) || 0;
+                            const pieces = [...(inspectionFormData.pieces || [])];
+                            const existingIndex = pieces.findIndex(p => p.name === name);
+                            if (existingIndex >= 0) {
+                              pieces[existingIndex].quantity = (pieces[existingIndex].quantity || 1) + qty;
+                              pieces[existingIndex].price = price;
+                            } else {
+                              pieces.push({ name, quantity: qty, price, details: '' });
+                            }
+                            const totalAmount = pieces.reduce((sum, p) => sum + (Number(p.price || 0) * Number(p.quantity || 1)), 0);
+                            setInspectionFormData({ ...inspectionFormData, pieces, totalAmount });
+                            setCustomPieceName('');
+                            setCustomPieceQty(1);
+                            setCustomPiecePrice('');
+                          }} className="rounded-3xl bg-zinc-900 text-white px-4 py-3 text-sm font-bold hover:bg-zinc-800 transition-all">{lang === 'ar' ? 'أضف' : 'Add'}</button>
+                        </div>
+                      </div>
+
                       <div className="space-y-3">
                         {inspectionFormData.pieces?.map((p, idx) => (
                           <div key={idx} className="flex flex-col gap-2 bg-black/5 p-4 rounded-2xl border border-black/5">
@@ -2249,6 +3306,87 @@ export default function App() {
                 )}
 
                 {/* Section: Items */}
+                {/* Section: Quote Builder */}
+                <div className="rounded-[2rem] bg-white p-6 shadow-sm border border-black/10 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xl font-semibold">{lang === 'ar' ? 'منشئ العرض' : 'Quote builder'}</h3>
+                    <button onClick={handleSaveQuote} className="rounded-full bg-[#18181b] text-white px-4 py-2 text-sm">{lang === 'ar' ? 'حفظ العرض' : 'Save quote'}</button>
+                  </div>
+                  <div className="space-y-5">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-3xl border border-black/10 p-4 bg-[#faf7f1]">
+                        <div className="text-sm font-semibold mb-2">{lang === 'ar' ? 'إضافة غرفة' : 'Add room'}</div>
+                        <div className="grid gap-2">
+                          {ROOM_TYPES.map(room => (
+                            <button key={room.key} onClick={() => addRoom(room.key)} className="rounded-3xl border border-black/10 bg-white px-3 py-2 text-sm hover:bg-[#f5f0e8]">{room.ar}</button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="rounded-3xl border border-black/10 p-4 bg-[#faf7f1]">
+                        <div className="text-sm font-semibold mb-2">{lang === 'ar' ? 'الإجمالي الكلي' : 'Grand total'}</div>
+                        <div className="text-3xl font-bold">{quoteTotal().toLocaleString()}</div>
+                      </div>
+                    </div>
+                    <div className="space-y-5">
+                      {quoteDrafts.map((room, roomIndex) => (
+                        <div key={`${room.room_type}-${roomIndex}`} className="rounded-[2rem] border border-black/10 p-4 bg-[#fffef9]">
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                            <div>
+                              <div className="text-lg font-semibold">{ROOM_TYPES.find(r => r.key === room.room_type)?.ar || room.room_type}</div>
+                              <div className="text-sm text-zinc-500">{lang === 'ar' ? 'قشرة أرو لكل الغرفة' : 'Aro veneer for room'}</div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <label className="inline-flex items-center gap-2 rounded-full border border-black/10 px-3 py-2 bg-white">
+                                <input type="checkbox" checked={room.aro_veneer} onChange={e => setRoomField(roomIndex, 'aro_veneer', e.target.checked)} className="accent-[#d4a373]" />
+                                <span className="text-sm">{lang === 'ar' ? 'قشرة أرو' : 'Aro veneer'}</span>
+                              </label>
+                              <button onClick={() => removeRoom(roomIndex)} className="rounded-full bg-red-500 text-white px-3 py-2 text-sm">{lang === 'ar' ? 'حذف الغرفة' : 'Remove'}</button>
+                            </div>
+                          </div>
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            {ROOM_TYPES.find(r => r.key === room.room_type)?.defaults.slice(0, 4).map(itemName => (
+                              <button key={itemName} onClick={() => addDefaultItem(roomIndex, itemName)} className="rounded-3xl border border-black/10 bg-white px-3 py-2 text-sm hover:bg-[#f5f0e8]">{itemName}</button>
+                            ))}
+                          </div>
+                          <div className="mt-4">
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="font-semibold">{lang === 'ar' ? 'عناصر الغرفة' : 'Room items'}</div>
+                              <button onClick={() => addCustomItem(roomIndex)} className="rounded-full bg-[#d4a373] text-white px-4 py-2 text-sm">{lang === 'ar' ? 'عنصر مخصص' : 'Custom item'}</button>
+                            </div>
+                            <div className="space-y-4">
+                              {room.items.map((item, itemIndex) => (
+                                <div key={`${roomIndex}-${itemIndex}`} className="rounded-3xl bg-white p-4 border border-black/10">
+                                  <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
+                                    <input value={item.item_name} onChange={e => setRoomItemField(roomIndex, itemIndex, 'item_name', e.target.value)} placeholder={lang === 'ar' ? 'اسم العنصر' : 'Item name'} className="rounded-3xl border border-black/10 px-4 py-3 w-full" />
+                                    <button onClick={() => removeRoomItem(roomIndex, itemIndex)} className="rounded-full bg-red-500 text-white px-4 py-3 text-sm">{lang === 'ar' ? 'حذف' : 'Remove'}</button>
+                                  </div>
+                                  <div className="grid gap-3 sm:grid-cols-2 mt-3">
+                                    <input type="number" min={1} value={item.quantity} onChange={e => setRoomItemField(roomIndex, itemIndex, 'quantity', Number(e.target.value))} className="rounded-3xl border border-black/10 px-4 py-3" placeholder={lang === 'ar' ? 'الكمية' : 'Quantity'} />
+                                    <input value={item.dimensions} onChange={e => setRoomItemField(roomIndex, itemIndex, 'dimensions', e.target.value)} className="rounded-3xl border border-black/10 px-4 py-3" placeholder={lang === 'ar' ? 'الأبعاد' : 'Dimensions'} />
+                                  </div>
+                                  <div className="grid gap-3 sm:grid-cols-2 mt-3">
+                                    <input type="number" min={0} value={item.price} onChange={e => setRoomItemField(roomIndex, itemIndex, 'price', Number(e.target.value))} className="rounded-3xl border border-black/10 px-4 py-3" placeholder={lang === 'ar' ? 'السعر' : 'Price'} />
+                                    <input value={item.notes} onChange={e => setRoomItemField(roomIndex, itemIndex, 'notes', e.target.value)} className="rounded-3xl border border-black/10 px-4 py-3" placeholder={lang === 'ar' ? 'ملاحظات' : 'Notes'} />
+                                  </div>
+                                  <div className="flex items-center gap-3 mt-3 flex-wrap">
+                                    <label className="inline-flex items-center gap-2 rounded-full border border-black/10 px-3 py-2 bg-[#fbfbfb]">
+                                      <input type="checkbox" checked={item.aro_veneer_addon} onChange={e => setRoomItemField(roomIndex, itemIndex, 'aro_veneer_addon', e.target.checked)} className="accent-[#d4a373]" />
+                                      <span className="text-sm">{lang === 'ar' ? 'قشرة أرو' : 'Aro veneer'}</span>
+                                    </label>
+                                    {item.aro_veneer_addon && (
+                                      <input type="number" min={0} value={item.aro_surcharge} onChange={e => setRoomItemField(roomIndex, itemIndex, 'aro_surcharge', Number(e.target.value))} className="rounded-3xl border border-black/10 px-4 py-3 w-full max-w-[180px]" placeholder={lang === 'ar' ? 'سعر الإضافة' : 'Surcharge'} />
+                                    )}
+                                  </div>
+                                  <div className="mt-3 text-right text-sm font-semibold">{lang === 'ar' ? 'المجموع:' : 'Subtotal:'} {quoteRoomSubtotal(room).toLocaleString()} جنيه</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
                 {selectedRecord.pieces && selectedRecord.pieces.length > 0 && (
                   <div className="space-y-4">
                     <label className="text-[10px] font-bold uppercase text-zinc-400 px-1">{t.pieces}</label>

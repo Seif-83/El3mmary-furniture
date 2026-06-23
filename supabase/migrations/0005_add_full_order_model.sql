@@ -1,7 +1,4 @@
-create type if not exists public.visit_status as enum ('pending', 'scheduled', 'completed');
-create type if not exists public.contract_status as enum ('not_contracted', 'contracted');
-create type if not exists public.production_stage_name as enum ('received', 'carpentry', 'finishing', 'painting', 'upholstery', 'delivery');
-create type if not exists public.production_status as enum ('not_started', 'in_progress', 'done');
+-- Migration 0005: Add furniture order management schema
 
 create table if not exists public.user_profiles (
   id uuid primary key default gen_random_uuid(),
@@ -32,11 +29,11 @@ create table if not exists public.visits (
   client_id uuid references public.clients(id) on delete cascade,
   requested_at timestamptz not null default now(),
   scheduled_at timestamptz,
-  status public.visit_status not null default 'pending',
+  status text not null default 'pending',
   room_types text[] not null default array[]::text[],
   notes text,
   total_amount numeric not null default 0,
-  contract_status public.contract_status not null default 'not_contracted',
+  contract_status text not null default 'not_contracted',
   portfolio_appointment_date timestamptz,
   pickup_date timestamptz,
   pickup_confirmed boolean not null default false,
@@ -103,8 +100,8 @@ create table if not exists public.production_stages (
   id uuid primary key default gen_random_uuid(),
   client_id uuid references public.clients(id) on delete cascade,
   visit_id uuid references public.visits(id) on delete cascade,
-  stage public.production_stage_name not null,
-  status public.production_status not null default 'not_started',
+  stage text not null,
+  status text not null default 'not_started',
   completed_at timestamptz,
   created_at timestamptz not null default now()
 );
