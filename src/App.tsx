@@ -2566,27 +2566,27 @@ export default function App() {
                     ) : adminSubView === 'dashboard' ? (
                       <div className="space-y-6 md:space-y-8">
                         {/* Header */}
-                        <div className="relative overflow-hidden glass rounded-[2rem] md:rounded-[3rem] p-6 md:p-8 lg:p-14 shadow-2xl border border-white/40 bg-gradient-to-br from-zinc-50 via-white to-accent-tan/5">
+                        <div className="relative overflow-hidden glass rounded-xl md:rounded-[3rem] p-4 md:p-8 lg:p-14 shadow-2xl border border-white/40 bg-gradient-to-br from-zinc-50 via-white to-accent-tan/5">
                           <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_top_right,rgba(251,191,36,0.06),transparent_60%)]" />
-                          <div className="relative flex flex-col md:flex-row justify-between items-start md:items-end gap-4 md:gap-6">
+                          <div className="relative flex flex-col md:flex-row justify-between items-start md:items-end gap-3 md:gap-6">
                             <div className="space-y-1 md:space-y-2">
                               <div className="flex items-center gap-2 md:gap-3">
-                                <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-widest bg-accent-tan/10 text-accent-tan px-2 py-1 md:px-3 md:py-1.5 rounded-full">
+                                <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-widest bg-accent-tan/10 text-accent-tan px-2 py-0.5 md:px-3 md:py-1.5 rounded-full">
                                   {isAdminUser ? t.editor : t.viewOnly}
                                 </span>
                                 <span className="text-[9px] md:text-[11px] text-zinc-400 font-medium">{new Date().toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US')}</span>
                               </div>
-                              <h1 className="text-4xl md:text-4xl lg:text-6xl font-bold text-zinc-900 tracking-tight">
+                              <h1 className="text-2xl md:text-4xl lg:text-6xl font-bold text-zinc-900 tracking-tight">
                                 {lang === 'ar' ? 'الرئيسية' : 'Dashboard'}
                               </h1>
-                              <p className="text-xs md:text-sm lg:text-base text-zinc-500">{lang === 'ar' ? 'نظرة عامة على جميع العمليات' : 'Overview of all operations'}</p>
+                              <p className="text-[11px] md:text-sm lg:text-base text-zinc-500">{lang === 'ar' ? 'نظرة عامة على جميع العمليات' : 'Overview of all operations'}</p>
                             </div>
                             <div className="flex gap-2 md:gap-3 w-full md:w-auto">
-                              <button onClick={() => setAdminSubView('inspections')} className="flex-1 md:flex-none bg-zinc-900 hover:bg-zinc-800 text-white px-8 py-4 md:px-6 lg:px-8 md:py-3 lg:py-4 rounded-2xl md:rounded-2xl text-[15px] md:text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-xl">
+                              <button onClick={() => setAdminSubView('inspections')} className="flex-1 md:flex-none bg-zinc-900 hover:bg-zinc-800 text-white px-3 py-2.5 md:px-6 lg:px-8 md:py-3 lg:py-4 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-xl">
                                 <Calendar className="w-3.5 h-3.5 md:w-4 md:h-4" />
                                 {lang === 'ar' ? 'معاينات' : 'Inspections'}
                               </button>
-                              <button onClick={() => setAdminSubView('production')} className="flex-1 md:flex-none glass border border-white/40 px-4 py-3 md:px-6 lg:px-8 md:py-3 lg:py-4 rounded-2xl md:rounded-2xl text-[15px] md:text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-xl">
+                              <button onClick={() => setAdminSubView('production')} className="flex-1 md:flex-none glass border border-white/40 px-3 py-2.5 md:px-6 lg:px-8 md:py-3 lg:py-4 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-xl">
                                 <Wrench className="w-3.5 h-3.5 md:w-4 md:h-4" />
                                 {lang === 'ar' ? 'الإنتاج' : 'Production'}
                               </button>
@@ -2604,20 +2604,20 @@ export default function App() {
                             { label: lang === 'ar' ? 'أرقام الدليل' : 'Phonebook Numbers', value: new Set([...customerRecords, ...inspections, ...contractedCustomers, ...notContractedCustomers].map(r => r.phone).filter(Boolean)).size, icon: 'PhoneCall', color: 'text-violet-600', bg: 'bg-violet-100', hover: 'rgba(124,58,237,0.06)', borderHover: 'hover:border-violet-200/50' },
                             { label: lang === 'ar' ? 'الملفات المنشورة' : 'Published Sheets', value: catalogs.length, icon: 'FileSpreadsheet', color: 'text-teal-600', bg: 'bg-teal-100', hover: 'rgba(13,148,136,0.06)', borderHover: 'hover:border-teal-200/50' }
                           ].map(card => (
-                            <div key={card.label} className={`group relative glass rounded-[2rem] p-5 md:p-6 lg:p-10 shadow-md md:shadow-lg lg:shadow-xl border border-white/40 ${card.borderHover} hover:shadow-lg md:hover:shadow-xl lg:hover:shadow-2xl hover:-translate-y-0.5 md:hover:-translate-y-1 transition-all duration-300 overflow-hidden`}>
-                              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-[2rem]" style={{ background: `linear-gradient(135deg, transparent, ${card.hover})` }} />
-                              <div className="relative flex items-center gap-5 md:gap-5 lg:gap-8">
-                                <div className={`w-14 h-14 md:w-16 md:h-16 lg:w-20 lg:h-20 rounded-2xl md:rounded-2xl lg:rounded-3xl ${card.bg} ${card.color} flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-300`}>
-                                  {card.icon === 'Users' && <Users className="w-6 h-6 md:w-7 md:h-7 lg:w-9 lg:h-9" />}
-                                  {card.icon === 'Calendar' && <Calendar className="w-6 h-6 md:w-7 md:h-7 lg:w-9 lg:h-9" />}
-                                  {card.icon === 'CheckCircle2' && <CheckCircle2 className="w-6 h-6 md:w-7 md:h-7 lg:w-9 lg:h-9" />}
-                                  {card.icon === 'X' && <X className="w-6 h-6 md:w-7 md:h-7 lg:w-9 lg:h-9" />}
-                                  {card.icon === 'PhoneCall' && <PhoneCall className="w-6 h-6 md:w-7 md:h-7 lg:w-9 lg:h-9" />}
-                                  {card.icon === 'FileSpreadsheet' && <FileSpreadsheet className="w-6 h-6 md:w-7 md:h-7 lg:w-9 lg:h-9" />}
+                            <div key={card.label} className={`group relative glass rounded-xl md:rounded-2xl lg:rounded-[2rem] p-4 md:p-6 lg:p-10 shadow-md md:shadow-lg lg:shadow-xl border border-white/40 ${card.borderHover} hover:shadow-lg md:hover:shadow-xl lg:hover:shadow-2xl hover:-translate-y-0.5 md:hover:-translate-y-1 transition-all duration-300 overflow-hidden`}>
+                              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl md:rounded-2xl lg:rounded-[2rem]" style={{ background: `linear-gradient(135deg, transparent, ${card.hover})` }} />
+                              <div className="relative flex items-center gap-4 md:gap-5 lg:gap-8">
+                                <div className={`w-12 h-12 md:w-16 md:h-16 lg:w-20 lg:h-20 rounded-xl md:rounded-2xl lg:rounded-3xl ${card.bg} ${card.color} flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-300`}>
+                                  {card.icon === 'Users' && <Users className="w-5 h-5 md:w-7 md:h-7 lg:w-9 lg:h-9" />}
+                                  {card.icon === 'Calendar' && <Calendar className="w-5 h-5 md:w-7 md:h-7 lg:w-9 lg:h-9" />}
+                                  {card.icon === 'CheckCircle2' && <CheckCircle2 className="w-5 h-5 md:w-7 md:h-7 lg:w-9 lg:h-9" />}
+                                  {card.icon === 'X' && <X className="w-5 h-5 md:w-7 md:h-7 lg:w-9 lg:h-9" />}
+                                  {card.icon === 'PhoneCall' && <PhoneCall className="w-5 h-5 md:w-7 md:h-7 lg:w-9 lg:h-9" />}
+                                  {card.icon === 'FileSpreadsheet' && <FileSpreadsheet className="w-5 h-5 md:w-7 md:h-7 lg:w-9 lg:h-9" />}
                                 </div>
                                 <div>
-                                  <div className="relative text-3xl md:text-4xl lg:text-5xl font-bold text-zinc-900 mb-0.5 md:mb-1">{card.value}</div>
-                                  <div className="relative text-sm md:text-base lg:text-lg text-zinc-500">{card.label}</div>
+                                  <div className="relative text-2xl md:text-4xl lg:text-5xl font-bold text-zinc-900 mb-0.5 md:mb-1">{card.value}</div>
+                                  <div className="relative text-[11px] md:text-base lg:text-lg text-zinc-500">{card.label}</div>
                                 </div>
                               </div>
                             </div>
@@ -2625,22 +2625,22 @@ export default function App() {
                         </div>
 
                         {/* Welcome */}
-                        <div className="relative overflow-hidden glass rounded-[2rem] md:rounded-[3rem] p-6 md:p-8 shadow-2xl border border-white/40 bg-gradient-to-br from-accent-tan/5 via-white to-accent-sage/5">
+                        <div className="relative overflow-hidden glass rounded-xl md:rounded-[3rem] p-4 md:p-8 shadow-2xl border border-white/40 bg-gradient-to-br from-accent-tan/5 via-white to-accent-sage/5">
                           <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_top_left,rgba(251,191,36,0.04),transparent_50%)]" />
-                          <div className="relative flex flex-col md:flex-row items-center justify-between gap-4 md:gap-6">
-                            <div className="space-y-1 text-center md:text-right">
-                              <h2 className="text-2xl md:text-2xl lg:text-3xl font-bold text-zinc-900">{lang === 'ar' ? 'لوحة تحكم العماري' : 'EL3mmary Dashboard'}</h2>
-                              <p className="text-xs md:text-sm lg:text-base text-zinc-500">{lang === 'ar' ? 'يمكنك متابعة العملاء والإنتاج والمدفوعات من هنا' : 'Track customers, production, and payments from here'}</p>
+                          <div className="relative flex flex-col md:flex-row items-center justify-between gap-3 md:gap-6">
+                            <div className="space-y-0.5 md:space-y-1 text-center md:text-right">
+                              <h2 className="text-base md:text-2xl lg:text-3xl font-bold text-zinc-900">{lang === 'ar' ? 'لوحة تحكم العماري' : 'EL3mmary Dashboard'}</h2>
+                              <p className="text-[11px] md:text-sm lg:text-base text-zinc-500">{lang === 'ar' ? 'يمكنك متابعة العملاء والإنتاج والمدفوعات من هنا' : 'Track customers, production, and payments from here'}</p>
                             </div>
                             <div className="flex gap-2 md:gap-3 w-full md:w-auto">
-                              <button onClick={() => setAdminSubView('inspections')} className="flex-1 md:flex-none bg-zinc-900 hover:bg-zinc-800 text-white px-4 py-2.5 md:px-6 lg:px-8 md:py-3 lg:py-3.5 rounded-xl md:rounded-2xl text-[15px] md:text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-lg">
+                              <button onClick={() => setAdminSubView('inspections')} className="flex-1 md:flex-none bg-zinc-900 hover:bg-zinc-800 text-white px-3 py-2 md:px-6 lg:px-8 md:py-3 lg:py-3.5 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-lg">
                                 {lang === 'ar' ? 'المعاينات' : 'Inspections'}
                               </button>
-                              <button onClick={() => setAdminSubView('production')} className="flex-1 md:flex-none glass border border-white/40 px-4 py-2.5 md:px-6 lg:px-8 md:py-3 lg:py-3.5 rounded-xl md:rounded-2xl text-[15px] md:text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-lg hover:shadow-xl">
+                              <button onClick={() => setAdminSubView('production')} className="flex-1 md:flex-none glass border border-white/40 px-3 py-2 md:px-6 lg:px-8 md:py-3 lg:py-3.5 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-lg hover:shadow-xl">
                                 <Wrench className="w-3.5 h-3.5 md:w-4 md:h-4" />
                                 {lang === 'ar' ? 'الإنتاج' : 'Production'}
                               </button>
-                              <button onClick={() => setAdminSubView('settings')} className="flex-1 md:flex-none glass border border-white/40 px-4 py-2.5 md:px-6 lg:px-8 md:py-3 lg:py-3.5 rounded-xl md:rounded-2xl text-[15px] md:text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-lg hover:shadow-xl">
+                              <button onClick={() => setAdminSubView('settings')} className="flex-1 md:flex-none glass border border-white/40 px-3 py-2 md:px-6 lg:px-8 md:py-3 lg:py-3.5 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-lg hover:shadow-xl">
                                 <Settings className="w-3.5 h-3.5 md:w-4 md:h-4" />
                                 {lang === 'ar' ? 'الإعدادات' : 'Settings'}
                               </button>
@@ -2648,6 +2648,7 @@ export default function App() {
                           </div>
                         </div>
                       </div>
+
                     ) : adminSubView === 'production' ? (
                       <ProductionPage 
                         contractedCustomers={contractedCustomers} 
