@@ -581,7 +581,8 @@ const ActivitiesPage: React.FC<{
 
   const sendActivityNotification = (phone: string, activity: any) => {
     const dateStr = activity.created_at ? new Date(activity.created_at).toLocaleDateString('ar-EG') : '-';
-    const message = `[${activity.type}] ${activity.message} - ${dateStr}`;
+    const typeLabel = ACTIVITY_LABELS[activity.type]?.ar || activity.type || '-';
+    const message = `${typeLabel}: ${activity.message} - ${dateStr}`;
     const cleanPhone = phone.replace(/\D/g, '');
     const fullPhone = cleanPhone.startsWith('2') ? cleanPhone : `2${cleanPhone}`;
     window.open(`https://wa.me/${fullPhone}?text=${encodeURIComponent(message)}`, '_blank');
