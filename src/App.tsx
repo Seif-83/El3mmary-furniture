@@ -578,6 +578,35 @@ const ActivitiesPage: React.FC<{
 
   const [notifyPhone, setNotifyPhone] = useState('01221915144');
   const [sendingId, setSendingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const handleDeleteOne = async (id: string) => {
+    if (!isAdmin) return;
+    if (!confirm(lang === 'ar' ? 'هل أنت متأكد من حذف هذا النشاط؟' : 'Are you sure you want to delete this activity?')) return;
+    setDeletingId(id);
+    const { error } = await supabase.from('activity_logs').delete().eq('id', id);
+    if (error) {
+      toast.error(lang === 'ar' ? 'فشل الحذف' : 'Delete failed');
+    } else {
+      setActivities(prev => prev.filter(a => a.id !== id));
+      toast.success(lang === 'ar' ? 'تم الحذف' : 'Deleted');
+    }
+    setDeletingId(null);
+  };
+
+  const handleDeleteAll = async () => {
+    if (!isAdmin) return;
+    if (!confirm(lang === 'ar' ? 'هل أنت متأكد من حذف جميع الأنشطة؟' : 'Are you sure you want to delete all activities?')) return;
+    setDeletingId('all');
+    const { error } = await supabase.from('activity_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    if (error) {
+      toast.error(lang === 'ar' ? 'فشل الحذف' : 'Delete failed');
+    } else {
+      setActivities([]);
+      toast.success(lang === 'ar' ? 'تم حذف الكل' : 'All deleted');
+    }
+    setDeletingId(null);
+  };
 
   const sendActivityNotification = (phone: string, activity: any) => {
     const dateStr = activity.created_at ? new Date(activity.created_at).toLocaleDateString('ar-EG') : '-';
@@ -634,6 +663,10 @@ const ActivitiesPage: React.FC<{
             <MessageCircle className="w-4 h-4" />
             {sendingId === 'all' ? (lang === 'ar' ? 'جاري الإرسال...' : 'Sending...') : (lang === 'ar' ? 'إرسال الكل' : 'Send All')}
           </button>
+          <button onClick={handleDeleteAll} disabled={deletingId === 'all' || activities.length === 0} className="w-full sm:w-auto py-2.5 px-6 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs uppercase tracking-wider disabled:opacity-40 flex items-center justify-center gap-2 transition-all">
+            <Trash2 className="w-4 h-4" />
+            {deletingId === 'all' ? (lang === 'ar' ? 'جاري الحذف...' : 'Deleting...') : (lang === 'ar' ? 'حذف الكل' : 'Delete All')}
+          </button>
         </div>
       )}
 
@@ -660,9 +693,14 @@ const ActivitiesPage: React.FC<{
                   <p className="font-bold text-zinc-900 mt-1 truncate">{activity.message}</p>
                 </div>
                 {isAdmin && (
-                  <button onClick={() => handleSendOne(activity)} disabled={sendingId === activity.id} className="w-10 h-10 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 transition-all disabled:opacity-40">
-                    {sendingId === activity.id ? <span className="text-xs animate-pulse">...</span> : <MessageCircle className="w-5 h-5" />}
-                  </button>
+                  <>
+                    <button onClick={() => handleSendOne(activity)} disabled={sendingId === activity.id} className="w-10 h-10 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 transition-all disabled:opacity-40" title={lang === 'ar' ? 'إرسال واتساب' : 'Send WhatsApp'}>
+                      {sendingId === activity.id ? <span className="text-xs animate-pulse">...</span> : <MessageCircle className="w-5 h-5" />}
+                    </button>
+                    <button onClick={() => handleDeleteOne(activity.id)} disabled={deletingId === activity.id} className="w-10 h-10 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center shrink-0 transition-all disabled:opacity-40" title={lang === 'ar' ? 'حذف' : 'Delete'}>
+                      {deletingId === activity.id ? <span className="text-xs animate-pulse">...</span> : <Trash2 className="w-5 h-5" />}
+                    </button>
+                  </>
                 )}
               </div>
             );
