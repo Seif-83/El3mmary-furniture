@@ -134,6 +134,49 @@ type ActivityLog = {
   created_at: string;
 };
 
+const ACTIVITY_LABELS: Record<string, { ar: string; en: string }> = {
+  login: { ar: 'تسجيل دخول', en: 'Login' },
+  logout: { ar: 'تسجيل خروج', en: 'Logout' },
+  delete: { ar: 'حذف', en: 'Delete' },
+  delete_sheet: { ar: 'حذف ملف', en: 'Delete Sheet' },
+  contract: { ar: 'تعاقد', en: 'Contract' },
+  refuse: { ar: 'رفض', en: 'Refuse' },
+  create_inspection: { ar: 'معاينة جديدة', en: 'New Inspection' },
+  move_to_inspection: { ar: 'نقل لمعاينة', en: 'Move to Inspection' },
+  update_inspection: { ar: 'تحديث معاينة', en: 'Update Inspection' },
+  update_contract: { ar: 'تحديث تعاقد', en: 'Update Contract' },
+  upload_sheet: { ar: 'نشر ملف', en: 'Upload Sheet' },
+  edit_sheet: { ar: 'تعديل ملف', en: 'Edit Sheet' },
+  status_change: { ar: 'تغيير حالة', en: 'Status Change' },
+  whatsapp: { ar: 'رسالة واتساب', en: 'WhatsApp Message' },
+};
+
+const getActivityTypeLabel = (type: string | null | undefined, lang: 'en' | 'ar') => {
+  if (!type) return lang === 'ar' ? 'نشاط' : 'Activity';
+  return ACTIVITY_LABELS[type]?.[lang] || (lang === 'ar' ? 'نشاط غير مصنف' : type.replace(/_/g, ' '));
+};
+
+const getArabicActivityMessage = (message: string | null | undefined) => {
+  if (!message) return '-';
+
+  return message
+    .replace(/^Deleted inspection\s+/i, 'حذف معاينة ')
+    .replace(/^Published sheet\s+/i, 'نشر ملف ')
+    .replace(/^Deleted sheet\s+/i, 'حذف ملف ')
+    .replace(/^Edited sheet\s+/i, 'تعديل ملف ')
+    .replace(/^Deleted customer\s+/i, 'حذف عميل ')
+    .replace(/^Moved to non-contracted\s+/i, 'نقل إلى غير متعاقدين ')
+    .replace(/^Moved non-contracted to contracted\s+/i, 'نقل غير متعاقد للمتعاقدين ')
+    .replace(/^Moved\s+(.+)\s+to inspections$/i, 'نقل $1 إلى المعاينات')
+    .replace(/^Created inspection for\s+/i, 'إنشاء معاينة لـ ')
+    .replace(/^Deleted contracted\s+/i, 'حذف متعاقد ')
+    .replace(/^Deleted non-contracted\s+/i, 'حذف غير متعاقد ')
+    .replace(/\slogged in$/i, ' سجل دخول')
+    .replace(/\slogged out$/i, ' سجل خروج')
+    .replace(/\bUnknown\b/g, 'غير معروف')
+    .replace(/\bstatus_change\b/g, 'تغيير حالة');
+};
+
 type ProductionStage = {
   id: string;
   client_id: string;
@@ -1532,10 +1575,10 @@ const App = ({ embedded = false, parentUser = null, parentIsAdmin = false, paren
                           {activities.length > 0 ? activities.map(activity => (
                             <div key={activity.id} className="rounded-3xl bg-[#faf7f1] p-4 border border-black/10">
                               <div className="flex items-center justify-between gap-3 text-sm text-zinc-500">
-                                <span>{activity.type}</span>
+                                <span>{getActivityTypeLabel(activity.type, lang)}</span>
                                 <span>{formatDate(activity.created_at)}</span>
                               </div>
-                              <div className="mt-2 text-sm text-zinc-700">{activity.message}</div>
+                              <div className="mt-2 text-sm text-zinc-700">{lang === 'ar' ? getArabicActivityMessage(activity.message) : activity.message}</div>
                               <div className="mt-2 text-xs text-zinc-500">{activity.success ? (lang === 'ar' ? 'نجاح' : 'Success') : (lang === 'ar' ? 'فشل' : 'Failed')}</div>
                             </div>
                           )) : <div className="text-zinc-500">{lang === 'ar' ? 'لا توجد أنشطة بعد.' : 'No activity logs yet.'}</div>}

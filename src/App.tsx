@@ -103,6 +103,7 @@ interface Inspection {
   portfolioDate?: string;
   portfolio_date?: string;
   contractDate?: string;
+  payments?: { amount: number; date: string; stage: string }[];
 }
 
 type RoomDraftItem = {
@@ -419,35 +420,128 @@ const ProductionPage: React.FC<{
   );
 };
 
-// Payments Page Component - Shows payment tracking for contracted customers
+// Payments Page Component - Shows Statement of Account for contracted customers
+interface PaymentRecord {
+  id: string;
+  amount: number;
+  paid_at: string;
+  installment: string | null;
+  note: string | null;
+}
 const PaymentsPage: React.FC<{
   contractedCustomers: Inspection[];
   lang: 'en' | 'ar';
   isAdmin: boolean;
   t: Record<string, string>;
-}> = ({ contractedCustomers, lang, isAdmin, t }) => {
+  onRefresh: () => Promise<void>;
+  onSendWhatsApp: (phone: string, msg: string) => void;
+}> = ({ contractedCustomers, lang, isAdmin, t, onRefresh, onSendWhatsApp }) => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<Inspection | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState<number | ''>('');
+  const [paymentStage, setPaymentStage] = useState<string>('عند التعاقد');
+  const [isSaving, setIsSaving] = useState(false);
+  const [allPayments, setAllPayments] = useState<PaymentRecord[]>([]);
+  const [loadingPayments, setLoadingPayments] = useState(true);
+
+  const stages = [
+    'عند التعاقد',
+    'عند انتهاء النجارة واختيار اللون',
+    'قبل الاستلام بـ 48 ساعة',
+    'عند استلام الغرفة'
+  ];
+
+  const fetchPayments = async () => {
+    setLoadingPayments(true);
+    try {
+      const { data, error } = await supabase
+        .from('payments')
+        .select('id, amount, paid_at, installment, note')
+        .order('paid_at', { ascending: false });
+      if (!error && data) setAllPayments(data);
+    } catch (_) {}
+    setLoadingPayments(false);
+  };
+
+  useEffect(() => { fetchPayments(); }, []);
+
+  const getCustomerPayments = (customerId: string): PaymentRecord[] =>
+    allPayments.filter(p => p.note?.startsWith(`cc:${customerId}:`));
+
   const totalContractValue = contractedCustomers.reduce((sum, c) => sum + (c.totalAmount || 0), 0);
-  
+  const totalPaidValue = allPayments.reduce((sum, p) => {
+    const isForContracted = contractedCustomers.some(c => p.note?.startsWith(`cc:${c.id}:`));
+    return isForContracted ? sum + (Number(p.amount) || 0) : sum;
+  }, 0);
+
+  const handleOpenModal = (customer: Inspection) => {
+    setSelectedCustomer(customer);
+    setPaymentAmount('');
+    setPaymentStage(stages[0]);
+    setIsModalOpen(true);
+  };
+
+  const handleAddPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCustomer || !paymentAmount) return;
+    setIsSaving(true);
+
+    try {
+      const customerPayments = getCustomerPayments(selectedCustomer.id);
+      const totalPaid = customerPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+      const remaining = (selectedCustomer.totalAmount || 0) - totalPaid - Number(paymentAmount);
+
+      const { error } = await supabase.from('payments').insert({
+        client_id: null,
+        visit_id: null,
+        amount: Number(paymentAmount),
+        paid_at: new Date().toISOString(),
+        installment: paymentStage,
+        note: `cc:${selectedCustomer.id}:${selectedCustomer.customerName}`,
+      });
+
+      if (error) throw error;
+
+      await fetchPayments();
+
+      if (selectedCustomer.phone) {
+        const msg = lang === 'ar'
+          ? `مرحباً ${selectedCustomer.customerName || ''},\nتم استلام دفعة بقيمة ${paymentAmount} جنيه (مرحلة: ${paymentStage}).\nالمتبقي من إجمالي الحساب: ${remaining} جنيه.\nشكراً لك!`
+          : `Hello ${selectedCustomer.customerName || ''},\nA payment of ${paymentAmount} EGP has been received (Stage: ${paymentStage}).\nRemaining balance: ${remaining} EGP.\nThank you!`;
+        onSendWhatsApp(selectedCustomer.phone, msg);
+      }
+
+      toast.success(lang === 'ar' ? 'تم إضافة الدفعة بنجاح' : 'Payment added successfully');
+      setIsModalOpen(false);
+    } catch (err: any) {
+      toast.error(err.message || 'Error saving payment');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
         <div>
-          <h1 className="text-3xl md:text-4xl font-light">{lang === 'ar' ? 'المدفوعات' : 'Payments'}</h1>
+          <h1 className="text-3xl md:text-4xl font-light">{lang === 'ar' ? 'كشف الحساب' : 'Statement of Account'}</h1>
           <p className="text-zinc-500 mt-2">{lang === 'ar' ? 'تابع حالة المدفوعات للعملاء المتعاقدين' : 'Track payment status for contracted customers'}</p>
         </div>
         <div className="flex gap-4">
           <div className="glass px-4 py-3 rounded-2xl min-w-[120px]">
             <div className="text-[10px] uppercase font-bold text-zinc-400">{lang === 'ar' ? 'إجمالي العقود' : 'Total Contracts'}</div>
-            <div className="text-2xl font-semibold">{contractedCustomers.length}</div>
+            <div className="text-2xl font-semibold">{totalContractValue.toLocaleString()}</div>
           </div>
           <div className="glass px-4 py-3 rounded-2xl min-w-[120px]">
-            <div className="text-[10px] uppercase font-bold text-zinc-400">{lang === 'ar' ? 'قيمة العقود' : 'Contract Value'}</div>
-            <div className="text-2xl font-semibold">{totalContractValue.toLocaleString()} EGP</div>
+            <div className="text-[10px] uppercase font-bold text-emerald-500">{lang === 'ar' ? 'إجمالي المحصل' : 'Total Paid'}</div>
+            <div className="text-2xl font-semibold text-emerald-600">{totalPaidValue.toLocaleString()}</div>
           </div>
         </div>
       </div>
 
-      {contractedCustomers.length > 0 ? (
+      {loadingPayments ? (
+        <div className="glass rounded-[2rem] py-20 text-center text-zinc-400">{lang === 'ar' ? 'جاري التحميل...' : 'Loading...'}</div>
+      ) : contractedCustomers.length > 0 ? (
         <>
           {/* Desktop table */}
           <div className="hidden md:block glass rounded-[2.5rem] overflow-hidden p-6 md:p-10 shadow-xl border border-white/40">
@@ -457,25 +551,39 @@ const PaymentsPage: React.FC<{
                   <tr className="border-b border-black/5 text-[10px] font-bold uppercase text-zinc-400 tracking-widest">
                     <th className="px-6 py-4">{lang === 'ar' ? 'العميل' : 'Customer'}</th>
                     <th className="px-6 py-4">{lang === 'ar' ? 'الهاتف' : 'Phone'}</th>
-                    <th className="px-6 py-4">{lang === 'ar' ? 'قيمة العقد' : 'Contract Value'}</th>
-                    <th className="px-6 py-4">{lang === 'ar' ? 'تاريخ التعاقد' : 'Contract Date'}</th>
-                    <th className="px-6 py-4">{lang === 'ar' ? 'حالة الدفع' : 'Payment Status'}</th>
+                    <th className="px-6 py-4">{lang === 'ar' ? 'الإجمالي' : 'Total'}</th>
+                    <th className="px-6 py-4 text-emerald-600">{lang === 'ar' ? 'المدفوع' : 'Paid'}</th>
+                    <th className="px-6 py-4 text-rose-600">{lang === 'ar' ? 'المتبقي' : 'Remaining'}</th>
+                    <th className="px-6 py-4">{lang === 'ar' ? 'إجراءات' : 'Actions'}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {contractedCustomers.map((customer) => (
-                    <tr key={customer.id} className="border-b border-black/5 hover:bg-black/5 transition-colors">
-                      <td className="px-6 py-4 font-bold text-zinc-900">{customer.customerName}</td>
-                      <td className="px-6 py-4 text-zinc-600 font-mono">{customer.phone}</td>
-                      <td className="px-6 py-4 font-bold text-zinc-900">{customer.totalAmount?.toLocaleString() || 0} EGP</td>
-                      <td className="px-6 py-4 text-zinc-600">{customer.contractDate || '-'}</td>
-                      <td className="px-6 py-4">
-                        <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-xs font-bold">
-                          {lang === 'ar' ? 'متعاقد' : 'Contracted'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                  {contractedCustomers.map((customer) => {
+                    const total = customer.totalAmount || 0;
+                    const paid = getCustomerPayments(customer.id).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+                    const remaining = total - paid;
+                    const pct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
+                    return (
+                      <tr key={customer.id} className="border-b border-black/5 hover:bg-black/5 transition-colors">
+                        <td className="px-6 py-4 font-bold text-zinc-900">{customer.customerName}</td>
+                        <td className="px-6 py-4 text-zinc-600 font-mono">{customer.phone}</td>
+                        <td className="px-6 py-4 font-bold text-zinc-900">{total.toLocaleString()} EGP</td>
+                        <td className="px-6 py-4 font-bold text-emerald-600">{paid.toLocaleString()} EGP</td>
+                        <td className="px-6 py-4">
+                          <span className={`font-bold ${remaining > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{remaining.toLocaleString()} EGP</span>
+                          <div className="w-24 h-1.5 bg-zinc-100 rounded-full mt-1"><div className="h-1.5 bg-emerald-500 rounded-full" style={{ width: `${pct}%` }} /></div>
+                        </td>
+                        <td className="px-6 py-4">
+                          {isAdmin && remaining > 0 && (
+                            <button onClick={() => handleOpenModal(customer)} className="bg-zinc-900 hover:bg-zinc-800 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase transition-all shadow-md flex items-center gap-1">
+                              <Plus className="w-3 h-3" />
+                              {lang === 'ar' ? 'إضافة دفعة' : 'Add Payment'}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -483,29 +591,48 @@ const PaymentsPage: React.FC<{
 
           {/* Mobile cards */}
           <div className="grid grid-cols-1 gap-4 md:hidden">
-            {contractedCustomers.map((customer) => (
-              <div key={customer.id} className="bg-white/80 backdrop-blur-xl p-6 rounded-[2rem] border border-white/50 shadow-lg relative overflow-hidden group card-accent">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h4 className="text-xl font-bold text-zinc-900 mb-1">{customer.customerName}</h4>
-                    <p className="text-zinc-500 font-mono text-sm">{customer.phone}</p>
+            {contractedCustomers.map((customer) => {
+              const total = customer.totalAmount || 0;
+              const paid = getCustomerPayments(customer.id).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+              const remaining = total - paid;
+              const pct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
+              return (
+                <div key={customer.id} className="bg-white/80 backdrop-blur-xl p-6 rounded-[2rem] border border-white/50 shadow-lg relative overflow-hidden group card-accent">
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <h4 className="text-xl font-bold text-zinc-900 mb-1">{customer.customerName}</h4>
+                      <p className="text-zinc-500 font-mono text-sm">{customer.phone}</p>
+                    </div>
+                    <span className="text-xs font-bold text-zinc-400 bg-zinc-100 px-2 py-1 rounded-full">{pct}%</span>
                   </div>
-                  <span className="bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-full text-xs font-bold">
-                    {lang === 'ar' ? 'متعاقد' : 'Contracted'}
-                  </span>
+                  <div className="w-full h-2 bg-zinc-100 rounded-full mb-4">
+                    <div className="h-2 bg-emerald-500 rounded-full" style={{ width: `${pct}%` }} />
+                  </div>
+                  <div className="space-y-3 pt-4 border-t border-zinc-100">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-zinc-400 font-bold uppercase tracking-wider">{lang === 'ar' ? 'الإجمالي' : 'Total'}</span>
+                      <span className="text-lg font-bold text-zinc-900">{total.toLocaleString()} EGP</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-zinc-400 font-bold uppercase tracking-wider">{lang === 'ar' ? 'المدفوع' : 'Paid'}</span>
+                      <span className="text-md font-bold text-emerald-600">{paid.toLocaleString()} EGP</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-zinc-400 font-bold uppercase tracking-wider">{lang === 'ar' ? 'المتبقي' : 'Remaining'}</span>
+                      <span className={`text-md font-bold ${remaining > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{remaining.toLocaleString()} EGP</span>
+                    </div>
+                    {isAdmin && remaining > 0 && (
+                      <div className="pt-2">
+                        <button onClick={() => handleOpenModal(customer)} className="w-full bg-zinc-900 text-white px-4 py-3 rounded-2xl text-xs font-bold uppercase transition-all shadow-md flex justify-center items-center gap-2">
+                          <Plus className="w-4 h-4" />
+                          {lang === 'ar' ? 'إضافة دفعة' : 'Add Payment'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="space-y-3 pt-4 border-t border-zinc-100">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-zinc-400 font-bold uppercase tracking-wider">{lang === 'ar' ? 'قيمة العقد' : 'Contract Value'}</span>
-                    <span className="text-lg font-bold text-zinc-900">{customer.totalAmount?.toLocaleString() || 0} EGP</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-zinc-400 font-bold uppercase tracking-wider">{lang === 'ar' ? 'تاريخ التعاقد' : 'Contract Date'}</span>
-                    <span className="text-sm font-semibold text-zinc-600">{customer.contractDate || '-'}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </>
       ) : (
@@ -514,6 +641,40 @@ const PaymentsPage: React.FC<{
           <p className="text-zinc-400 font-semibold">{lang === 'ar' ? 'لا توجد مدفوعات مسجلة' : 'No payments recorded'}</p>
         </div>
       )}
+
+      {/* Add Payment Modal */}
+      <AnimatePresence>
+        {isModalOpen && selectedCustomer && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsModalOpen(false)} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative bg-[#f2eee8] rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl border border-white/50" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+              <button onClick={() => setIsModalOpen(false)} className="absolute top-6 right-6 rtl:left-6 rtl:right-auto p-2 bg-white/50 hover:bg-white rounded-full transition-colors">
+                <X className="w-5 h-5 text-zinc-500" />
+              </button>
+              <h2 className="text-2xl font-bold mb-6 text-zinc-900">{lang === 'ar' ? 'إضافة دفعة جديدة' : 'Add New Payment'}</h2>
+              <div className="mb-6 p-4 bg-white/50 rounded-2xl">
+                <p className="font-bold">{selectedCustomer.customerName}</p>
+                <p className="text-sm text-zinc-500">{lang === 'ar' ? 'المتبقي:' : 'Remaining:'} {((selectedCustomer.totalAmount || 0) - getCustomerPayments(selectedCustomer.id).reduce((sum, p) => sum + (Number(p.amount) || 0), 0)).toLocaleString()} EGP</p>
+              </div>
+              <form onSubmit={handleAddPayment} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-zinc-500 mb-2 px-1">{lang === 'ar' ? 'المبلغ' : 'Amount'}</label>
+                  <input type="number" required min="1" value={paymentAmount} onChange={(e) => setPaymentAmount(Number(e.target.value) || '')} className="w-full px-5 py-4 bg-white/80 border border-white rounded-2xl outline-none focus:ring-2 focus:ring-accent-tan transition-all" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase text-zinc-500 mb-2 px-1">{lang === 'ar' ? 'المرحلة' : 'Stage'}</label>
+                  <select value={paymentStage} onChange={(e) => setPaymentStage(e.target.value)} className="w-full px-5 py-4 bg-white/80 border border-white rounded-2xl outline-none focus:ring-2 focus:ring-accent-tan transition-all">
+                    {stages.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <button type="submit" disabled={isSaving} className="w-full bg-zinc-900 text-white py-4 rounded-2xl font-bold uppercase tracking-widest hover:bg-zinc-800 transition-all shadow-xl disabled:opacity-50 mt-4">
+                  {isSaving ? (lang === 'ar' ? 'جاري الحفظ...' : 'Saving...') : (lang === 'ar' ? 'تأكيد وحفظ' : 'Confirm & Save')}
+                </button>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -532,6 +693,7 @@ const ACTIVITY_LABELS: Record<string, { ar: string; en: string }> = {
   update_contract: { ar: 'تحديث تعاقد', en: 'Update Contract' },
   upload_sheet: { ar: 'نشر ملف', en: 'Upload Sheet' },
   edit_sheet: { ar: 'تعديل ملف', en: 'Edit Sheet' },
+  status_change: { ar: 'تغيير حالة', en: 'Status Change' },
 };
 
 const ACTIVITY_ICONS: Record<string, { icon: string; color: string }> = {
@@ -547,6 +709,33 @@ const ACTIVITY_ICONS: Record<string, { icon: string; color: string }> = {
   update_contract: { icon: '✏️', color: 'text-emerald-600 bg-emerald-100' },
   upload_sheet: { icon: '📤', color: 'text-teal-600 bg-teal-100' },
   edit_sheet: { icon: '✏️', color: 'text-teal-600 bg-teal-100' },
+  status_change: { icon: '↔', color: 'text-indigo-600 bg-indigo-100' },
+};
+
+const getActivityTypeLabel = (type: string | null | undefined, lang: 'en' | 'ar') => {
+  if (!type) return lang === 'ar' ? 'نشاط' : 'Activity';
+  return ACTIVITY_LABELS[type]?.[lang] || (lang === 'ar' ? 'نشاط غير مصنف' : type.replace(/_/g, ' '));
+};
+
+const getArabicActivityMessage = (message: string | null | undefined) => {
+  if (!message) return '-';
+
+  return message
+    .replace(/^Deleted inspection\s+/i, 'حذف معاينة ')
+    .replace(/^Published sheet\s+/i, 'نشر ملف ')
+    .replace(/^Deleted sheet\s+/i, 'حذف ملف ')
+    .replace(/^Edited sheet\s+/i, 'تعديل ملف ')
+    .replace(/^Deleted customer\s+/i, 'حذف عميل ')
+    .replace(/^Moved to non-contracted\s+/i, 'نقل إلى غير متعاقدين ')
+    .replace(/^Moved non-contracted to contracted\s+/i, 'نقل غير متعاقد للمتعاقدين ')
+    .replace(/^Moved\s+(.+)\s+to inspections$/i, 'نقل $1 إلى المعاينات')
+    .replace(/^Created inspection for\s+/i, 'إنشاء معاينة لـ ')
+    .replace(/^Deleted contracted\s+/i, 'حذف متعاقد ')
+    .replace(/^Deleted non-contracted\s+/i, 'حذف غير متعاقد ')
+    .replace(/\slogged in$/i, ' سجل دخول')
+    .replace(/\slogged out$/i, ' سجل خروج')
+    .replace(/\bUnknown\b/g, 'غير معروف')
+    .replace(/\bstatus_change\b/g, 'تغيير حالة');
 };
 
 const ActivitiesPage: React.FC<{
@@ -610,8 +799,9 @@ const ActivitiesPage: React.FC<{
 
   const sendActivityNotification = (phone: string, activity: any) => {
     const dateStr = activity.created_at ? new Date(activity.created_at).toLocaleDateString('ar-EG') : '-';
-    const typeLabel = ACTIVITY_LABELS[activity.type]?.ar || activity.type || '-';
-    const message = `${typeLabel}: ${activity.message} - ${dateStr}`;
+    const typeLabel = getActivityTypeLabel(activity.type, 'ar');
+    const activityMessage = getArabicActivityMessage(activity.message);
+    const message = `${typeLabel}: ${activityMessage} - ${dateStr}`;
     const cleanPhone = phone.replace(/\D/g, '');
     const fullPhone = cleanPhone.startsWith('2') ? cleanPhone : `2${cleanPhone}`;
     window.open(`https://wa.me/${fullPhone}?text=${encodeURIComponent(message)}`, '_blank');
@@ -657,7 +847,7 @@ const ActivitiesPage: React.FC<{
         <div className="glass rounded-[2rem] p-5 shadow-sm border border-white/40 flex flex-col sm:flex-row items-center gap-4">
           <div className="flex items-center gap-3 w-full sm:w-auto">
             <MessageCircle className="w-5 h-5 text-emerald-600 shrink-0" />
-            <input value={notifyPhone} onChange={e => setNotifyPhone(e.target.value)} className="w-full sm:w-52 rounded-2xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-mono" placeholder="Phone number" />
+            <input value={notifyPhone} onChange={e => setNotifyPhone(e.target.value)} className="w-full sm:w-52 rounded-2xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-mono" placeholder={lang === 'ar' ? 'رقم الهاتف' : 'Phone number'} />
           </div>
           <button onClick={handleSendAll} disabled={sendingId === 'all' || activities.length === 0} className="w-full sm:w-auto py-2.5 px-6 rounded-2xl bg-zinc-900 text-white font-bold text-xs uppercase tracking-wider disabled:opacity-40 flex items-center justify-center gap-2">
             <MessageCircle className="w-4 h-4" />
@@ -687,10 +877,10 @@ const ActivitiesPage: React.FC<{
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-3 flex-wrap">
-                    <span className={`text-xs font-bold ${textColor} uppercase`}>{ACTIVITY_LABELS[activity.type]?.[lang] || activity.type}</span>
+                    <span className={`text-xs font-bold ${textColor} uppercase`}>{getActivityTypeLabel(activity.type, lang)}</span>
                     <span className="text-xs text-zinc-400">{activity.created_at ? new Date(activity.created_at).toLocaleDateString('ar-EG') : '-'}</span>
                   </div>
-                  <p className="font-bold text-zinc-900 mt-1 truncate">{activity.message}</p>
+                  <p className="font-bold text-zinc-900 mt-1 truncate">{lang === 'ar' ? getArabicActivityMessage(activity.message) : activity.message}</p>
                 </div>
                 {isAdmin && (
                   <>
@@ -1917,6 +2107,69 @@ export default function App() {
     );
   };
 
+  const handleMoveNonContractedToContracted = async (r: Inspection) => {
+    if (!ensureAdminAccess()) return;
+    
+    triggerConfirm(
+      lang === 'ar' ? "نقل للمتعاقدين" : "Move to Contracted",
+      lang === 'ar' ? "هل أنت متأكد من نقل العميل إلى المتعاقدين؟" : "Are you sure you want to move this customer to contracted?",
+      async () => {
+        setIsLoading(true);
+        try {
+          const dbData = {
+            customer_name: r.customerName?.trim(),
+            address: r.address?.trim(),
+            delivery_address: r.deliveryAddress?.trim(),
+            governorate: r.governorate || null,
+            phone: r.phone?.trim(),
+            visit_date: r.visitDate,
+            notes: r.notes,
+            rooms: r.rooms || 0,
+            room_types: r.room_types || [],
+            pieces: r.pieces || [],
+            total_amount: r.totalAmount || 0,
+            status: 'contracted',
+            portfolio: r.portfolio || null,
+            delivery_date: r.deliveryDate || null,
+            pickup_date: r.pickupDate || r.address || null,
+            portfolio_date: r.portfolioDate || null,
+            contract_date: r.contractDate || null,
+          };
+          
+          await insertRecordWithOptionalRoomTypes('contracted_customers', dbData);
+          await deleteRecordById('non_contracted_customers', r.id);
+          
+          const phone = r.phone?.trim();
+          const name = r.customerName?.trim();
+          if (phone) {
+            const { data: existingClient } = await supabase.from('clients').select('id').eq('phones', `{${phone}}`).limit(1);
+            let clientId = existingClient?.[0]?.id || null;
+            if (!clientId) {
+              const { data: newClient } = await supabase.from('clients').insert({ name: name || phone, phones: [phone] }).select('id').single();
+              if (newClient) clientId = newClient.id;
+            }
+            if (clientId) {
+              await supabase.from('production_stages').insert(STAGE_ORDER.map(stage => ({
+                client_id: clientId, visit_id: null, stage: stage.key, status: 'not_started'
+              })));
+            }
+          }
+          
+          await refreshAllData();
+          if (r.phone) {
+            const msg = lang === 'ar'
+              ? `السلام عليكم، تم التعاقد مع مصنع العماري للأثاث. سيتم التواصل معكم قريباً لترتيب معاد البورتفوليو وتجهيز طلبكم. شكراً لثقتكم.`
+              : `Hello, the contract has been signed with El-Amary Furniture. We will contact you soon to arrange a portfolio appointment and prepare your order. Thank you for your trust.`;
+            sendWhatsAppMessage(r.phone, msg);
+          }
+          void playSound('success');
+          toast.success(lang === 'ar' ? "تم النقل للمتعاقدين" : "Moved to Contracted");
+          await logActivity('status_change', `نقل غير متعاقد للمتعاقدين ${name || r.id}`);
+        } catch (err: any) { toast.error(err?.message || "Error"); } finally { setIsLoading(false); }
+      }
+    );
+  };
+
   const addPiece = (name: string) => {
     const pieces = [...(inspectionFormData.pieces || [])];
     const existingIndex = pieces.findIndex(p => p.name === name);
@@ -2704,6 +2957,8 @@ export default function App() {
                         lang={lang}
                         isAdmin={isAdminUser}
                         t={t}
+                        onRefresh={refreshAllData}
+                        onSendWhatsApp={sendWhatsAppMessage}
                       />
                     ) : adminSubView === 'activities' ? (
                       <ActivitiesPage 
@@ -2904,6 +3159,11 @@ export default function App() {
                                           <Edit2 className="w-4 h-4" />
                                         </button>
                                       )}
+                                      {currentUser?.email === ADMIN_EMAIL && adminSubView === 'not-contracted' && (
+                                        <button onClick={() => handleMoveNonContractedToContracted(r)} className="text-emerald-600 border border-emerald-200 px-5 py-3 rounded-lg text-xs font-bold uppercase hover:bg-emerald-600 hover:text-white transition-all" title={lang === 'ar' ? "نقل للمتعاقدين" : "Move to Contracted"}>
+                                          <CheckCircle2 className="w-4 h-4" />
+                                        </button>
+                                      )}
                                       <button onClick={() => { setSelectedRecord(r); setIsDetailModalOpen(true); }} className="text-zinc-400 border border-zinc-200 px-5 py-3 rounded-lg text-xs font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all"><Eye className="w-4 h-4" /></button>
                                       {currentUser?.email === ADMIN_EMAIL && (
                                         <button onClick={() => {
@@ -2950,6 +3210,11 @@ export default function App() {
                                 {currentUser?.email === ADMIN_EMAIL && !isInspectionView && (
                                   <button onClick={() => openEditFinalizedRecord(r, isContractedView ? 'contracted_customers' : 'non_contracted_customers')} className="flex-1 min-w-[70px] flex items-center justify-center gap-2 bg-zinc-100 text-zinc-600 border border-zinc-200 px-4 py-3 rounded-2xl text-xs font-bold uppercase hover:bg-zinc-200 transition-all shadow-sm">
                                     <Edit2 className="w-4 h-4" /> {lang === 'ar' ? 'تعديل' : 'Edit'}
+                                  </button>
+                                )}
+                                {currentUser?.email === ADMIN_EMAIL && adminSubView === 'not-contracted' && (
+                                  <button onClick={() => handleMoveNonContractedToContracted(r)} className="flex-1 min-w-[70px] flex items-center justify-center gap-2 bg-emerald-50 text-emerald-600 border border-emerald-200 px-4 py-3 rounded-2xl text-xs font-bold uppercase hover:bg-emerald-600 hover:text-white transition-all shadow-sm">
+                                    <CheckCircle2 className="w-4 h-4" /> {lang === 'ar' ? 'تعاقد' : 'Contract'}
                                   </button>
                                 )}
                                 <button onClick={() => { setSelectedRecord(r); setIsDetailModalOpen(true); }} className="flex-1 min-w-[70px] flex items-center justify-center gap-2 bg-zinc-100 text-zinc-600 px-4 py-3 rounded-2xl text-xs font-bold uppercase hover:bg-zinc-200 transition-all shadow-sm btn-3d btn-3d-glass"><Eye className="w-4 h-4" /> {lang === 'ar' ? 'عرض' : 'View'}</button>
