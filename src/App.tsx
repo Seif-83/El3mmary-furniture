@@ -451,6 +451,24 @@ const PaymentsPage: React.FC<{
     'عند استلام الغرفة'
   ];
 
+  const getCustomerPaymentBreakdown = (customerId: string) =>
+    stages
+      .map(stage => ({
+        stage,
+        amount: getCustomerPayments(customerId)
+          .filter(payment => payment.installment === stage)
+          .reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0),
+      }))
+      .filter(item => item.amount > 0);
+
+  const stageColor = (stage: string) => {
+    if (stage.includes('التعاقد')) return 'bg-amber-400';
+    if (stage.includes('النجارة')) return 'bg-indigo-500';
+    if (stage.includes('48')) return 'bg-rose-500';
+    if (stage.includes('استلام')) return 'bg-emerald-500';
+    return 'bg-zinc-400';
+  };
+
   const fetchPayments = async () => {
     setLoadingPayments(true);
     try {
@@ -574,8 +592,28 @@ const PaymentsPage: React.FC<{
                           <div className="w-24 h-1.5 bg-zinc-100 rounded-full mt-1"><div className="h-1.5 bg-emerald-500 rounded-full" style={{ width: `${pct}%` }} /></div>
                         </td>
                         <td className="px-6 py-4">
+                          <div className="space-y-2">
+                            <div className="text-[11px] font-bold uppercase text-zinc-400">
+                              {lang === 'ar' ? 'الدفعات حسب المرحلة' : 'Payments by stage'}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {getCustomerPaymentBreakdown(customer.id).length > 0 ? (
+                                getCustomerPaymentBreakdown(customer.id).map(({ stage, amount }) => (
+                                  <div key={stage} className={`flex items-center gap-3 bg-white/60 border p-2 rounded-xl shadow-sm min-w-[160px] ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+                                    <div className={`w-1.5 h-8 rounded-full ${stageColor(stage)}`} />
+                                    <div className="flex flex-col leading-tight">
+                                      <span className="text-[11px] font-semibold text-zinc-700">{stage}</span>
+                                      <span className="text-sm font-bold text-zinc-900">{amount.toLocaleString()} EGP</span>
+                                    </div>
+                                  </div>
+                                ))
+                              ) : (
+                                <span className="text-[11px] text-zinc-400">{lang === 'ar' ? 'لا توجد دفعات بعد' : 'No payments yet'}</span>
+                              )}
+                            </div>
+                          </div>
                           {isAdmin && remaining > 0 && (
-                            <button onClick={() => handleOpenModal(customer)} className="bg-zinc-900 hover:bg-zinc-800 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase transition-all shadow-md flex items-center gap-1">
+                            <button onClick={() => handleOpenModal(customer)} className="mt-3 bg-zinc-900 hover:bg-zinc-800 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase transition-all shadow-md flex items-center gap-1">
                               <Plus className="w-3 h-3" />
                               {lang === 'ar' ? 'إضافة دفعة' : 'Add Payment'}
                             </button>
@@ -621,8 +659,28 @@ const PaymentsPage: React.FC<{
                       <span className="text-xs text-zinc-400 font-bold uppercase tracking-wider">{lang === 'ar' ? 'المتبقي' : 'Remaining'}</span>
                       <span className={`text-md font-bold ${remaining > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{remaining.toLocaleString()} EGP</span>
                     </div>
+                    <div className="pt-3 border-t border-zinc-100 mt-3">
+                      <div className="text-[11px] font-bold uppercase text-zinc-400 mb-2">
+                        {lang === 'ar' ? 'الدفعات حسب المرحلة' : 'Payments by stage'}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {getCustomerPaymentBreakdown(customer.id).length > 0 ? (
+                          getCustomerPaymentBreakdown(customer.id).map(({ stage, amount }) => (
+                            <div key={stage} className={`flex items-center gap-3 bg-white/60 border p-2 rounded-xl shadow-sm min-w-[140px] ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+                              <div className={`w-1.5 h-8 rounded-full ${stageColor(stage)}`} />
+                              <div className="flex flex-col leading-tight">
+                                <span className="text-[11px] font-semibold text-zinc-700">{stage}</span>
+                                <span className="text-sm font-bold text-zinc-900">{amount.toLocaleString()} EGP</span>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <span className="text-[11px] text-zinc-400">{lang === 'ar' ? 'لا توجد دفعات بعد' : 'No payments yet'}</span>
+                        )}
+                      </div>
+                    </div>
                     {isAdmin && remaining > 0 && (
-                      <div className="pt-2">
+                      <div className="pt-3">
                         <button onClick={() => handleOpenModal(customer)} className="w-full bg-zinc-900 text-white px-4 py-3 rounded-2xl text-xs font-bold uppercase transition-all shadow-md flex justify-center items-center gap-2">
                           <Plus className="w-4 h-4" />
                           {lang === 'ar' ? 'إضافة دفعة' : 'Add Payment'}
@@ -655,6 +713,24 @@ const PaymentsPage: React.FC<{
               <div className="mb-6 p-4 bg-white/50 rounded-2xl">
                 <p className="font-bold">{selectedCustomer.customerName}</p>
                 <p className="text-sm text-zinc-500">{lang === 'ar' ? 'المتبقي:' : 'Remaining:'} {((selectedCustomer.totalAmount || 0) - getCustomerPayments(selectedCustomer.id).reduce((sum, p) => sum + (Number(p.amount) || 0), 0)).toLocaleString()} EGP</p>
+              </div>
+              <div className="mb-4 rounded-2xl bg-white/60 p-4">
+                <p className="text-[11px] font-bold uppercase text-zinc-500 mb-2">{lang === 'ar' ? 'الدفعات الحالية حسب المرحلة' : 'Current payments by stage'}</p>
+                <div className="flex flex-wrap gap-2">
+                  {getCustomerPaymentBreakdown(selectedCustomer.id).length > 0 ? (
+                    getCustomerPaymentBreakdown(selectedCustomer.id).map(({ stage, amount }) => (
+                      <div key={stage} className={`flex items-center gap-3 bg-white/60 border p-2 rounded-xl shadow-sm min-w-[160px] ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
+                        <div className={`w-1.5 h-8 rounded-full ${stageColor(stage)}`} />
+                        <div className="flex flex-col leading-tight">
+                          <span className="text-[11px] font-semibold text-zinc-700">{stage}</span>
+                          <span className="text-sm font-bold text-zinc-900">{amount.toLocaleString()} EGP</span>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <span className="text-sm text-zinc-500">{lang === 'ar' ? 'لا توجد دفعات مسجلة بعد' : 'No payments recorded yet'}</span>
+                  )}
+                </div>
               </div>
               <form onSubmit={handleAddPayment} className="space-y-4">
                 <div>
