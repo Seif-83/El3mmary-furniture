@@ -78,6 +78,7 @@ interface FurniturePiece {
   price: number;
   quantity: number;
   details?: string;
+  room_type?: string;
 }
 
 interface Inspection {
@@ -1321,8 +1322,9 @@ export default function App() {
   const [customPieceName, setCustomPieceName] = useState('');
   const [customPieceQty, setCustomPieceQty] = useState(1);
   const [customPiecePrice, setCustomPiecePrice] = useState('');
+  const quoteItemTotal = (item: RoomDraftItem) => Number(item.price || 0) * Number(item.quantity || 1) + (item.aro_veneer_addon ? Number(item.aro_surcharge || 0) : 0);
   const quoteRoomSubtotal = (room: RoomDraft) => {
-    return room.items.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 1)) + (item.aro_veneer_addon ? Number(item.aro_surcharge || 0) : 0), 0);
+    return room.items.reduce((sum, item) => sum + quoteItemTotal(item), 0);
   };
   const quoteTotal = () => quoteDrafts.reduce((sum, r) => sum + quoteRoomSubtotal(r), 0);
 
@@ -1379,8 +1381,8 @@ export default function App() {
     if (!isAdminUser) { toast.error(t.noPermission || 'Admin only'); return; }
     try {
       setIsLoading(true);
-      const pieces = quoteDrafts.flatMap(r => r.items.map(it => ({ name: it.item_name, quantity: it.quantity, price: it.price, details: it.dimensions || it.notes || '', room_type: r.room_type })));
-      const totalAmount = pieces.reduce((s, p) => s + (Number(p.price || 0) * Number(p.quantity || 1)), 0);
+      const pieces = quoteDrafts.flatMap(r => r.items.map(it => ({ name: it.item_name, quantity: it.quantity, price: it.price, details: it.dimensions || it.notes || '', room_type: r.room_type, aro_veneer_addon: it.aro_veneer_addon, aro_surcharge: it.aro_surcharge })));
+      const totalAmount = quoteTotal();
       const { error } = await supabase.from('inspections').update({ pieces, total_amount: totalAmount, rooms: quoteDrafts.length }).eq('id', selectedRecord.id);
       if (error) throw error;
       toast.success(lang === 'ar' ? 'تم حفظ العرض' : 'Quote saved');
@@ -2246,16 +2248,17 @@ export default function App() {
     );
   };
 
-  const addPiece = (name: string) => {
+  const addPiece = (name: string, roomType?: string) => {
+    const defaultRoom = roomType || inspectionFormData.room_types?.[0] || 'other';
     const pieces = [...(inspectionFormData.pieces || [])];
-    const existingIndex = pieces.findIndex(p => p.name === name);
-    
+    const existingIndex = pieces.findIndex(p => p.name === name && (p.room_type || 'other') === defaultRoom);
+
     if (existingIndex >= 0) {
       pieces[existingIndex].quantity = (pieces[existingIndex].quantity || 1) + 1;
     } else {
-      pieces.push({ name, price: 0, quantity: 1 });
+      pieces.push({ name, price: 0, quantity: 1, room_type: defaultRoom });
     }
-    
+
     const totalAmount = pieces.reduce((sum, p) => sum + (Number(p.price || 0) * Number(p.quantity || 1)), 0);
     setInspectionFormData({ ...inspectionFormData, pieces, totalAmount });
   };
@@ -2275,16 +2278,20 @@ export default function App() {
     setInspectionFormData({ ...inspectionFormData, pieces, totalAmount: total });
   };
 
+  const pieceTotal = (piece: FurniturePiece) => Number(piece.price || 0) * Number(piece.quantity || 1);
+  const inspectionRoomSubtotal = (roomKey: string) => (inspectionFormData.pieces || []).filter(p => p.room_type === roomKey).reduce((sum, p) => sum + pieceTotal(p), 0);
+  const availableRoomTypes = inspectionFormData.room_types?.length ? inspectionFormData.room_types : ['other'];
+
   const updatePiecePrice = (index: number, price: number) => {
     const pieces = [...(inspectionFormData.pieces || [])];
     pieces[index].price = price;
-    const totalAmount = pieces.reduce((acc, curr) => acc + curr.price, 0);
+    const totalAmount = pieces.reduce((acc, curr) => acc + pieceTotal(curr), 0);
     setInspectionFormData({ ...inspectionFormData, pieces, totalAmount });
   };
 
   const removePiece = (index: number) => {
     const pieces = inspectionFormData.pieces?.filter((_: any, i: number) => i !== index) || [];
-    const totalAmount = pieces.reduce((acc: number, curr: FurniturePiece) => acc + curr.price, 0);
+    const totalAmount = pieces.reduce((acc: number, curr: FurniturePiece) => acc + pieceTotal(curr), 0);
     setInspectionFormData({ ...inspectionFormData, pieces, totalAmount });
   };
 
@@ -3446,7 +3453,7 @@ export default function App() {
                                   </div>
                                   <div className="flex flex-wrap gap-2">
                                     {room.defaults.map(itemName => (
-                                      <button key={itemName} type="button" onClick={() => addPiece(itemName)} className="rounded-full border border-black/10 bg-white px-3 py-2 text-xs font-bold text-zinc-700 hover:bg-zinc-100 transition-all">{itemName}</button>
+                                      <button key={itemName} type="button" onClick={() => addPiece(itemName, roomKey)} className="rounded-full border border-black/10 bg-white px-3 py-2 text-xs font-bold text-zinc-700 hover:bg-zinc-100 transition-all">{itemName}</button>
                                     ))}
                                   </div>
                                 </div>
@@ -3469,13 +3476,14 @@ export default function App() {
                             const name = customPieceName.trim();
                             const qty = Math.max(1, customPieceQty);
                             const price = Number(customPiecePrice) || 0;
+                            const roomType = inspectionFormData.room_types?.[0] || 'other';
                             const pieces = [...(inspectionFormData.pieces || [])];
-                            const existingIndex = pieces.findIndex(p => p.name === name);
+                            const existingIndex = pieces.findIndex(p => p.name === name && (p.room_type || 'other') === roomType);
                             if (existingIndex >= 0) {
                               pieces[existingIndex].quantity = (pieces[existingIndex].quantity || 1) + qty;
                               pieces[existingIndex].price = price;
                             } else {
-                              pieces.push({ name, quantity: qty, price, details: '' });
+                              pieces.push({ name, quantity: qty, price, details: '', room_type: roomType });
                             }
                             const totalAmount = pieces.reduce((sum, p) => sum + (Number(p.price || 0) * Number(p.quantity || 1)), 0);
                             setInspectionFormData({ ...inspectionFormData, pieces, totalAmount });
@@ -3486,50 +3494,86 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div className="space-y-3">
-                        {inspectionFormData.pieces?.map((p, idx) => (
-                          <div key={idx} className="flex flex-col gap-2 bg-black/5 p-4 rounded-2xl border border-black/5">
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
-                              <div className="flex-1 font-bold text-lg text-zinc-800">{p.name}</div>
-                              <div className="flex items-center gap-3 w-full sm:w-auto">
-                                <div className="relative">
-                                  <span className="absolute top-1/2 -translate-y-1/2 start-3 text-[10px] font-bold text-zinc-400">العدد</span>
-                                  <input required type="number" min="1" className="w-20 ps-10 pe-3 py-3 bg-white border border-black/5 rounded-xl text-sm text-center font-bold shadow-sm" value={p.quantity || 1} onChange={e => updatePiece(idx, 'quantity', Number(e.target.value))} />
+                      {(() => {
+                        const pieces = inspectionFormData.pieces || [];
+                        const roomKeys = Array.from(new Set([...(inspectionFormData.room_types || ['other']), ...pieces.map(p => p.room_type || 'other')]));
+                        return (
+                          <div className="space-y-4">
+                            {roomKeys.map(roomKey => {
+                              const room = ROOM_TYPES.find(r => r.key === roomKey);
+                              const items = pieces.map((p, idx) => ({ ...p, idx }))
+                                .filter(p => (p.room_type || 'other') === roomKey);
+                              if (!items.length) return null;
+                              const subtotal = items.reduce((sum, p) => sum + pieceTotal(p), 0);
+                              return (
+                                <div key={roomKey} className="rounded-3xl border border-black/10 bg-white p-4">
+                                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                                    <div>
+                                      <div className="text-base font-semibold">{room?.ar || roomKey}</div>
+                                      <div className="text-[11px] text-zinc-500">{lang === 'ar' ? 'إجمالي هذه الغرفة' : 'Room subtotal'}</div>
+                                    </div>
+                                    <div className="text-xl font-bold">{subtotal.toLocaleString()} EGP</div>
+                                  </div>
+                                  <div className="space-y-3">
+                                    {items.map(p => (
+                                      <div key={p.idx} className="flex flex-col gap-3 rounded-3xl border border-black/10 bg-[#faf7f1] p-4">
+                                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                          <div className="space-y-1">
+                                            <div className="font-bold text-lg text-zinc-800">{p.name}</div>
+                                            <div className="text-xs text-zinc-500">{lang === 'ar' ? 'الغرفة' : 'Room'}: {room?.ar || roomKey}</div>
+                                          </div>
+                                          <div className="grid gap-2 sm:grid-cols-[auto_auto] items-center">
+                                            <div className="relative rounded-3xl bg-white px-4 py-3 text-sm font-bold text-zinc-800">
+                                              <span className="text-[10px] text-zinc-400 block mb-1">{lang === 'ar' ? 'العدد' : 'Qty'}</span>
+                                              <input
+                                                type="number"
+                                                min={1}
+                                                value={p.quantity || 1}
+                                                onChange={e => updatePiece(p.idx, 'quantity', Number(e.target.value))}
+                                                className="w-20 bg-transparent outline-none text-right"
+                                              />
+                                            </div>
+                                            <div className="relative rounded-3xl bg-white px-4 py-3 text-sm font-bold text-zinc-800">
+                                              <span className="text-[10px] text-zinc-400 block mb-1">EGP</span>
+                                              <input
+                                                type="number"
+                                                min={0}
+                                                value={p.price || ''}
+                                                onChange={e => updatePiece(p.idx, 'price', Number(e.target.value))}
+                                                className="w-24 bg-transparent outline-none text-right"
+                                              />
+                                            </div>
+                                          </div>
+                                        </div>
+                                        <div className="grid gap-3 sm:grid-cols-[1fr_auto] items-start">
+                                          <div>
+                                            <label className="text-[10px] font-bold uppercase text-zinc-400">{lang === 'ar' ? 'التفاصيل' : 'Details'}</label>
+                                            <textarea
+                                              placeholder={lang === 'ar' ? 'أضف تفاصيل للمنتج...' : 'Add product details...'}
+                                              rows={2}
+                                              value={p.details || ''}
+                                              onChange={e => updatePiece(p.idx, 'details', e.target.value)}
+                                              className="w-full px-4 py-3 bg-white border border-black/5 rounded-xl text-sm text-zinc-700 placeholder:text-zinc-300 outline-none focus:border-accent-tan/40 transition-all resize-none"
+                                            />
+                                          </div>
+                                          <button type="button" onClick={() => {
+                                            const pieces = inspectionFormData.pieces?.filter((_, i) => i !== p.idx);
+                                            const totalAmount = pieces?.reduce((sum, item) => sum + pieceTotal(item), 0) || 0;
+                                            setInspectionFormData({ ...inspectionFormData, pieces, totalAmount });
+                                            setExpandedPieceDetails(prev => prev.filter(i => i !== p.idx).map(i => i > p.idx ? i - 1 : i));
+                                          }} className="min-w-[56px] p-3 bg-white border border-red-200 text-red-600 rounded-3xl shadow-[0_12px_24px_rgba(239,68,68,0.12)] hover:bg-red-50 transition-all duration-200 flex items-center justify-center">
+                                            <Trash2 className="w-5 h-5" />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
-                                <div className="relative flex-1 sm:w-32">
-                                  <span className="absolute top-1/2 -translate-y-1/2 start-3 text-[10px] font-bold text-zinc-400">EGP</span>
-                                  <input required type="number" min="0" placeholder={t.price} className="w-full ps-10 pe-3 py-3 bg-white border border-black/5 rounded-xl text-sm text-center font-bold shadow-sm" value={p.price || ''} onChange={e => updatePiece(idx, 'price', Number(e.target.value))} />
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => setExpandedPieceDetails(prev =>
-                                    prev.includes(idx) ? prev.filter(i => i !== idx) : [...prev, idx]
-                                  )}
-                                  className={`px-3 py-3 rounded-xl text-[10px] font-bold uppercase transition-all btn-3d ${expandedPieceDetails.includes(idx) || p.details ? 'bg-accent-tan/20 text-accent-tan border border-accent-tan/30' : 'bg-white border border-black/5 text-zinc-400 hover:text-zinc-600'}`}
-                                >
-                                  تفاصيل
-                                </button>
-                                <button type="button" onClick={() => {
-                                  const pieces = inspectionFormData.pieces?.filter((_, i) => i !== idx);
-                                  const total = pieces?.reduce((sum, p) => sum + (Number(p.price) * (p.quantity || 1)), 0);
-                                  setInspectionFormData({ ...inspectionFormData, pieces, totalAmount: total });
-                                  setExpandedPieceDetails(prev => prev.filter(i => i !== idx).map(i => i > idx ? i - 1 : i));
-                                }} className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-colors shadow-sm btn-3d btn-3d-danger"><Trash2 className="w-5 h-5" /></button>
-                              </div>
-                            </div>
-                            {(expandedPieceDetails.includes(idx) || p.details) && (
-                              <textarea
-                                placeholder={lang === 'ar' ? 'أضف تفاصيل للمنتج...' : 'Add product details...'}
-                                rows={2}
-                                value={p.details || ''}
-                                onChange={e => updatePiece(idx, 'details', e.target.value)}
-                                className="w-full px-4 py-3 bg-white border border-black/5 rounded-xl text-sm text-zinc-700 placeholder:text-zinc-300 outline-none focus:border-accent-tan/40 transition-all resize-none"
-                              />
-                            )}
+                              );
+                            })}
                           </div>
-                        ))}
-                      </div>
-                      
+                        );
+                      })()}
                       <div className="pt-4 border-t border-black/5 flex justify-between items-center">
                         <span className="font-bold text-lg">{t.total}:</span>
                         <span className="text-2xl font-bold text-accent-tan">{(inspectionFormData.totalAmount || 0).toLocaleString()} EGP</span>
@@ -3705,8 +3749,41 @@ export default function App() {
                       </div>
                       <div className="rounded-3xl border border-black/10 p-4 bg-[#faf7f1]">
                         <div className="text-sm font-semibold mb-2">{lang === 'ar' ? 'الإجمالي الكلي' : 'Grand total'}</div>
-                        <div className="text-3xl font-bold">{quoteTotal().toLocaleString()}</div>
+                        <div className="text-3xl font-bold">{quoteTotal().toLocaleString()} جنيه</div>
+                        <div className="mt-4 text-sm text-zinc-600">
+                          <div className="font-semibold mb-2">{lang === 'ar' ? 'إجمالي كل غرفة' : 'Room totals'}</div>
+                          <div className="space-y-2">
+                            {quoteDrafts.length === 0 ? (
+                              <div className="text-zinc-500">{lang === 'ar' ? 'لا توجد غرف بعد' : 'No rooms yet'}</div>
+                            ) : (
+                              quoteDrafts.map((room, roomIndex) => (
+                                <div key={`${room.room_type}-${roomIndex}`} className="flex items-center justify-between gap-2">
+                                  <span>{ROOM_TYPES.find(r => r.key === room.room_type)?.ar || room.room_type}</span>
+                                  <span className="font-semibold">{quoteRoomSubtotal(room).toLocaleString()} جنيه</span>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
                       </div>
+                    </div>
+                    <div className="rounded-3xl border border-black/10 bg-white p-4 shadow-sm">
+                      <div className="text-sm font-semibold mb-3">{lang === 'ar' ? 'ملخص الغرف' : 'Rooms summary'}</div>
+                      {quoteDrafts.length === 0 ? (
+                        <div className="text-zinc-500">{lang === 'ar' ? 'لا توجد غرف بعد' : 'No rooms yet'}</div>
+                      ) : (
+                        <div className="grid gap-2">
+                          {quoteDrafts.map((room, roomIndex) => (
+                            <div key={`${room.room_type}-${roomIndex}-summary`} className="flex items-center justify-between rounded-3xl bg-[#faf7f1] p-3">
+                              <div>
+                                <div className="font-semibold">{ROOM_TYPES.find(r => r.key === room.room_type)?.ar || room.room_type}</div>
+                                <div className="text-xs text-zinc-500">{room.items.length} {lang === 'ar' ? 'عنصر' : 'items'}</div>
+                              </div>
+                              <div className="text-sm font-bold">{quoteRoomSubtotal(room).toLocaleString()} جنيه</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="space-y-5">
                       {quoteDrafts.map((room, roomIndex) => (
@@ -3723,6 +3800,10 @@ export default function App() {
                               </label>
                               <button onClick={() => removeRoom(roomIndex)} className="rounded-full bg-red-500 text-white px-3 py-2 text-sm">{lang === 'ar' ? 'حذف الغرفة' : 'Remove'}</button>
                             </div>
+                          </div>
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                            <div className="text-sm text-zinc-500">{lang === 'ar' ? 'إجمالي الغرفة' : 'Room total'}</div>
+                            <div className="rounded-full bg-zinc-100 px-3 py-2 text-sm font-semibold">{quoteRoomSubtotal(room).toLocaleString()} جنيه</div>
                           </div>
                           <div className="grid gap-4 sm:grid-cols-2">
                             {ROOM_TYPES.find(r => r.key === room.room_type)?.defaults.slice(0, 4).map(itemName => (
@@ -3757,6 +3838,16 @@ export default function App() {
                                     {item.aro_veneer_addon && (
                                       <input type="number" min={0} value={item.aro_surcharge} onChange={e => setRoomItemField(roomIndex, itemIndex, 'aro_surcharge', Number(e.target.value))} className="rounded-3xl border border-black/10 px-4 py-3 w-full max-w-[180px]" placeholder={lang === 'ar' ? 'سعر الإضافة' : 'Surcharge'} />
                                     )}
+                                  </div>
+                                  <div className="mt-3 flex flex-col gap-2">
+                                    <div className="rounded-3xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold text-zinc-900 flex items-center justify-between shadow-sm">
+                                      <span>{lang === 'ar' ? 'إجمالي القطعة' : 'Item total'}</span>
+                                      <span>{quoteItemTotal(item).toLocaleString()} جنيه</span>
+                                    </div>
+                                    <div className="text-zinc-500 text-xs">
+                                      {lang === 'ar' ? `الكمية ${item.quantity} × السعر ${item.price}` : `${item.quantity} x ${item.price}`}
+                                      {item.aro_veneer_addon ? ` + ${item.aro_surcharge}` : ''}
+                                    </div>
                                   </div>
                                   <div className="mt-3 text-right text-sm font-semibold">{lang === 'ar' ? 'المجموع:' : 'Subtotal:'} {quoteRoomSubtotal(room).toLocaleString()} جنيه</div>
                                 </div>

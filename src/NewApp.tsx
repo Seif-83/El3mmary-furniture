@@ -995,7 +995,8 @@ const App = ({ embedded = false, parentUser = null, parentIsAdmin = false, paren
   const contractTotalPaid = selectedPayments.reduce((sum, payment) => sum + payment.amount, 0);
   const contractRemaining = selectedVisit ? Math.max(selectedVisit.total_amount - contractTotalPaid, 0) : 0;
 
-  const quoteRoomSubtotal = (room: RoomDraft) => room.items.reduce((sum, item) => sum + item.price * item.quantity + (item.aro_veneer_addon ? item.aro_surcharge : 0), 0);
+  const quoteItemTotal = (item: RoomDraftItem) => item.price * item.quantity + (item.aro_veneer_addon ? item.aro_surcharge : 0);
+  const quoteRoomSubtotal = (room: RoomDraft) => room.items.reduce((sum, item) => sum + quoteItemTotal(item), 0);
   const quoteTotal = quoteDrafts.reduce((sum, room) => sum + quoteRoomSubtotal(room), 0);
 
   if (isAuthChecking) {
@@ -1372,6 +1373,21 @@ const App = ({ embedded = false, parentUser = null, parentIsAdmin = false, paren
                             <div className="rounded-3xl border border-black/10 p-4 bg-[#faf7f1]">
                               <div className="text-sm font-semibold mb-2">{lang === 'ar' ? 'الإجمالي الكلي' : 'Grand total'}</div>
                               <div className="text-3xl font-bold">{quoteTotal.toLocaleString()}</div>
+                              <div className="mt-4 text-sm text-zinc-600">
+                                <div className="font-semibold mb-2">{lang === 'ar' ? 'إجمالي كل غرفة' : 'Room totals'}</div>
+                                <div className="space-y-2">
+                                  {quoteDrafts.length === 0 ? (
+                                    <div className="text-zinc-500">{lang === 'ar' ? 'لا توجد غرف بعد' : 'No rooms yet'}</div>
+                                  ) : (
+                                    quoteDrafts.map((room, roomIndex) => (
+                                      <div key={`${room.room_type}-${roomIndex}`} className="flex items-center justify-between gap-2">
+                                        <span>{ROOM_TYPES.find(r => r.key === room.room_type)?.ar || room.room_type}</span>
+                                        <span className="font-semibold">{quoteRoomSubtotal(room).toLocaleString()}</span>
+                                      </div>
+                                    ))
+                                  )}
+                                </div>
+                              </div>
                             </div>
                           </div>
                           <div className="space-y-5">
@@ -1423,6 +1439,10 @@ const App = ({ embedded = false, parentUser = null, parentIsAdmin = false, paren
                                           {item.aro_veneer_addon && (
                                             <input type="number" min={0} value={item.aro_surcharge} onChange={e => setRoomItemField(roomIndex, itemIndex, 'aro_surcharge', Number(e.target.value))} className="rounded-3xl border border-black/10 px-4 py-3 w-full max-w-[180px]" placeholder={lang === 'ar' ? 'سعر الإضافة' : 'Surcharge'} />
                                           )}
+                                        </div>
+                                        <div className="mt-3 flex flex-col gap-2 text-right text-sm font-semibold">
+                                          <span>{lang === 'ar' ? 'إجمالي القطعة:' : 'Item total:'} {quoteItemTotal(item).toLocaleString()} جنيه</span>
+                                          <span className="text-zinc-500 text-xs">{lang === 'ar' ? `الكمية ${item.quantity} × السعر ${item.price}` : `${item.quantity} x ${item.price}`}{item.aro_veneer_addon ? ` + ${item.aro_surcharge}` : ''}</span>
                                         </div>
                                         <div className="mt-3 text-right text-sm font-semibold">{lang === 'ar' ? 'المجموع:' : 'Subtotal:'} {quoteRoomSubtotal(room).toLocaleString()} جنيه</div>
                                       </div>
