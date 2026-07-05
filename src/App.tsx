@@ -44,6 +44,12 @@ const toTimestamp = (isoString: string | null | undefined): FakeTimestamp => {
   };
 };
 
+const toSortableDateValue = (value?: string | null): number => {
+  if (!value) return 0;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+};
+
 type Timestamp = FakeTimestamp;
 import toast, { Toaster } from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -126,6 +132,7 @@ type RoomDraft = {
   id?: string;
   room_type: string;
   aro_veneer: boolean;
+  aro_veneer_price?: number;
   items: RoomDraftItem[];
 };
 
@@ -1109,6 +1116,31 @@ const mapCustomerFromDB = (dbCust: any): CustomerRecord => ({
   createdAt: toTimestamp(dbCust.created_at)
 });
 
+function parseMaybeJsonObject<T>(value: any): T | undefined {
+  if (value === null || value === undefined) return undefined;
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return undefined;
+    }
+  }
+  return value as T;
+}
+
+function parseMaybeJsonArray<T>(value: any): T[] | undefined {
+  if (Array.isArray(value)) return value;
+  const parsed = parseMaybeJsonObject<T[]>(value);
+  return Array.isArray(parsed) ? parsed : undefined;
+}
+
+function parseRecordSource<T>(value: any): Record<string, T> {
+  const parsed = parseMaybeJsonObject(value) as Record<string, T>;
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, T>;
+  return {};
+}
+
 const mapInspectionFromDB = (dbInsp: any): Inspection => ({
   id: dbInsp.id,
   customerName: dbInsp.customer_name,
@@ -1119,11 +1151,13 @@ const mapInspectionFromDB = (dbInsp: any): Inspection => ({
   notes: dbInsp.notes,
   governorate: dbInsp.governorate,
   rooms: dbInsp.rooms,
-  pieces: dbInsp.pieces || [],
+  pieces: parseMaybeJsonArray<FurniturePiece>(dbInsp.pieces) || [],
   totalAmount: Number(dbInsp.total_amount || 0),
   status: dbInsp.status,
   portfolio: dbInsp.portfolio,
-  room_types: Array.isArray(dbInsp.room_types) ? dbInsp.room_types : [],
+  room_types: parseMaybeJsonArray<string>(dbInsp.room_types) || [],
+  room_aro_veneer: (parseMaybeJsonObject(dbInsp.room_aro_veneer) as Record<string, boolean>) || {},
+  room_aro_veneer_price: (parseMaybeJsonObject(dbInsp.room_aro_veneer_price) as Record<string, number>) || {},
   deliveryDate: dbInsp.delivery_date,
   pickupDate: dbInsp.pickup_date,
   portfolioDate: dbInsp.portfolio_date,
@@ -1132,22 +1166,13 @@ const mapInspectionFromDB = (dbInsp: any): Inspection => ({
   ...((dbInsp as any).finalized_at ? { finalizedAt: toTimestamp((dbInsp as any).finalized_at) } : {})
 } as Inspection);
 
-const toSortableDateValue = (value?: string | null) => {
-  if (!value) return Number.POSITIVE_INFINITY;
-  const timestamp = new Date(value).getTime();
-  return Number.isNaN(timestamp) ? Number.POSITIVE_INFINITY : timestamp;
-};
-
-const sortContractedRecordsByContractDate = (records: Inspection[]) =>
-  [...records].sort((a, b) => {
+const sortContractedRecordsByContractDate = (records: Inspection[]) => {
+  return [...records].sort((a, b) => {
     const contractDateDiff = toSortableDateValue(a.contractDate) - toSortableDateValue(b.contractDate);
     if (contractDateDiff !== 0) return contractDateDiff;
-
-    const deliveryDateDiff = toSortableDateValue(a.deliveryDate) - toSortableDateValue(b.deliveryDate);
-    if (deliveryDateDiff !== 0) return deliveryDateDiff;
-
     return (a.customerName || '').localeCompare(b.customerName || '', 'ar');
   });
+};
 
 const isMissingRoomTypesColumnError = (error: any) => {
   const raw = [error?.code, error?.message, error?.details, error?.hint].filter(Boolean).join(' ').toLowerCase();
@@ -1330,35 +1355,110 @@ export default function App() {
   const [customPiecePrice, setCustomPiecePrice] = useState('');
   const quoteItemTotal = (item: RoomDraftItem) => Number(item.price || 0) * Number(item.quantity || 1) + (item.aro_veneer_addon ? Number(item.aro_surcharge || 0) : 0);
   const quoteRoomSubtotal = (room: RoomDraft) => {
-    return room.items.reduce((sum, item) => sum + quoteItemTotal(item), 0);
+    const itemsTotal = room.items.reduce((sum, item) => sum + quoteItemTotal(item), 0);
+    const veneerPrice = Number(room.aro_veneer_price || 0);
+    return itemsTotal + veneerPrice;
   };
   const quoteTotal = () => quoteDrafts.reduce((sum, r) => sum + quoteRoomSubtotal(r), 0);
+
+  const normalizeRoomType = (roomType?: string) => {
+    const value = typeof roomType === 'string' ? roomType.trim() : roomType ? String(roomType).trim() : '';
+    if (!value || value.toLowerCase() === 'other') return 'unassigned';
+    return value;
+  };
+
+  const getRoomTypeKey = (roomType?: string) => {
+    const normalized = normalizeRoomType(roomType);
+    if (ROOM_TYPES.some(r => r.key.toLowerCase() === normalized.toLowerCase())) return normalized.toLowerCase();
+    const mapped = ROOM_TYPES.find(r => r.ar.toLowerCase() === normalized.toLowerCase() || r.en.toLowerCase() === normalized.toLowerCase());
+    return mapped?.key || normalized.toLowerCase();
+  };
+
+  const findMatchingRoomKey = (roomType?: string, source?: Record<string, any>) => {
+    if (!roomType || !source) return undefined;
+    const normalized = getRoomTypeKey(roomType);
+    const sourceKey = Object.keys(source).find(key => getRoomTypeKey(key) === normalized);
+    return sourceKey ?? undefined;
+  };
+
+  const getSelectedRecordRoomAroVeneerPrice = (roomType?: string) => {
+    const priceSource = parseRecordSource<number>(selectedRecord?.room_aro_veneer_price || selectedRecord?.roomAroVeneerPrice);
+    const key = findMatchingRoomKey(roomType, priceSource);
+    return Number(key ? priceSource[key] : 0);
+  };
+
+  const getSelectedRecordRoomAroVeneerEnabled = (roomType?: string) => {
+    const enabledSource = parseRecordSource<boolean>(selectedRecord?.room_aro_veneer || selectedRecord?.roomAroVeneer);
+    const key = findMatchingRoomKey(roomType, enabledSource);
+    const enabledValue = Boolean(key ? enabledSource[key] : false);
+    return enabledValue || getSelectedRecordRoomAroVeneerPrice(roomType) > 0;
+  };
+
+  const getRoomLabel = (roomType: string) => {
+    const normalized = normalizeRoomType(roomType);
+    const room = ROOM_TYPES.find(r => r.key === normalized);
+    if (room) return room.ar;
+    if (normalized === 'unassigned') return lang === 'ar' ? 'غير محددة' : 'Unassigned';
+    const match = normalized.match(/^room_(\d+)$/);
+    if (match) return lang === 'ar' ? `غرفة ${match[1]}` : `Room ${match[1]}`;
+    return normalized;
+  };
+
+  const buildQuoteDraftItem = (p: any): RoomDraftItem => ({
+    item_name: p.name || p.item_name || '',
+    custom_item: p.custom_item || false,
+    quantity: Number(p.quantity || 1),
+    dimensions: p.details || p.dimensions || '',
+    price: Number(p.price || 0),
+    notes: p.notes || '',
+    aro_veneer_addon: Boolean(p.aro_veneer_addon),
+    aro_surcharge: Number(p.aro_surcharge || 0)
+  });
+
+  const groupQuoteDrafts = (pieces: FurniturePiece[], roomTypes?: string[]): RoomDraft[] => {
+    const roomAroVeneerSource = parseRecordSource<boolean>(selectedRecord?.room_aro_veneer || selectedRecord?.roomAroVeneer);
+    const roomAroVeneerPriceSource = parseRecordSource<number>(selectedRecord?.room_aro_veneer_price || selectedRecord?.roomAroVeneerPrice);
+    const roomKeys = Array.from(new Set([
+      ...pieces.map(p => getRoomTypeKey(p.room_type)),
+      ...(Array.isArray(roomTypes) ? roomTypes.filter(Boolean).map(getRoomTypeKey) : []),
+      ...Object.keys(roomAroVeneerSource).map(getRoomTypeKey),
+      ...Object.keys(roomAroVeneerPriceSource).map(getRoomTypeKey)
+    ]));
+
+    return roomKeys.map(room_type => ({
+      room_type,
+      aro_veneer: getSelectedRecordRoomAroVeneerEnabled(room_type) || getSelectedRecordRoomAroVeneerPrice(room_type) > 0,
+      aro_veneer_price: getSelectedRecordRoomAroVeneerPrice(room_type),
+      items: pieces
+        .filter(p => getRoomTypeKey(p.room_type) === room_type)
+        .map(buildQuoteDraftItem)
+    }));
+  };
 
   useEffect(() => {
     if (!selectedRecord) {
       setQuoteDrafts([]);
       return;
     }
-    // Initialize quoteDrafts from selectedRecord.pieces (flattened) when available,
-    // otherwise create empty rooms based on selectedRecord.rooms
+
     const pieces = Array.isArray(selectedRecord.pieces) ? selectedRecord.pieces : [];
-    if (pieces.length > 0) {
-      // put all pieces into a single room by default (preserve name/quantity/price/details)
-      const items: RoomDraftItem[] = pieces.map((p: any) => ({
-        item_name: p.name || p.item_name || '',
-        custom_item: p.custom_item || false,
-        quantity: Number(p.quantity || 1),
-        dimensions: p.details || p.dimensions || '',
-        price: Number(p.price || 0),
-        notes: p.notes || '',
-        aro_veneer_addon: Boolean(p.aro_veneer_addon),
-        aro_surcharge: Number(p.aro_surcharge || 0)
-      }));
-      setQuoteDrafts([{ room_type: 'other', aro_veneer: false, items }]);
+    const drafts = groupQuoteDrafts(pieces, selectedRecord.room_types);
+    if (drafts.length > 0) {
+      setQuoteDrafts(drafts);
       return;
     }
 
-    const defaultRooms = Array.from({ length: Number(selectedRecord.rooms || 0) }).map((_, idx) => ({ room_type: 'other', aro_veneer: false, items: [] as RoomDraftItem[] }));
+    const defaultRoomTypes = Array.isArray(selectedRecord.room_types) && selectedRecord.room_types.length > 0
+      ? selectedRecord.room_types
+      : Array.from({ length: Number(selectedRecord.rooms || 0) }, (_, idx) => `room_${idx + 1}`);
+
+    const defaultRooms = defaultRoomTypes.map((room_type: string) => ({
+      room_type,
+      aro_veneer: false,
+      aro_veneer_price: 0,
+      items: [] as RoomDraftItem[],
+    }));
+
     setQuoteDrafts(defaultRooms);
   }, [selectedRecord]);
 
@@ -1389,13 +1489,15 @@ export default function App() {
       setIsLoading(true);
       const pieces = quoteDrafts.flatMap(r => r.items.map(it => ({ name: it.item_name, quantity: it.quantity, price: it.price, details: it.dimensions || it.notes || '', room_type: r.room_type, aro_veneer_addon: it.aro_veneer_addon, aro_surcharge: it.aro_surcharge })));
       const totalAmount = quoteTotal();
-      const { error } = await supabase.from('inspections').update({ pieces, total_amount: totalAmount, rooms: quoteDrafts.length }).eq('id', selectedRecord.id);
+      const roomAroVeneer = parseRecordSource<boolean>(selectedRecord?.room_aro_veneer || selectedRecord?.roomAroVeneer);
+      const roomAroVeneerPrice = parseRecordSource<number>(selectedRecord?.room_aro_veneer_price || selectedRecord?.roomAroVeneerPrice);
+      const { error } = await supabase.from('inspections').update({ pieces, total_amount: totalAmount, rooms: quoteDrafts.length, room_aro_veneer: roomAroVeneer, room_aro_veneer_price: roomAroVeneerPrice }).eq('id', selectedRecord.id);
       if (error) throw error;
       toast.success(lang === 'ar' ? 'تم حفظ العرض' : 'Quote saved');
       await refreshAllData();
       // refresh selectedRecord
       const refreshed = (await supabase.from('inspections').select('*').eq('id', selectedRecord.id).single()).data;
-      setSelectedRecord(refreshed || selectedRecord);
+      setSelectedRecord(refreshed ? mapInspectionFromDB(refreshed) : selectedRecord);
     } catch (err: any) {
       console.error(err);
       toast.error(err?.message || (lang === 'ar' ? 'فشل حفظ العرض' : 'Failed saving quote'));
@@ -1986,17 +2088,21 @@ export default function App() {
     setIsLoading(true);
     try {
       if (editingCollection && editingCollection !== 'customers') {
+        const inspectionId = inspectionFormData.id;
+        if (!inspectionId) throw new Error('Missing inspection id');
         // Editing inspections / contracted / non-contracted - update pieces/rooms/total
         const step2Payload: Record<string, any> = {
           rooms: inspectionFormData.rooms || 0,
           pieces: inspectionFormData.pieces || [],
           total_amount: inspectionFormData.totalAmount || 0,
+          room_aro_veneer: inspectionFormData.room_aro_veneer || {},
+          room_aro_veneer_price: inspectionFormData.room_aro_veneer_price || {},
         };
         // room_types only exists on contracted_customers / non_contracted_customers, NOT on inspections
         if (editingCollection !== 'inspections') {
           step2Payload.room_types = inspectionFormData.room_types || [];
         }
-        await updateRecordWithOptionalRoomTypes(editingCollection, step2Payload, inspectionFormData.id);
+        await updateRecordWithOptionalRoomTypes(editingCollection, step2Payload, inspectionId);
         await refreshAllData();
         void playSound('success');
         toast.success(lang === 'ar' ? "تم الحفظ بنجاح" : "Saved successfully");
@@ -2029,6 +2135,8 @@ export default function App() {
         rooms: inspectionFormData.rooms || 0,
         pieces: inspectionFormData.pieces || [],
         total_amount: inspectionFormData.totalAmount || 0,
+        room_aro_veneer: inspectionFormData.room_aro_veneer || {},
+        room_aro_veneer_price: inspectionFormData.room_aro_veneer_price || {},
         pickup_date: inspectionFormData.pickupDate || null,
         portfolio_date: inspectionFormData.portfolio_date || null,
         contract_date: inspectionFormData.contractDate || null
@@ -2099,6 +2207,8 @@ export default function App() {
         room_types: recordToSave.room_types || [],
         pieces: recordToSave.pieces || [],
         total_amount: recordToSave.totalAmount || 0,
+        room_aro_veneer: recordToSave.room_aro_veneer || {},
+        room_aro_veneer_price: recordToSave.room_aro_veneer_price || {},
         status,
         portfolio: recordToSave.portfolio || null,
         delivery_date: recordToSave.deliveryDate || null,
@@ -2212,6 +2322,8 @@ export default function App() {
             room_types: r.room_types || [],
             pieces: r.pieces || [],
             total_amount: r.totalAmount || 0,
+            room_aro_veneer: r.room_aro_veneer || {},
+            room_aro_veneer_price: r.room_aro_veneer_price || {},
             status: 'contracted',
             portfolio: r.portfolio || null,
             delivery_date: r.deliveryDate || null,
@@ -2260,9 +2372,9 @@ export default function App() {
     roomAroVeneerPrice?: Record<string, number>
   ) => {
     const piecesTotal = pieces.reduce((sum, p) => sum + pieceTotal(p), 0);
-    const veneerTotal = Object.entries(roomAroVeneer || {}).reduce((sum, [roomKey, enabled]) => {
-      if (!enabled) return sum;
-      return sum + Number(roomAroVeneerPrice?.[roomKey] || 0);
+    const veneerTotal = Object.entries(roomAroVeneerPrice || {}).reduce((sum, [roomKey, price]) => {
+      const enabled = Boolean(roomAroVeneer?.[roomKey]) || Number(price) > 0;
+      return sum + (enabled ? Number(price || 0) : 0);
     }, 0);
     return piecesTotal + veneerTotal;
   };
@@ -2309,7 +2421,7 @@ export default function App() {
   };
 
   const pieceTotal = (piece: FurniturePiece) => Number(piece.price || 0) * Number(piece.quantity || 1);
-  const inspectionRoomAroVeneerSubtotal = (roomKey: string) => inspectionFormData.room_aro_veneer?.[roomKey] ? Number(inspectionFormData.room_aro_veneer_price?.[roomKey] || 0) : 0;
+  const inspectionRoomAroVeneerSubtotal = (roomKey: string) => Number(inspectionFormData.room_aro_veneer_price?.[roomKey] || 0);
   const inspectionRoomSubtotal = (roomKey: string) => (inspectionFormData.pieces || []).filter(p => p.room_type === roomKey).reduce((sum, p) => sum + pieceTotal(p), 0) + inspectionRoomAroVeneerSubtotal(roomKey);
   const availableRoomTypes = inspectionFormData.room_types?.length ? inspectionFormData.room_types : ['other'];
 
@@ -3827,120 +3939,83 @@ export default function App() {
                     <h3 className="text-xl font-semibold">{lang === 'ar' ? 'منشئ العرض' : 'Quote builder'}</h3>
                     <button onClick={handleSaveQuote} className="rounded-full bg-[#18181b] text-white px-4 py-2 text-sm">{lang === 'ar' ? 'حفظ العرض' : 'Save quote'}</button>
                   </div>
-                  <div className="space-y-5">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-3xl border border-black/10 p-4 bg-[#faf7f1]">
-                        <div className="text-sm font-semibold mb-2">{lang === 'ar' ? 'إضافة غرفة' : 'Add room'}</div>
-                        <div className="grid gap-2">
-                          {ROOM_TYPES.map(room => (
-                            <button key={room.key} onClick={() => addRoom(room.key)} className="rounded-3xl border border-black/10 bg-white px-3 py-2 text-sm hover:bg-[#f5f0e8]">{room.ar}</button>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="rounded-3xl border border-black/10 p-4 bg-[#faf7f1]">
-                        <div className="text-sm font-semibold mb-2">{lang === 'ar' ? 'الإجمالي الكلي' : 'Grand total'}</div>
-                        <div className="text-3xl font-bold">{quoteTotal().toLocaleString()} جنيه</div>
-                        <div className="mt-4 text-sm text-zinc-600">
-                          <div className="font-semibold mb-2">{lang === 'ar' ? 'إجمالي كل غرفة' : 'Room totals'}</div>
-                          <div className="space-y-2">
-                            {quoteDrafts.length === 0 ? (
-                              <div className="text-zinc-500">{lang === 'ar' ? 'لا توجد غرف بعد' : 'No rooms yet'}</div>
-                            ) : (
-                              quoteDrafts.map((room, roomIndex) => (
-                                <div key={`${room.room_type}-${roomIndex}`} className="flex items-center justify-between gap-2">
-                                  <span>{ROOM_TYPES.find(r => r.key === room.room_type)?.ar || room.room_type}</span>
-                                  <span className="font-semibold">{quoteRoomSubtotal(room).toLocaleString()} جنيه</span>
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-3xl border border-black/10 p-4 bg-[#faf7f1]">
+                      <div className="text-sm font-semibold mb-2">{lang === 'ar' ? 'الإجمالي الكلي' : 'Grand total'}</div>
+                      <div className="text-3xl font-bold">{quoteTotal().toLocaleString()} جنيه</div>
+                    </div>
+                    <div className="rounded-3xl border border-black/10 p-4 bg-[#faf7f1]">
+                      <div className="text-sm font-semibold mb-2">{lang === 'ar' ? 'إجمالي كل غرفة' : 'Room totals'}</div>
+                      <div className="space-y-2">
+                        {quoteDrafts.length === 0 ? (
+                          <div className="text-zinc-500">{lang === 'ar' ? 'لا توجد غرف بعد' : 'No rooms yet'}</div>
+                        ) : (
+                          quoteDrafts.map((room, roomIndex) => (
+                            <div key={`${room.room_type}-${roomIndex}`} className="flex items-center justify-between gap-2">
+                              <span>{getRoomLabel(room.room_type)}</span>
+                              <span className="font-semibold">{quoteRoomSubtotal(room).toLocaleString()} جنيه</span>
+                            </div>
+                          ))
+                        )}
                       </div>
                     </div>
-                    <div className="rounded-3xl border border-black/10 bg-white p-4 shadow-sm">
-                      <div className="text-sm font-semibold mb-3">{lang === 'ar' ? 'ملخص الغرف' : 'Rooms summary'}</div>
-                      {quoteDrafts.length === 0 ? (
-                        <div className="text-zinc-500">{lang === 'ar' ? 'لا توجد غرف بعد' : 'No rooms yet'}</div>
-                      ) : (
-                        <div className="grid gap-2">
-                          {quoteDrafts.map((room, roomIndex) => (
-                            <div key={`${room.room_type}-${roomIndex}-summary`} className="flex items-center justify-between rounded-3xl bg-[#faf7f1] p-3">
+                  </div>
+
+                  <div className="rounded-3xl border border-black/10 bg-white p-4 shadow-sm">
+                    <div className="text-sm font-semibold mb-3">{lang === 'ar' ? 'ملخص الغرف' : 'Rooms summary'}</div>
+                    {quoteDrafts.length === 0 ? (
+                      <div className="text-zinc-500">{lang === 'ar' ? 'لا توجد غرف بعد' : 'No rooms yet'}</div>
+                    ) : (
+                      <div className="grid gap-4">
+                        {quoteDrafts.map((room, roomIndex) => (
+                          <div key={`${room.room_type}-${roomIndex}-summary`} className="rounded-3xl border border-black/10 bg-[#faf7f1] p-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
                               <div>
-                                <div className="font-semibold">{ROOM_TYPES.find(r => r.key === room.room_type)?.ar || room.room_type}</div>
+                                <div className="font-semibold text-lg">{getRoomLabel(room.room_type)}</div>
                                 <div className="text-xs text-zinc-500">{room.items.length} {lang === 'ar' ? 'عنصر' : 'items'}</div>
+                                {room.aro_veneer && room.aro_veneer_price ? (
+                                  <div className="text-xs text-zinc-500 mt-1">
+                                    {lang === 'ar' ? 'قشرة أرو بالغرفة:' : 'Room veneer:'} {Number(room.aro_veneer_price).toLocaleString()} جنيه
+                                  </div>
+                                ) : null}
                               </div>
                               <div className="text-sm font-bold">{quoteRoomSubtotal(room).toLocaleString()} جنيه</div>
                             </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <div className="space-y-5">
-                      {quoteDrafts.map((room, roomIndex) => (
-                        <div key={`${room.room_type}-${roomIndex}`} className="rounded-[2rem] border border-black/10 p-4 bg-[#fffef9]">
-                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-                            <div>
-                              <div className="text-lg font-semibold">{ROOM_TYPES.find(r => r.key === room.room_type)?.ar || room.room_type}</div>
-                              <div className="text-sm text-zinc-500">{lang === 'ar' ? 'إجمالي الغرفة' : 'Room total'}</div>
-                            </div>
-                            <button onClick={() => removeRoom(roomIndex)} className="rounded-full bg-red-500 text-white px-3 py-2 text-sm">{lang === 'ar' ? 'حذف الغرفة' : 'Remove'}</button>
-                          </div>
-                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-                            <div className="text-sm text-zinc-500">{lang === 'ar' ? 'إجمالي الغرفة' : 'Room total'}</div>
-                            <div className="rounded-full bg-zinc-100 px-3 py-2 text-sm font-semibold">{quoteRoomSubtotal(room).toLocaleString()} جنيه</div>
-                          </div>
-                          <div className="grid gap-4 sm:grid-cols-2">
-                            {ROOM_TYPES.find(r => r.key === room.room_type)?.defaults.slice(0, 4).map(itemName => (
-                              <button key={itemName} onClick={() => addDefaultItem(roomIndex, itemName)} className="rounded-3xl border border-black/10 bg-white px-3 py-2 text-sm hover:bg-[#f5f0e8]">{itemName}</button>
-                            ))}
-                          </div>
-                          <div className="mt-4">
-                            <div className="flex items-center justify-between mb-3">
-                              <div className="font-semibold">{lang === 'ar' ? 'عناصر الغرفة' : 'Room items'}</div>
-                              <button onClick={() => addCustomItem(roomIndex)} className="rounded-full bg-[#d4a373] text-white px-4 py-2 text-sm">{lang === 'ar' ? 'عنصر مخصص' : 'Custom item'}</button>
-                            </div>
-                            <div className="space-y-4">
-                              {room.items.map((item, itemIndex) => (
-                                <div key={`${roomIndex}-${itemIndex}`} className="rounded-3xl bg-white p-4 border border-black/10">
-                                  <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
-                                    <input value={item.item_name} onChange={e => setRoomItemField(roomIndex, itemIndex, 'item_name', e.target.value)} placeholder={lang === 'ar' ? 'اسم العنصر' : 'Item name'} className="rounded-3xl border border-black/10 px-4 py-3 w-full" />
-                                    <button onClick={() => removeRoomItem(roomIndex, itemIndex)} className="rounded-full bg-red-500 text-white px-4 py-3 text-sm">{lang === 'ar' ? 'حذف' : 'Remove'}</button>
-                                  </div>
-                                  <div className="grid gap-3 sm:grid-cols-2 mt-3">
-                                    <input type="number" min={1} value={item.quantity} onChange={e => setRoomItemField(roomIndex, itemIndex, 'quantity', Number(e.target.value))} className="rounded-3xl border border-black/10 px-4 py-3" placeholder={lang === 'ar' ? 'الكمية' : 'Quantity'} />
-                                    <input value={item.dimensions} onChange={e => setRoomItemField(roomIndex, itemIndex, 'dimensions', e.target.value)} className="rounded-3xl border border-black/10 px-4 py-3" placeholder={lang === 'ar' ? 'الأبعاد' : 'Dimensions'} />
-                                  </div>
-                                  <div className="grid gap-3 sm:grid-cols-2 mt-3">
-                                    <input type="number" min={0} value={item.price} onChange={e => setRoomItemField(roomIndex, itemIndex, 'price', Number(e.target.value))} className="rounded-3xl border border-black/10 px-4 py-3" placeholder={lang === 'ar' ? 'السعر' : 'Price'} />
-                                    <input value={item.notes} onChange={e => setRoomItemField(roomIndex, itemIndex, 'notes', e.target.value)} className="rounded-3xl border border-black/10 px-4 py-3" placeholder={lang === 'ar' ? 'ملاحظات' : 'Notes'} />
-                                  </div>
-                                  <div className="flex items-center gap-3 mt-3 flex-wrap">
-                                    <label className="inline-flex items-center gap-2 rounded-full border border-black/10 px-3 py-2 bg-[#fbfbfb]">
-                                      <input type="checkbox" checked={item.aro_veneer_addon} onChange={e => setRoomItemField(roomIndex, itemIndex, 'aro_veneer_addon', e.target.checked)} className="accent-[#d4a373]" />
-                                      <span className="text-sm">{lang === 'ar' ? 'قشرة أرو' : 'Aro veneer'}</span>
-                                    </label>
-                                    {item.aro_veneer_addon && (
-                                      <input type="number" min={0} value={item.aro_surcharge} onChange={e => setRoomItemField(roomIndex, itemIndex, 'aro_surcharge', Number(e.target.value))} className="rounded-3xl border border-black/10 px-4 py-3 w-full max-w-[180px]" placeholder={lang === 'ar' ? 'سعر الإضافة' : 'Surcharge'} />
+                            <div className="space-y-3">
+                              {room.items.length === 0 ? (
+                                <div className="rounded-3xl bg-white p-4 text-zinc-500">{lang === 'ar' ? 'لا توجد عناصر في هذه الغرفة' : 'No items in this room'}</div>
+                              ) : (
+                                room.items.map((item, itemIndex) => (
+                                  <div key={`${roomIndex}-${itemIndex}`} className="rounded-3xl border border-black/10 bg-white p-4">
+                                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                                      <div className="space-y-1">
+                                        <div className="font-semibold text-zinc-900">{item.item_name || (lang === 'ar' ? 'عنصر مخصص' : 'Custom item')}</div>
+                                        <div className="text-xs text-zinc-500">
+                                          {lang === 'ar' ? 'الكمية' : 'Qty'}: {item.quantity} · {lang === 'ar' ? 'السعر' : 'Price'}: {item.price.toLocaleString()} جنيه
+                                        </div>
+                                      </div>
+                                      <div className="text-sm font-bold text-zinc-900">{quoteItemTotal(item).toLocaleString()} جنيه</div>
+                                    </div>
+                                    {(item.dimensions || item.notes || item.aro_veneer_addon) && (
+                                      <div className="mt-4 grid gap-2 text-xs text-zinc-500">
+                                        {item.dimensions && <div>{lang === 'ar' ? 'الأبعاد:' : 'Dimensions:'} {item.dimensions}</div>}
+                                        {item.notes && <div>{lang === 'ar' ? 'ملاحظات:' : 'Notes:'} {item.notes}</div>}
+                                        {item.aro_veneer_addon && item.aro_surcharge > 0 && (
+                                          <div className="rounded-full bg-[#f5f0e8] px-3 py-2 inline-flex items-center gap-2 text-zinc-700 font-semibold">
+                                            {lang === 'ar' ? 'قشرة أرو' : 'Aro veneer'} +{item.aro_surcharge.toLocaleString()} جنيه
+                                          </div>
+                                        )}
+                                      </div>
                                     )}
                                   </div>
-                                  <div className="mt-3 flex flex-col gap-2">
-                                    <div className="rounded-3xl border border-black/10 bg-white px-4 py-3 text-sm font-semibold text-zinc-900 flex items-center justify-between shadow-sm">
-                                      <span>{lang === 'ar' ? 'إجمالي القطعة' : 'Item total'}</span>
-                                      <span>{quoteItemTotal(item).toLocaleString()} جنيه</span>
-                                    </div>
-                                    <div className="text-zinc-500 text-xs">
-                                      {lang === 'ar' ? `الكمية ${item.quantity} × السعر ${item.price}` : `${item.quantity} x ${item.price}`}
-                                      {item.aro_veneer_addon ? ` + ${item.aro_surcharge}` : ''}
-                                    </div>
-                                  </div>
-                                  <div className="mt-3 text-right text-sm font-semibold">{lang === 'ar' ? 'المجموع:' : 'Subtotal:'} {quoteRoomSubtotal(room).toLocaleString()} جنيه</div>
-                                </div>
-                              ))}
+                                ))
+                              )}
                             </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
                 {selectedRecord.pieces && selectedRecord.pieces.length > 0 && (
@@ -3949,8 +4024,11 @@ export default function App() {
                     <div className="grid grid-cols-1 gap-3">
                       {selectedRecord.pieces.map((p: any, i: number) => (
                         <div key={i} className="group bg-white border border-zinc-100 hover:border-accent-tan/30 p-5 rounded-3xl transition-all hover:shadow-md">
-                          <div className="flex justify-between items-center mb-1">
-                            <span className="font-bold text-zinc-900">{p.name} {p.quantity > 1 ? <span className="text-accent-tan ml-1">× {p.quantity}</span> : ''}</span>
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-1">
+                            <div>
+                              <span className="font-bold text-zinc-900">{p.name} {p.quantity > 1 ? <span className="text-accent-tan ml-1">× {p.quantity}</span> : ''}</span>
+                              <div className="text-[11px] text-zinc-500">{getRoomLabel(p.room_type || 'unassigned')}</div>
+                            </div>
                             <span className="font-black text-zinc-900">{(p.price * (p.quantity || 1)).toLocaleString()} EGP</span>
                           </div>
                           {p.details && (
