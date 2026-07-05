@@ -79,6 +79,8 @@ interface FurniturePiece {
   quantity: number;
   details?: string;
   room_type?: string;
+  aro_veneer_addon?: boolean;
+  aro_surcharge?: number;
 }
 
 interface Inspection {
@@ -99,6 +101,8 @@ interface Inspection {
   // Contracting details
   portfolio?: string;
   room_types?: string[];
+  room_aro_veneer?: Record<string, boolean>;
+  room_aro_veneer_price?: Record<string, number>;
   deliveryDate?: string;
   pickupDate?: string;
   portfolioDate?: string;
@@ -1309,6 +1313,8 @@ export default function App() {
     notes: '',
     rooms: 0,
     room_types: [],
+    room_aro_veneer: {},
+    room_aro_veneer_price: {},
     pieces: [],
     totalAmount: 0
   });
@@ -2248,18 +2254,32 @@ export default function App() {
     );
   };
 
+  const computeInspectionTotalAmount = (
+    pieces: FurniturePiece[],
+    roomAroVeneer?: Record<string, boolean>,
+    roomAroVeneerPrice?: Record<string, number>
+  ) => {
+    const piecesTotal = pieces.reduce((sum, p) => sum + pieceTotal(p), 0);
+    const veneerTotal = Object.entries(roomAroVeneer || {}).reduce((sum, [roomKey, enabled]) => {
+      if (!enabled) return sum;
+      return sum + Number(roomAroVeneerPrice?.[roomKey] || 0);
+    }, 0);
+    return piecesTotal + veneerTotal;
+  };
+
   const addPiece = (name: string, roomType?: string) => {
     const defaultRoom = roomType || inspectionFormData.room_types?.[0] || 'other';
     const pieces = [...(inspectionFormData.pieces || [])];
     const existingIndex = pieces.findIndex(p => p.name === name && (p.room_type || 'other') === defaultRoom);
+    const defaultAro = inspectionFormData.room_aro_veneer?.[defaultRoom] || false;
 
     if (existingIndex >= 0) {
       pieces[existingIndex].quantity = (pieces[existingIndex].quantity || 1) + 1;
     } else {
-      pieces.push({ name, price: 0, quantity: 1, room_type: defaultRoom });
+      pieces.push({ name, price: 0, quantity: 1, room_type: defaultRoom, aro_veneer_addon: defaultAro, aro_surcharge: 0 });
     }
 
-    const totalAmount = pieces.reduce((sum, p) => sum + (Number(p.price || 0) * Number(p.quantity || 1)), 0);
+    const totalAmount = computeInspectionTotalAmount(pieces, inspectionFormData.room_aro_veneer, inspectionFormData.room_aro_veneer_price);
     setInspectionFormData({ ...inspectionFormData, pieces, totalAmount });
   };
 
@@ -2268,30 +2288,41 @@ export default function App() {
     const nextRoomTypes = roomTypes.includes(roomKey)
       ? roomTypes.filter(key => key !== roomKey)
       : [...roomTypes, roomKey];
-    setInspectionFormData({ ...inspectionFormData, room_types: nextRoomTypes });
+    const nextRoomAroVeneer = { ...(inspectionFormData.room_aro_veneer || {}) };
+    const nextRoomAroVeneerPrice = { ...(inspectionFormData.room_aro_veneer_price || {}) };
+    if (nextRoomTypes.includes(roomKey)) {
+      nextRoomAroVeneer[roomKey] = nextRoomAroVeneer[roomKey] ?? false;
+      nextRoomAroVeneerPrice[roomKey] = nextRoomAroVeneerPrice[roomKey] ?? 0;
+    } else {
+      delete nextRoomAroVeneer[roomKey];
+      delete nextRoomAroVeneerPrice[roomKey];
+    }
+    const totalAmount = computeInspectionTotalAmount(inspectionFormData.pieces || [], nextRoomAroVeneer, nextRoomAroVeneerPrice);
+    setInspectionFormData({ ...inspectionFormData, room_types: nextRoomTypes, room_aro_veneer: nextRoomAroVeneer, room_aro_veneer_price: nextRoomAroVeneerPrice, totalAmount });
   };
 
   const updatePiece = (index: number, field: string, value: any) => {
     const pieces = [...(inspectionFormData.pieces || [])];
     pieces[index] = { ...pieces[index], [field]: value };
-    const total = pieces.reduce((sum, p) => sum + (Number(p.price) * Number(p.quantity || 1)), 0);
+    const total = computeInspectionTotalAmount(pieces, inspectionFormData.room_aro_veneer, inspectionFormData.room_aro_veneer_price);
     setInspectionFormData({ ...inspectionFormData, pieces, totalAmount: total });
   };
 
   const pieceTotal = (piece: FurniturePiece) => Number(piece.price || 0) * Number(piece.quantity || 1);
-  const inspectionRoomSubtotal = (roomKey: string) => (inspectionFormData.pieces || []).filter(p => p.room_type === roomKey).reduce((sum, p) => sum + pieceTotal(p), 0);
+  const inspectionRoomAroVeneerSubtotal = (roomKey: string) => inspectionFormData.room_aro_veneer?.[roomKey] ? Number(inspectionFormData.room_aro_veneer_price?.[roomKey] || 0) : 0;
+  const inspectionRoomSubtotal = (roomKey: string) => (inspectionFormData.pieces || []).filter(p => p.room_type === roomKey).reduce((sum, p) => sum + pieceTotal(p), 0) + inspectionRoomAroVeneerSubtotal(roomKey);
   const availableRoomTypes = inspectionFormData.room_types?.length ? inspectionFormData.room_types : ['other'];
 
   const updatePiecePrice = (index: number, price: number) => {
     const pieces = [...(inspectionFormData.pieces || [])];
     pieces[index].price = price;
-    const totalAmount = pieces.reduce((acc, curr) => acc + pieceTotal(curr), 0);
+    const totalAmount = computeInspectionTotalAmount(pieces, inspectionFormData.room_aro_veneer, inspectionFormData.room_aro_veneer_price);
     setInspectionFormData({ ...inspectionFormData, pieces, totalAmount });
   };
 
   const removePiece = (index: number) => {
     const pieces = inspectionFormData.pieces?.filter((_: any, i: number) => i !== index) || [];
-    const totalAmount = pieces.reduce((acc: number, curr: FurniturePiece) => acc + pieceTotal(curr), 0);
+    const totalAmount = computeInspectionTotalAmount(pieces, inspectionFormData.room_aro_veneer, inspectionFormData.room_aro_veneer_price);
     setInspectionFormData({ ...inspectionFormData, pieces, totalAmount });
   };
 
@@ -3443,12 +3474,65 @@ export default function App() {
                             {inspectionFormData.room_types.map(roomKey => {
                               const room = ROOM_TYPES.find(r => r.key === roomKey);
                               if (!room) return null;
+                              const checked = inspectionFormData.room_aro_veneer?.[roomKey] || false;
+                              const roomVeneerPrice = inspectionFormData.room_aro_veneer_price?.[roomKey] || 0;
                               return (
                                 <div key={roomKey} className="rounded-3xl border border-black/10 p-4 bg-[#faf7f1]">
-                                  <div className="flex items-center justify-between mb-3">
+                                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
                                     <div>
                                       <div className="text-base font-semibold">{room.ar}</div>
                                       <div className="text-[11px] text-zinc-500">{room.en}</div>
+                                    </div>
+                                    <div className="flex flex-col gap-3 sm:items-end">
+                                      <label className="inline-flex items-center gap-2 rounded-full border border-black/10 px-3 py-2 bg-white">
+                                        <input
+                                          type="checkbox"
+                                          checked={checked}
+                                          onChange={e => {
+                                            const nextRoomAroVeneer = {
+                                              ...(inspectionFormData.room_aro_veneer || {}),
+                                              [roomKey]: e.target.checked
+                                            };
+                                            const totalAmount = computeInspectionTotalAmount(
+                                              inspectionFormData.pieces || [],
+                                              nextRoomAroVeneer,
+                                              inspectionFormData.room_aro_veneer_price
+                                            );
+                                            setInspectionFormData({
+                                              ...inspectionFormData,
+                                              room_aro_veneer: nextRoomAroVeneer,
+                                              totalAmount
+                                            });
+                                          }}
+                                          className="accent-[#d4a373]"
+                                        />
+                                        <span className="text-sm">{lang === 'ar' ? 'قشرة أرو' : 'Aro veneer'}</span>
+                                      </label>
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="number"
+                                          min={0}
+                                          value={roomVeneerPrice}
+                                          onChange={e => {
+                                            const nextRoomAroVeneerPrice = {
+                                              ...(inspectionFormData.room_aro_veneer_price || {}),
+                                              [roomKey]: Number(e.target.value)
+                                            };
+                                            const totalAmount = computeInspectionTotalAmount(
+                                              inspectionFormData.pieces || [],
+                                              inspectionFormData.room_aro_veneer,
+                                              nextRoomAroVeneerPrice
+                                            );
+                                            setInspectionFormData({
+                                              ...inspectionFormData,
+                                              room_aro_veneer_price: nextRoomAroVeneerPrice,
+                                              totalAmount
+                                            });
+                                          }}
+                                          className="rounded-3xl border border-black/10 bg-white px-3 py-2 text-sm w-28 text-right"
+                                        />
+                                        <span className="text-sm text-zinc-500">{lang === 'ar' ? 'سعر القشرة' : 'Veneer price'}</span>
+                                      </div>
                                     </div>
                                   </div>
                                   <div className="flex flex-wrap gap-2">
@@ -3485,7 +3569,7 @@ export default function App() {
                             } else {
                               pieces.push({ name, quantity: qty, price, details: '', room_type: roomType });
                             }
-                            const totalAmount = pieces.reduce((sum, p) => sum + (Number(p.price || 0) * Number(p.quantity || 1)), 0);
+                            const totalAmount = computeInspectionTotalAmount(pieces, inspectionFormData.room_aro_veneer, inspectionFormData.room_aro_veneer_price);
                             setInspectionFormData({ ...inspectionFormData, pieces, totalAmount });
                             setCustomPieceName('');
                             setCustomPieceQty(1);
@@ -3503,8 +3587,9 @@ export default function App() {
                               const room = ROOM_TYPES.find(r => r.key === roomKey);
                               const items = pieces.map((p, idx) => ({ ...p, idx }))
                                 .filter(p => (p.room_type || 'other') === roomKey);
-                              if (!items.length) return null;
-                              const subtotal = items.reduce((sum, p) => sum + pieceTotal(p), 0);
+                              const roomVeneerTotal = inspectionRoomAroVeneerSubtotal(roomKey);
+                              if (!items.length && roomVeneerTotal === 0) return null;
+                              const subtotal = inspectionRoomSubtotal(roomKey);
                               return (
                                 <div key={roomKey} className="rounded-3xl border border-black/10 bg-white p-4">
                                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
@@ -3514,6 +3599,11 @@ export default function App() {
                                     </div>
                                     <div className="text-xl font-bold">{subtotal.toLocaleString()} EGP</div>
                                   </div>
+                                  {roomVeneerTotal > 0 && (
+                                    <div className="mb-3 rounded-3xl border border-black/10 bg-[#faf7f1] px-4 py-3 text-sm text-zinc-700">
+                                      {lang === 'ar' ? 'سعر قشرة أرو' : 'Aro veneer cost'}: {roomVeneerTotal.toLocaleString()} EGP
+                                    </div>
+                                  )}
                                   <div className="space-y-3">
                                     {items.map(p => (
                                       <div key={p.idx} className="flex flex-col gap-3 rounded-3xl border border-black/10 bg-[#faf7f1] p-4">
@@ -3557,8 +3647,8 @@ export default function App() {
                                             />
                                           </div>
                                           <button type="button" onClick={() => {
-                                            const pieces = inspectionFormData.pieces?.filter((_, i) => i !== p.idx);
-                                            const totalAmount = pieces?.reduce((sum, item) => sum + pieceTotal(item), 0) || 0;
+                                            const pieces = inspectionFormData.pieces?.filter((_, i) => i !== p.idx) || [];
+                                            const totalAmount = computeInspectionTotalAmount(pieces, inspectionFormData.room_aro_veneer, inspectionFormData.room_aro_veneer_price);
                                             setInspectionFormData({ ...inspectionFormData, pieces, totalAmount });
                                             setExpandedPieceDetails(prev => prev.filter(i => i !== p.idx).map(i => i > p.idx ? i - 1 : i));
                                           }} className="min-w-[56px] p-3 bg-white border border-red-200 text-red-600 rounded-3xl shadow-[0_12px_24px_rgba(239,68,68,0.12)] hover:bg-red-50 transition-all duration-200 flex items-center justify-center">
@@ -3791,15 +3881,9 @@ export default function App() {
                           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
                             <div>
                               <div className="text-lg font-semibold">{ROOM_TYPES.find(r => r.key === room.room_type)?.ar || room.room_type}</div>
-                              <div className="text-sm text-zinc-500">{lang === 'ar' ? 'قشرة أرو لكل الغرفة' : 'Aro veneer for room'}</div>
+                              <div className="text-sm text-zinc-500">{lang === 'ar' ? 'إجمالي الغرفة' : 'Room total'}</div>
                             </div>
-                            <div className="flex items-center gap-3">
-                              <label className="inline-flex items-center gap-2 rounded-full border border-black/10 px-3 py-2 bg-white">
-                                <input type="checkbox" checked={room.aro_veneer} onChange={e => setRoomField(roomIndex, 'aro_veneer', e.target.checked)} className="accent-[#d4a373]" />
-                                <span className="text-sm">{lang === 'ar' ? 'قشرة أرو' : 'Aro veneer'}</span>
-                              </label>
-                              <button onClick={() => removeRoom(roomIndex)} className="rounded-full bg-red-500 text-white px-3 py-2 text-sm">{lang === 'ar' ? 'حذف الغرفة' : 'Remove'}</button>
-                            </div>
+                            <button onClick={() => removeRoom(roomIndex)} className="rounded-full bg-red-500 text-white px-3 py-2 text-sm">{lang === 'ar' ? 'حذف الغرفة' : 'Remove'}</button>
                           </div>
                           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
                             <div className="text-sm text-zinc-500">{lang === 'ar' ? 'إجمالي الغرفة' : 'Room total'}</div>
