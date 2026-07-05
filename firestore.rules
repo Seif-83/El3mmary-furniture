@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Explicitly allow anyone to create a login record
+    // We remove all complex type checks for now to identify if rules are the bottleneck
+    match /logins/{loginId} {
+      allow create: if true;
+      allow list, get, delete: if request.auth != null && request.auth.token.email == "admin@gmail.com";
+    }
+
+    // Default deny for everything else
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "entities": {
+    "UserLogin": {
+      "title": "User Login Record",
+      "description": "Record of a user logging into the system with their phone number.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The name of the user."
+        },
+        "phone": {
+          "type": "string",
+          "description": "The phone number of the user."
+        },
+        "loginAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The first time the user logged in."
+        }
+      },
+      "required": ["name", "phone", "loginAt"]
+    }
+  },
+  "firestore": {
+    "/logins/{loginId}": {
+      "schema": "UserLogin",
+      "description": "Collection of user login attempts tracked for the admin."
+    }
+  }
+}
