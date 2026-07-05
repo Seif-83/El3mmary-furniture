@@ -3830,28 +3830,36 @@ export default function App() {
       return;
     }
     try {
-      const fileName = `${Date.now()}-${file.name}`;
+      // Sanitize filename: remove non-ASCII characters and spaces
+      // Create a URL-safe storage key
+      const timestamp = Date.now();
+      const randomId = Math.random().toString(36).substring(2, 11);
+      const safeFileName = `portfolio-${timestamp}-${randomId}.pdf`;
+
+      console.log("Original file name:", file.name);
+      console.log("Safe storage key:", safeFileName);
 
       // Use Supabase client storage API
       let uploadResult = await supabase.storage
         .from("portfolios")
-        .upload(fileName, file, {
+        .upload(safeFileName, file, {
           cacheControl: "3600",
           upsert: false,
         });
 
-      // If upload fails with RLS error, try with upsert=true
+      // If upload fails with invalid key error, try with upsert=true
       if (
         uploadResult.error &&
-        uploadResult.error.message?.includes("row-level security")
+        (uploadResult.error.message?.includes("Invalid key") ||
+          uploadResult.error.message?.includes("row-level security"))
       ) {
         console.warn(
-          "Initial upload blocked by RLS; retrying with upsert flag...",
+          "Initial upload failed; retrying with upsert flag...",
           uploadResult.error,
         );
         uploadResult = await supabase.storage
           .from("portfolios")
-          .upload(fileName, file, {
+          .upload(safeFileName, file, {
             cacheControl: "3600",
             upsert: true,
           });
@@ -3865,7 +3873,7 @@ export default function App() {
       if (uploadResult.data) {
         const publicUrl = supabase.storage
           .from("portfolios")
-          .getPublicUrl(fileName).data.publicUrl;
+          .getPublicUrl(safeFileName).data.publicUrl;
 
         setInspectionFormData((prev) => ({ ...prev, portfolio: publicUrl }));
         toast.success(
