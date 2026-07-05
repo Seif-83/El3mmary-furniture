@@ -3833,19 +3833,36 @@ export default function App() {
       const fileName = `${Date.now()}-${file.name}`;
 
       // Use Supabase client storage API
-      const { data, error } = await supabase.storage
+      let uploadResult = await supabase.storage
         .from("portfolios")
         .upload(fileName, file, {
           cacheControl: "3600",
           upsert: false,
         });
 
-      if (error) {
-        console.error("Supabase storage error:", error);
-        throw new Error(error.message || "Failed to upload file");
+      // If upload fails with RLS error, try with upsert=true
+      if (
+        uploadResult.error &&
+        uploadResult.error.message?.includes("row-level security")
+      ) {
+        console.warn(
+          "Initial upload blocked by RLS; retrying with upsert flag...",
+          uploadResult.error,
+        );
+        uploadResult = await supabase.storage
+          .from("portfolios")
+          .upload(fileName, file, {
+            cacheControl: "3600",
+            upsert: true,
+          });
       }
 
-      if (data) {
+      if (uploadResult.error) {
+        console.error("Supabase storage error:", uploadResult.error);
+        throw new Error(uploadResult.error.message || "Failed to upload file");
+      }
+
+      if (uploadResult.data) {
         const publicUrl = supabase.storage
           .from("portfolios")
           .getPublicUrl(fileName).data.publicUrl;
@@ -3857,10 +3874,12 @@ export default function App() {
       }
     } catch (err: any) {
       console.error("Upload error:", err);
+      const errorMsg =
+        err.message || (lang === "ar" ? "فشل رفع الملف" : "Upload failed");
       toast.error(
         lang === "ar"
-          ? `فشل رفع الملف: ${err.message}`
-          : `Upload failed: ${err.message}`,
+          ? `فشل رفع الملف: ${errorMsg}`
+          : `Upload failed: ${errorMsg}`,
       );
     }
   };
