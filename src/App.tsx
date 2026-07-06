@@ -36,6 +36,8 @@ import {
   Settings,
   Activity,
   Wrench,
+  Camera,
+  Image as ImageIcon,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { supabase, supabaseAdmin } from "./lib/supabase";
@@ -121,6 +123,7 @@ interface Inspection {
   portfolioDate?: string;
   portfolio_date?: string;
   contractDate?: string;
+  contractUrl?: string;
   payments?: { amount: number; date: string; stage: string }[];
 }
 
@@ -1712,6 +1715,7 @@ const mapInspectionFromDB = (dbInsp: any): Inspection =>
     pickupDate: dbInsp.pickup_date,
     portfolioDate: dbInsp.portfolio_date,
     contractDate: dbInsp.contract_date,
+    contractUrl: dbInsp.contract_url,
     createdAt: toTimestamp(dbInsp.created_at),
     ...((dbInsp as any).finalized_at
       ? { finalizedAt: toTimestamp((dbInsp as any).finalized_at) }
@@ -2011,6 +2015,8 @@ export default function App() {
   const [isContractUploadOpen, setIsContractUploadOpen] = useState(false);
   const [pendingContractInspection, setPendingContractInspection] = useState<Inspection | null>(null);
   const [contractUploadLoading, setContractUploadLoading] = useState(false);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const galleryInputRef = useRef<HTMLInputElement | null>(null);
 
   // Check if inspection form has unsaved changes
   const inspectionFormHasChanges = () => {
@@ -3439,31 +3445,29 @@ export default function App() {
         img.src = event.target?.result as string;
         img.onload = () => {
           const canvas = document.createElement("canvas");
-          
-          // Target dimensions - resize if larger
+
           let width = img.width;
           let height = img.height;
-          const maxWidth = 1920;
-          const maxHeight = 1440;
-          
+          const maxWidth = 1600;
+          const maxHeight = 1600;
+
           if (width > maxWidth || height > maxHeight) {
             const ratio = Math.min(maxWidth / width, maxHeight / height);
             width *= ratio;
             height *= ratio;
           }
-          
+
           canvas.width = width;
           canvas.height = height;
-          
+
           const ctx = canvas.getContext("2d");
           if (!ctx) {
             reject(new Error("Failed to get canvas context"));
             return;
           }
-          
+
           ctx.drawImage(img, 0, 0, width, height);
-          
-          // Compress to JPEG with quality 0.85 for balance between size and readability
+
           canvas.toBlob(
             (blob) => {
               if (blob) {
@@ -3473,7 +3477,7 @@ export default function App() {
               }
             },
             "image/jpeg",
-            0.85
+            0.82,
           );
         };
         img.onerror = () => reject(new Error("Failed to load image"));
@@ -3482,51 +3486,74 @@ export default function App() {
     });
   };
 
-  // Handle contract upload and finalization
   const handleContractUpload = async (file: File) => {
     if (!pendingContractInspection) return;
-    
+    if (!file.type.startsWith("image/")) {
+      toast.error(
+        lang === "ar"
+          ? "يرجى اختيار صورة صالحة للعقد"
+          : "Please choose a valid contract image",
+      );
+      return;
+    }
+
     setContractUploadLoading(true);
     try {
-      // Compress the image
-      toast.loading("جاري ضغط الصورة...");
+      toast.loading(lang === "ar" ? "جاري ضغط الصورة..." : "Compressing image...");
       const compressedBlob = await compressImage(file);
-      
-      // Generate a unique filename
+
       const timestamp = Date.now();
-      const fileName = `contract_${pendingContractInspection.id}_${timestamp}.jpg`;
-      
-      // Upload to Supabase Storage
-      toast.loading("جاري رفع العقد...");
-      const { data, error: uploadError } = await supabase.storage
-        .from("contracts")
-        .upload(fileName, compressedBlob, {
+      const randomId = Math.random().toString(36).substring(2, 8);
+      const fileName = `contract_${pendingContractInspection.id}_${timestamp}_${randomId}.jpg`;
+
+      toast.loading(lang === "ar" ? "جاري رفع العقد..." : "Uploading contract...");
+      let uploadResult = await supabase.storage.from("contracts").upload(fileName, compressedBlob, {
+        contentType: "image/jpeg",
+        cacheControl: "3600",
+        upsert: false,
+      });
+
+      if (
+        uploadResult.error &&
+        (uploadResult.error.message?.includes("Invalid key") ||
+          uploadResult.error.message?.includes("row-level security"))
+      ) {
+        uploadResult = await supabase.storage.from("contracts").upload(fileName, compressedBlob, {
           contentType: "image/jpeg",
-          upsert: false,
+          cacheControl: "3600",
+          upsert: true,
         });
-      
-      if (uploadError) throw uploadError;
-      
-      // Get public URL
-      const { data: publicUrlData } = supabase.storage
-        .from("contracts")
-        .getPublicUrl(fileName);
-      
-      const contractUrl = publicUrlData.publicUrl;
-      
-      // Now complete the finalization with contract URL
-      toast.loading("جاري حفظ البيانات...");
+      }
+
+      if (uploadResult.error) throw uploadResult.error;
+
+      const publicUrlData = supabase.storage.from("contracts").getPublicUrl(fileName);
+      const contractUrl = publicUrlData.data?.publicUrl;
+      if (!contractUrl) throw new Error("Unable to build contract URL");
+
+      toast.loading(lang === "ar" ? "جاري حفظ البيانات..." : "Saving order...");
       await handleFinalizeInspection("contracted", pendingContractInspection, contractUrl);
-      
+
       setIsContractUploadOpen(false);
       setPendingContractInspection(null);
-      toast.success("تم تحميل العقد بنجاح ✓");
+      toast.success(lang === "ar" ? "تم تحميل العقد بنجاح ✓" : "Contract uploaded successfully");
     } catch (err: any) {
       console.error("Contract upload error:", err);
-      toast.error(`خطأ في رفع العقد: ${err.message}`);
+      toast.error(
+        lang === "ar"
+          ? `خطأ في رفع العقد: ${err.message}`
+          : `Contract upload failed: ${err.message}`,
+      );
     } finally {
       setContractUploadLoading(false);
     }
+  };
+
+  const handleContractInputSelection = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    await handleContractUpload(file);
+    event.target.value = "";
   };
 
   const handleFinalizeInspection = async (
@@ -6239,6 +6266,102 @@ export default function App() {
       </AnimatePresence>
 
       <AnimatePresence>
+        {isContractUploadOpen && pendingContractInspection && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                setIsContractUploadOpen(false);
+                setPendingContractInspection(null);
+              }}
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-[2.5rem] w-full max-w-lg p-8 md:p-10 shadow-2xl relative z-10 overflow-hidden"
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setIsContractUploadOpen(false);
+                  setPendingContractInspection(null);
+                }}
+                className="absolute top-6 right-6 rtl:right-auto rtl:left-6 w-10 h-10 flex items-center justify-center rounded-2xl bg-zinc-100 hover:bg-zinc-900 text-zinc-400 hover:text-white transition-all duration-300 hover:rotate-90 hover:scale-110 shadow-sm"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <div className="text-center space-y-4 mb-8">
+                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-emerald-50 text-emerald-600">
+                  <Upload className="h-8 w-8" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-zinc-900">
+                    {lang === "ar" ? "رفع العقد الموقع" : "Upload signed contract"}
+                  </h2>
+                  <p className="mt-2 text-sm text-zinc-500 leading-relaxed">
+                    {lang === "ar"
+                      ? "لا يمكن المتابعة إلى المرحلة التالية إلا بعد رفع صورة العقد الموقع بنجاح."
+                      : "The order cannot move forward until a signed contract image is uploaded successfully."}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-zinc-50 px-4 py-3 text-sm font-semibold text-zinc-700">
+                  {pendingContractInspection.customerName}
+                </div>
+              </div>
+
+              <div className="grid gap-3">
+                <button
+                  type="button"
+                  onClick={() => cameraInputRef.current?.click()}
+                  disabled={contractUploadLoading}
+                  className="flex items-center justify-center gap-3 rounded-2xl border border-zinc-200 bg-white px-5 py-4 text-sm font-bold text-zinc-700 shadow-sm transition-all hover:border-emerald-200 hover:text-emerald-600 disabled:opacity-60"
+                >
+                  <Camera className="h-5 w-5" />
+                  {lang === "ar" ? "التقاط صورة بالكاميرا" : "Take photo with camera"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => galleryInputRef.current?.click()}
+                  disabled={contractUploadLoading}
+                  className="flex items-center justify-center gap-3 rounded-2xl border border-zinc-200 bg-white px-5 py-4 text-sm font-bold text-zinc-700 shadow-sm transition-all hover:border-emerald-200 hover:text-emerald-600 disabled:opacity-60"
+                >
+                  <ImageIcon className="h-5 w-5" />
+                  {lang === "ar" ? "اختيار صورة من المعرض" : "Choose from gallery"}
+                </button>
+              </div>
+
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={handleContractInputSelection}
+              />
+              <input
+                ref={galleryInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleContractInputSelection}
+              />
+
+              <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                {lang === "ar"
+                  ? "سيتم ضغط الصورة تلقائياً قبل الرفع لتقليل الحجم مع الحفاظ على وضوح النص."
+                  : "The image will be compressed automatically before upload to reduce size while keeping the text readable."}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {isInspectionModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <motion.div
@@ -7257,6 +7380,29 @@ export default function App() {
                         <Eye className="w-5 h-5" />
                       </a>
                     </div>
+                  </div>
+                )}
+
+                {selectedRecord.contractUrl && (
+                  <div className="bg-white border-2 border-dashed border-zinc-100 rounded-3xl p-6">
+                    <label className="text-[10px] font-bold uppercase text-zinc-400 mb-4 block">
+                      {lang === "ar" ? "صورة العقد" : "Contract image"}
+                    </label>
+                    <div className="overflow-hidden rounded-2xl border border-zinc-100 bg-zinc-50">
+                      <img
+                        src={selectedRecord.contractUrl}
+                        alt={lang === "ar" ? "صورة العقد" : "Contract image"}
+                        className="w-full max-h-80 object-contain bg-white"
+                      />
+                    </div>
+                    <a
+                      href={selectedRecord.contractUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-4 inline-flex items-center rounded-full bg-zinc-900 px-4 py-2 text-sm font-semibold text-white"
+                    >
+                      {lang === "ar" ? "فتح الصورة" : "Open image"}
+                    </a>
                   </div>
                 )}
 
