@@ -16,7 +16,17 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('contracts', 'contracts', true)
 ON CONFLICT (id) DO NOTHING;
 
--- Set up RLS policies for contracts bucket
+-- Recreate RLS policies for contracts bucket. This ensures the bucket is usable by the browser client and
+-- prevents stale or duplicate policies from blocking uploads/selects.
+DROP POLICY IF EXISTS "authenticated_upload_contracts" ON storage.objects;
+DROP POLICY IF EXISTS "authenticated_select_contracts" ON storage.objects;
+DROP POLICY IF EXISTS "authenticated_update_contracts" ON storage.objects;
+DROP POLICY IF EXISTS "authenticated_delete_contracts" ON storage.objects;
+DROP POLICY IF EXISTS "anon_select_contracts" ON storage.objects;
+DROP POLICY IF EXISTS "anon_upload_contracts" ON storage.objects;
+DROP POLICY IF EXISTS "anon_update_contracts" ON storage.objects;
+DROP POLICY IF EXISTS "anon_delete_contracts" ON storage.objects;
+
 CREATE POLICY "authenticated_upload_contracts" ON storage.objects
   FOR INSERT
   TO authenticated
@@ -26,6 +36,12 @@ CREATE POLICY "authenticated_select_contracts" ON storage.objects
   FOR SELECT
   TO authenticated
   USING (bucket_id = 'contracts');
+
+CREATE POLICY "authenticated_update_contracts" ON storage.objects
+  FOR UPDATE
+  TO authenticated
+  USING (bucket_id = 'contracts')
+  WITH CHECK (bucket_id = 'contracts');
 
 CREATE POLICY "authenticated_delete_contracts" ON storage.objects
   FOR DELETE
@@ -41,3 +57,14 @@ CREATE POLICY "anon_upload_contracts" ON storage.objects
   FOR INSERT
   TO anon
   WITH CHECK (bucket_id = 'contracts');
+
+CREATE POLICY "anon_update_contracts" ON storage.objects
+  FOR UPDATE
+  TO anon
+  USING (bucket_id = 'contracts')
+  WITH CHECK (bucket_id = 'contracts');
+
+CREATE POLICY "anon_delete_contracts" ON storage.objects
+  FOR DELETE
+  TO anon
+  USING (bucket_id = 'contracts');

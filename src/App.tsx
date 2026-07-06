@@ -2017,6 +2017,8 @@ export default function App() {
   const [contractUploadLoading, setContractUploadLoading] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const galleryInputRef = useRef<HTMLInputElement | null>(null);
+  const CONTRACT_BUCKET =
+    import.meta.env.VITE_SUPABASE_CONTRACTS_BUCKET?.trim() || "contracts";
 
   // Check if inspection form has unsaved changes
   const inspectionFormHasChanges = () => {
@@ -3498,52 +3500,85 @@ export default function App() {
     }
 
     setContractUploadLoading(true);
+    let toastId: string | number | undefined;
     try {
-      toast.loading(lang === "ar" ? "جاري ضغط الصورة..." : "Compressing image...");
+      toastId = toast.loading(
+        lang === "ar" ? "جاري ضغط الصورة..." : "Compressing image...",
+      );
       const compressedBlob = await compressImage(file);
 
       const timestamp = Date.now();
       const randomId = Math.random().toString(36).substring(2, 8);
       const fileName = `contract_${pendingContractInspection.id}_${timestamp}_${randomId}.jpg`;
 
-      toast.loading(lang === "ar" ? "جاري رفع العقد..." : "Uploading contract...");
-      let uploadResult = await supabase.storage.from("contracts").upload(fileName, compressedBlob, {
-        contentType: "image/jpeg",
-        cacheControl: "3600",
-        upsert: false,
+      toast.loading(lang === "ar" ? "جاري رفع العقد..." : "Uploading contract...", {
+        id: toastId,
       });
+      let uploadResult = await supabase.storage
+        .from(CONTRACT_BUCKET)
+        .upload(fileName, compressedBlob, {
+          contentType: "image/jpeg",
+          cacheControl: "3600",
+          upsert: false,
+        });
 
       if (
         uploadResult.error &&
         (uploadResult.error.message?.includes("Invalid key") ||
           uploadResult.error.message?.includes("row-level security"))
       ) {
-        uploadResult = await supabase.storage.from("contracts").upload(fileName, compressedBlob, {
-          contentType: "image/jpeg",
-          cacheControl: "3600",
-          upsert: true,
-        });
+        uploadResult = await supabase.storage
+          .from(CONTRACT_BUCKET)
+          .upload(fileName, compressedBlob, {
+            contentType: "image/jpeg",
+            cacheControl: "3600",
+            upsert: true,
+          });
       }
 
-      if (uploadResult.error) throw uploadResult.error;
+      if (uploadResult.error) {
+        const errorMsg = uploadResult.error.message || "Storage upload failed";
+        if (errorMsg.includes("row-level security")) {
+          throw new Error(
+            lang === "ar"
+              ? "فشل رفع العقد: إعدادات أمان Supabase تمنع رفع الملفات. تحقق من صلاحيات bucket في Supabase Storage أو استخدم مفاتيح خدمة صحيحة."
+              : "Contract upload blocked by Supabase row-level security. Check your Storage bucket policies or use the correct service key.",
+          );
+        }
+        if (errorMsg.includes("Bucket not found")) {
+          throw new Error(
+            lang === "ar"
+              ? `فشل رفع العقد: لم يتم العثور على bucket باسم ${CONTRACT_BUCKET}. تحقق من وجوده في Supabase Storage.`
+              : `Contract upload failed: bucket not found: ${CONTRACT_BUCKET}.`,
+          );
+        }
+        throw uploadResult.error;
+      }
 
-      const publicUrlData = supabase.storage.from("contracts").getPublicUrl(fileName);
+      const publicUrlData = supabase.storage.from(CONTRACT_BUCKET).getPublicUrl(fileName);
+      if (publicUrlData.error) throw publicUrlData.error;
       const contractUrl = publicUrlData.data?.publicUrl;
       if (!contractUrl) throw new Error("Unable to build contract URL");
 
-      toast.loading(lang === "ar" ? "جاري حفظ البيانات..." : "Saving order...");
+      toast.loading(lang === "ar" ? "جاري حفظ البيانات..." : "Saving order...", {
+        id: toastId,
+      });
       await handleFinalizeInspection("contracted", pendingContractInspection, contractUrl);
 
       setIsContractUploadOpen(false);
       setPendingContractInspection(null);
-      toast.success(lang === "ar" ? "تم تحميل العقد بنجاح ✓" : "Contract uploaded successfully");
+      toast.success(
+        lang === "ar" ? "تم تحميل العقد بنجاح ✓" : "Contract uploaded successfully",
+        { id: toastId },
+      );
     } catch (err: any) {
       console.error("Contract upload error:", err);
-      toast.error(
-        lang === "ar"
-          ? `خطأ في رفع العقد: ${err.message}`
-          : `Contract upload failed: ${err.message}`,
-      );
+      const message =
+        err?.message ||
+        (lang === "ar"
+          ? "فشل رفع العقد: حدث خطأ غير متوقع"
+          : "Contract upload failed: unexpected error");
+      toast.error(message, { id: toastId });
     } finally {
       setContractUploadLoading(false);
     }
