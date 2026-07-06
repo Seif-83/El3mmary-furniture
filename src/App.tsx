@@ -1743,8 +1743,28 @@ const isMissingRoomTypesColumnError = (error: any) => {
   );
 };
 
+const isMissingAroVeneerColumnError = (error: any) => {
+  const raw = [error?.code, error?.message, error?.details, error?.hint].filter(Boolean).join(' ').toLowerCase();
+  return (raw.includes('room_aro_veneer') || raw.includes('aro_veneer')) && (
+    raw.includes('schema cache') ||
+    raw.includes('could not find') ||
+    raw.includes('column') ||
+    raw.includes('pgrst204')
+  );
+};
+
 const withoutRoomTypes = (payload: Record<string, any>) => {
   const { room_types, ...rest } = payload;
+  return rest;
+};
+
+const withoutAroVeneer = (payload: Record<string, any>) => {
+  const { room_aro_veneer, room_aro_veneer_price, ...rest } = payload;
+  return rest;
+};
+
+const withoutRoomTypesAndAroVeneer = (payload: Record<string, any>) => {
+  const { room_types, room_aro_veneer, room_aro_veneer_price, ...rest } = payload;
   return rest;
 };
 
@@ -2315,25 +2335,11 @@ export default function App() {
         })),
       );
       const totalAmount = quoteTotal();
-      const roomAroVeneer = parseRecordSource<boolean>(
-        selectedRecord?.room_aro_veneer || selectedRecord?.roomAroVeneer,
-      );
-      const roomAroVeneerPrice = parseRecordSource<number>(
-        selectedRecord?.room_aro_veneer_price ||
-          selectedRecord?.roomAroVeneerPrice,
-      );
-      await updateRecordWithOptionalRoomTypes(
-        "inspections",
-        {
-          pieces,
-          total_amount: totalAmount,
-          rooms: quoteDrafts.length,
-          room_aro_veneer: roomAroVeneer,
-          room_aro_veneer_price: roomAroVeneerPrice,
-        },
-        selectedRecord.id,
-      );
-      toast.success(lang === "ar" ? "تم حفظ العرض" : "Quote saved");
+      const roomAroVeneer = parseRecordSource<boolean>(selectedRecord?.room_aro_veneer || selectedRecord?.roomAroVeneer);
+      const roomAroVeneerPrice = parseRecordSource<number>(selectedRecord?.room_aro_veneer_price || selectedRecord?.roomAroVeneerPrice);
+      const { error } = await supabase.from('inspections').update({ pieces, total_amount: totalAmount, rooms: quoteDrafts.length, room_aro_veneer: roomAroVeneer, room_aro_veneer_price: roomAroVeneerPrice }).eq('id', selectedRecord.id);
+      if (error) throw error;
+      toast.success(lang === 'ar' ? 'تم حفظ العرض' : 'Quote saved');
       await refreshAllData();
       // refresh selectedRecord
       const refreshed = (
@@ -2566,6 +2572,15 @@ export default function App() {
       throw legacyInsertError;
     }
 
+    // Handle missing room_aro_veneer columns (migration 0011 not applied)
+    if (isMissingAroVeneerColumnError(error)) {
+      console.warn('room_aro_veneer missing on inspections (insert), retrying without aro veneer fields', error);
+      const payloadWithoutAro = withoutAroVeneer(inspectionDbData);
+      const { data: retryData, error: retryError } = await supabase.from('inspections').insert(payloadWithoutAro).select('id').single();
+      if (!retryError) return retryData?.id;
+      throw retryError;
+    }
+
     throw error;
   };
 
@@ -2582,6 +2597,24 @@ export default function App() {
       .update(payload)
       .eq("id", id);
     if (!error) return;
+
+    // Handle missing room_aro_veneer columns (migration 0011 not applied)
+    if (isMissingAroVeneerColumnError(error)) {
+      console.warn(
+        `Supabase column ${tableName}.room_aro_veneer is missing; retrying without aro_veneer fields. Apply supabase/migrations/0011_add_room_aro_veneer_columns.sql.`,
+        error
+      );
+      const payloadWithoutAro = withoutAroVeneer(payload);
+      const { error: retryError } = await supabase.from(tableName).update(payloadWithoutAro).eq('id', id);
+      if (!retryError) return;
+      // If still failing due to room_types, strip that too
+      if ('room_types' in payloadWithoutAro && isMissingRoomTypesColumnError(retryError)) {
+        const { error: finalError } = await supabase.from(tableName).update(withoutRoomTypesAndAroVeneer(payload)).eq('id', id);
+        if (finalError) throw finalError;
+        return;
+      }
+      throw retryError;
+    }
 
     if ("room_types" in payload && isMissingRoomTypesColumnError(error)) {
       console.warn(
@@ -2618,6 +2651,24 @@ export default function App() {
   ) => {
     const { error } = await supabase.from(tableName).insert(payload);
     if (!error) return;
+
+    // Handle missing room_aro_veneer columns (migration 0011 not applied)
+    if (isMissingAroVeneerColumnError(error)) {
+      console.warn(
+        `Supabase column ${tableName}.room_aro_veneer is missing; retrying without aro_veneer fields. Apply supabase/migrations/0011_add_room_aro_veneer_columns.sql.`,
+        error
+      );
+      const payloadWithoutAro = withoutAroVeneer(payload);
+      const { error: retryError } = await supabase.from(tableName).insert(payloadWithoutAro);
+      if (!retryError) return;
+      // If still failing due to room_types, strip that too
+      if ('room_types' in payloadWithoutAro && isMissingRoomTypesColumnError(retryError)) {
+        const { error: finalError } = await supabase.from(tableName).insert(withoutRoomTypesAndAroVeneer(payload));
+        if (finalError) throw finalError;
+        return;
+      }
+      throw retryError;
+    }
 
     if ("room_types" in payload && isMissingRoomTypesColumnError(error)) {
       console.warn(
@@ -3297,11 +3348,8 @@ export default function App() {
 
       if (inspectionFormData.id) {
         // Update existing inspection record
-        await updateRecordWithOptionalRoomTypes(
-          "inspections",
-          inspectionDbData,
-          inspectionFormData.id,
-        );
+        const { error } = await supabase.from('inspections').update(inspectionDbData).eq('id', inspectionFormData.id);
+        if (error) throw error;
       } else {
         // Create new inspection and remove from customers
         const newId = await insertInspectionRecord(inspectionDbData);
