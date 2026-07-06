@@ -18,7 +18,10 @@ DROP POLICY IF EXISTS "authenticated_delete_portfolios" ON storage.objects;
 CREATE POLICY "authenticated_upload_portfolios" ON storage.objects
   FOR INSERT
   TO authenticated
-  WITH CHECK (bucket_id = 'portfolios');
+  -- Allow inserts where bucket_id matches and the owner is either null (anon uploads)
+  -- or matches the authenticated user's uid. This prevents RLS from blocking
+  -- browser-based uploads that don't set an owner value.
+  WITH CHECK (bucket_id = 'portfolios' AND (owner IS NULL OR owner = auth.uid()));
 
 -- Allow authenticated users to read from portfolios bucket
 CREATE POLICY "authenticated_select_portfolios" ON storage.objects
@@ -42,4 +45,5 @@ CREATE POLICY "anon_select_portfolios" ON storage.objects
 CREATE POLICY "anon_upload_portfolios" ON storage.objects
   FOR INSERT
   TO anon
-  WITH CHECK (bucket_id = 'portfolios');
+  -- Allow anonymous uploads into the portfolios bucket when owner is null.
+  WITH CHECK (bucket_id = 'portfolios' AND owner IS NULL);

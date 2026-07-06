@@ -30,7 +30,9 @@ DROP POLICY IF EXISTS "anon_delete_contracts" ON storage.objects;
 CREATE POLICY "authenticated_upload_contracts" ON storage.objects
   FOR INSERT
   TO authenticated
-  WITH CHECK (bucket_id = 'contracts');
+  -- Allow inserts when bucket matches and owner is either null (browser/anon uploads)
+  -- or matches the authenticated user's uid.
+  WITH CHECK (bucket_id = 'contracts' AND (owner IS NULL OR owner = auth.uid()));
 
 CREATE POLICY "authenticated_select_contracts" ON storage.objects
   FOR SELECT
@@ -40,8 +42,11 @@ CREATE POLICY "authenticated_select_contracts" ON storage.objects
 CREATE POLICY "authenticated_update_contracts" ON storage.objects
   FOR UPDATE
   TO authenticated
-  USING (bucket_id = 'contracts')
-  WITH CHECK (bucket_id = 'contracts');
+  -- Allow updates when the object belongs to the contracts bucket and the owner
+  -- is either null or the authenticated user. This supports upsert/update flows
+  -- initiated from the browser client.
+  USING (bucket_id = 'contracts' AND (owner IS NULL OR owner = auth.uid()))
+  WITH CHECK (bucket_id = 'contracts' AND (owner IS NULL OR owner = auth.uid()));
 
 CREATE POLICY "authenticated_delete_contracts" ON storage.objects
   FOR DELETE
@@ -56,13 +61,15 @@ CREATE POLICY "anon_select_contracts" ON storage.objects
 CREATE POLICY "anon_upload_contracts" ON storage.objects
   FOR INSERT
   TO anon
-  WITH CHECK (bucket_id = 'contracts');
+  -- Allow anonymous uploads to contracts bucket when owner is null.
+  WITH CHECK (bucket_id = 'contracts' AND owner IS NULL);
 
 CREATE POLICY "anon_update_contracts" ON storage.objects
   FOR UPDATE
   TO anon
-  USING (bucket_id = 'contracts')
-  WITH CHECK (bucket_id = 'contracts');
+  -- Allow anonymous updates on objects with null owner in the contracts bucket.
+  USING (bucket_id = 'contracts' AND owner IS NULL)
+  WITH CHECK (bucket_id = 'contracts' AND owner IS NULL);
 
 CREATE POLICY "anon_delete_contracts" ON storage.objects
   FOR DELETE
