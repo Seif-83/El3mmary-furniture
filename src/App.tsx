@@ -527,9 +527,7 @@ const ProductionPage: React.FC<{
                                 stageRecord.id,
                                 isDone
                                   ? "not_started"
-                                  : isInProgress
-                                    ? "done"
-                                    : "in_progress",
+                                  : "done",
                               )
                             }
                             disabled={!isAdmin}
@@ -6765,15 +6763,20 @@ export default function App() {
                                               </span>
                                               <input
                                                 type="number"
-                                                min={1}
-                                                value={p.quantity || 1}
+                                                value={p.quantity || ""}
                                                 onChange={(e) =>
                                                   updatePiece(
                                                     p.idx,
                                                     "quantity",
-                                                    Number(e.target.value),
+                                                    e.target.value === "" ? "" : Number(e.target.value),
                                                   )
                                                 }
+                                                onBlur={(e) => {
+                                                  const val = Number(e.target.value);
+                                                  if (isNaN(val) || val < 1) {
+                                                    updatePiece(p.idx, "quantity", 1);
+                                                  }
+                                                }}
                                                 className="w-20 bg-transparent outline-none text-right"
                                               />
                                             </div>
@@ -7246,9 +7249,9 @@ export default function App() {
                                     key={`${roomIndex}-${itemIndex}`}
                                     className="rounded-3xl border border-black/10 bg-white p-4"
                                   >
-                                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 cursor-pointer" onClick={() => setExpandedPieceDetails((prev) => prev.includes(itemIndex) ? prev.filter((i) => i !== itemIndex) : [...prev, itemIndex])}>
                                       <div className="space-y-1">
-                                        <div className="font-semibold text-zinc-900">
+                                        <div className={`font-semibold ${expandedPieceDetails.includes(itemIndex) ? "text-accent-tan ring-2 ring-accent-tan/30" : "text-zinc-900"}`}>
                                           {item.item_name ||
                                             (lang === "ar"
                                               ? "عنصر مخصص"
