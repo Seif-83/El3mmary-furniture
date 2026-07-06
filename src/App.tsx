@@ -2005,6 +2005,7 @@ export default function App() {
   const [customPieceName, setCustomPieceName] = useState("");
   const [customPieceQty, setCustomPieceQty] = useState(1);
   const [customPiecePrice, setCustomPiecePrice] = useState("");
+  const [selectedItemNames, setSelectedItemNames] = useState<string[]>([]);
 
   // Check if inspection form has unsaved changes
   const inspectionFormHasChanges = () => {
@@ -2042,6 +2043,7 @@ export default function App() {
     setEditingCollection(null);
     setEditingId(null);
     setInspectionStep(1);
+    setSelectedItemNames([]);
     setInspectionFormData({
       customerName: "",
       address: "",
@@ -6578,18 +6580,30 @@ export default function App() {
                                     </div>
                                   </div>
                                   <div className="flex flex-wrap gap-2">
-                                    {room.defaults.map((itemName) => (
-                                      <button
-                                        key={itemName}
-                                        type="button"
-                                        onClick={() =>
-                                          addPiece(itemName, roomKey)
-                                        }
-                                        className="rounded-full border border-black/10 bg-white px-3 py-2 text-xs font-bold text-zinc-700 hover:bg-zinc-100 transition-all"
-                                      >
-                                        {itemName}
-                                      </button>
-                                    ))}
+                                    {room.defaults.map((itemName) => {
+                                      const isSelected = selectedItemNames.includes(itemName);
+                                      return (
+                                        <button
+                                          key={itemName}
+                                          type="button"
+                                          onClick={() => {
+                                            addPiece(itemName, roomKey);
+                                            setSelectedItemNames(prev =>
+                                              prev.includes(itemName)
+                                                ? prev.filter(name => name !== itemName)
+                                                : [...prev, itemName]
+                                            );
+                                          }}
+                                          className={`rounded-full px-3 py-2 text-xs font-bold transition-all ${
+                                            isSelected
+                                              ? "bg-zinc-900 text-white"
+                                              : "border border-black/10 bg-white text-zinc-700 hover:bg-zinc-100"
+                                          }`}
+                                        >
+                                          {itemName}
+                                        </button>
+                                      );
+                                    })}
                                   </div>
                                 </div>
                               );
