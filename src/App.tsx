@@ -2007,6 +2007,11 @@ export default function App() {
   const [customPiecePrice, setCustomPiecePrice] = useState("");
   const [recentlyClickedItem, setRecentlyClickedItem] = useState<string | null>(null);
 
+  // Contract upload states
+  const [isContractUploadOpen, setIsContractUploadOpen] = useState(false);
+  const [pendingContractInspection, setPendingContractInspection] = useState<Inspection | null>(null);
+  const [contractUploadLoading, setContractUploadLoading] = useState(false);
+
   // Check if inspection form has unsaved changes
   const inspectionFormHasChanges = () => {
     return (
@@ -3424,9 +3429,110 @@ export default function App() {
     setIsLoading(false);
   };
 
+  // Image compression utility function
+  const compressImage = async (file: File): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          
+          // Target dimensions - resize if larger
+          let width = img.width;
+          let height = img.height;
+          const maxWidth = 1920;
+          const maxHeight = 1440;
+          
+          if (width > maxWidth || height > maxHeight) {
+            const ratio = Math.min(maxWidth / width, maxHeight / height);
+            width *= ratio;
+            height *= ratio;
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            reject(new Error("Failed to get canvas context"));
+            return;
+          }
+          
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          // Compress to JPEG with quality 0.85 for balance between size and readability
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                resolve(blob);
+              } else {
+                reject(new Error("Failed to compress image"));
+              }
+            },
+            "image/jpeg",
+            0.85
+          );
+        };
+        img.onerror = () => reject(new Error("Failed to load image"));
+      };
+      reader.onerror = () => reject(new Error("Failed to read file"));
+    });
+  };
+
+  // Handle contract upload and finalization
+  const handleContractUpload = async (file: File) => {
+    if (!pendingContractInspection) return;
+    
+    setContractUploadLoading(true);
+    try {
+      // Compress the image
+      toast.loading("جاري ضغط الصورة...");
+      const compressedBlob = await compressImage(file);
+      
+      // Generate a unique filename
+      const timestamp = Date.now();
+      const fileName = `contract_${pendingContractInspection.id}_${timestamp}.jpg`;
+      
+      // Upload to Supabase Storage
+      toast.loading("جاري رفع العقد...");
+      const { data, error: uploadError } = await supabase.storage
+        .from("contracts")
+        .upload(fileName, compressedBlob, {
+          contentType: "image/jpeg",
+          upsert: false,
+        });
+      
+      if (uploadError) throw uploadError;
+      
+      // Get public URL
+      const { data: publicUrlData } = supabase.storage
+        .from("contracts")
+        .getPublicUrl(fileName);
+      
+      const contractUrl = publicUrlData.publicUrl;
+      
+      // Now complete the finalization with contract URL
+      toast.loading("جاري حفظ البيانات...");
+      await handleFinalizeInspection("contracted", pendingContractInspection, contractUrl);
+      
+      setIsContractUploadOpen(false);
+      setPendingContractInspection(null);
+      toast.success("تم تحميل العقد بنجاح ✓");
+    } catch (err: any) {
+      console.error("Contract upload error:", err);
+      toast.error(`خطأ في رفع العقد: ${err.message}`);
+    } finally {
+      setContractUploadLoading(false);
+    }
+  };
+
   const handleFinalizeInspection = async (
     status: "contracted" | "refused",
     directRecord?: Inspection,
+    contractUrl?: string,
   ) => {
     if (!ensureAdminAccess()) return;
 
@@ -3458,6 +3564,7 @@ export default function App() {
         pickup_date: recordToSave.pickupDate || recordToSave.address || null,
         portfolio_date: recordToSave.portfolioDate || null,
         contract_date: recordToSave.contractDate || null,
+        contract_url: contractUrl || null,
       };
       await insertRecordWithOptionalRoomTypes(tableName, dbData);
       const inspectionId = directRecord?.id || inspectionFormData.id;
@@ -5075,12 +5182,9 @@ export default function App() {
                                     {isAdminUser && (
                                       <div className="grid grid-cols-2 gap-3 relative z-10">
                                         <button
-                                          onClick={async () => {
-                                            await handleFinalizeInspection(
-                                              "contracted",
-                                              ins,
-                                            );
-                                            setAdminSubView("contracted");
+                                          onClick={() => {
+                                            setPendingContractInspection(ins);
+                                            setIsContractUploadOpen(true);
                                           }}
                                           className="btn-3d btn-3d-glass flex flex-col items-center justify-center gap-2 bg-white border border-zinc-100 text-zinc-400 p-4 rounded-3xl font-bold uppercase transition-all hover:scale-[1.02] active:scale-95 hover:text-emerald-600 hover:border-emerald-200"
                                         >
