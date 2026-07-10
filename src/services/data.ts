@@ -11,8 +11,18 @@ export class CustomerService {
     return db.clients.toArray();
   }
 
-  static async saveClient(client: { id: string; name: string; phones: string[]; address?: string; governorate?: string }) {
-    const record = { ...client, created_at: new Date().toISOString(), last_modified: Date.now() };
+  static async saveClient(client: {
+    id: string;
+    name: string;
+    phones: string[];
+    address?: string;
+    governorate?: string;
+  }) {
+    const record = {
+      ...client,
+      created_at: new Date().toISOString(),
+      last_modified: Date.now(),
+    };
     await db.clients.put(record);
     await SyncManager.queueOperation("INSERT", "clients", client.id, {
       id: client.id,
@@ -20,7 +30,7 @@ export class CustomerService {
       phones: client.phones,
       address: client.address,
       governorate: client.governorate,
-      created_at: record.created_at
+      created_at: record.created_at,
     });
   }
 
@@ -29,13 +39,18 @@ export class CustomerService {
   }
 
   static async getClientByPhone(phone: string) {
-    return db.clients.filter(c => c.phones.includes(phone)).first();
+    return db.clients.filter((c) => c.phones.includes(phone)).first();
   }
 
   static async insert(customer: any) {
     const record = { ...customer, last_modified: Date.now() };
     await db.customers.put(record);
-    await SyncManager.queueOperation("INSERT", "customers", customer.id, customer);
+    await SyncManager.queueOperation(
+      "INSERT",
+      "customers",
+      customer.id,
+      customer,
+    );
   }
 
   static async update(id: string, updates: any) {
@@ -61,13 +76,21 @@ export class OrderService {
   }
 
   static async getNonContracted() {
-    return db.non_contracted_customers.orderBy("finalized_at").reverse().toArray();
+    return db.non_contracted_customers
+      .orderBy("finalized_at")
+      .reverse()
+      .toArray();
   }
 
   static async insertInspection(inspection: any) {
     const record = { ...inspection, last_modified: Date.now() };
     await db.inspections.put(record);
-    await SyncManager.queueOperation("INSERT", "inspections", inspection.id, inspection);
+    await SyncManager.queueOperation(
+      "INSERT",
+      "inspections",
+      inspection.id,
+      inspection,
+    );
   }
 
   static async updateInspection(id: string, updates: any) {
@@ -85,37 +108,67 @@ export class OrderService {
   static async insertContracted(record: any) {
     const storedRecord = { ...record, last_modified: Date.now() };
     await db.contracted_customers.put(storedRecord);
-    await SyncManager.queueOperation("INSERT", "contracted_customers", record.id, record);
+    await SyncManager.queueOperation(
+      "INSERT",
+      "contracted_customers",
+      record.id,
+      record,
+    );
   }
 
   static async deleteContracted(id: string) {
     await db.contracted_customers.delete(id);
-    await SyncManager.queueOperation("DELETE", "contracted_customers", id, null);
+    await SyncManager.queueOperation(
+      "DELETE",
+      "contracted_customers",
+      id,
+      null,
+    );
   }
 
   static async updateContracted(id: string, updates: any) {
     const record = await db.contracted_customers.get(id);
     const updated = { ...record, ...updates, last_modified: Date.now() };
     await db.contracted_customers.put(updated);
-    await SyncManager.queueOperation("UPDATE", "contracted_customers", id, updates);
+    await SyncManager.queueOperation(
+      "UPDATE",
+      "contracted_customers",
+      id,
+      updates,
+    );
   }
 
   static async insertNonContracted(record: any) {
     const storedRecord = { ...record, last_modified: Date.now() };
     await db.non_contracted_customers.put(storedRecord);
-    await SyncManager.queueOperation("INSERT", "non_contracted_customers", record.id, record);
+    await SyncManager.queueOperation(
+      "INSERT",
+      "non_contracted_customers",
+      record.id,
+      record,
+    );
   }
 
   static async deleteNonContracted(id: string) {
     await db.non_contracted_customers.delete(id);
-    await SyncManager.queueOperation("DELETE", "non_contracted_customers", id, null);
+    await SyncManager.queueOperation(
+      "DELETE",
+      "non_contracted_customers",
+      id,
+      null,
+    );
   }
 
   static async updateNonContracted(id: string, updates: any) {
     const record = await db.non_contracted_customers.get(id);
     const updated = { ...record, ...updates, last_modified: Date.now() };
     await db.non_contracted_customers.put(updated);
-    await SyncManager.queueOperation("UPDATE", "non_contracted_customers", id, updates);
+    await SyncManager.queueOperation(
+      "UPDATE",
+      "non_contracted_customers",
+      id,
+      updates,
+    );
   }
 }
 
@@ -131,7 +184,7 @@ export class ProductService {
       id: catalog.id,
       title: catalog.title,
       data: catalog.data,
-      created_at: catalog.created_at
+      created_at: catalog.created_at,
     });
   }
 
@@ -169,12 +222,14 @@ export class StageService {
   static async getStages() {
     const stagesList = await db.production_stages.toArray();
     const clientsList = await db.clients.toArray();
-    const clientMap = new Map(clientsList.map(c => [c.id, c]));
+    const clientMap = new Map(clientsList.map((c) => [c.id, c]));
 
     // Join stage records with clients phones to mimic Supabase relation result
-    return stagesList.map(s => ({
+    return stagesList.map((s) => ({
       ...s,
-      client: s.client_id ? { phones: clientMap.get(s.client_id)?.phones || [] } : undefined
+      client: s.client_id
+        ? { phones: clientMap.get(s.client_id)?.phones || [] }
+        : undefined,
     }));
   }
 
@@ -182,7 +237,12 @@ export class StageService {
     for (const stage of stages) {
       const record = { ...stage, last_modified: Date.now() };
       await db.production_stages.put(record);
-      await SyncManager.queueOperation("INSERT", "production_stages", stage.id, stage);
+      await SyncManager.queueOperation(
+        "INSERT",
+        "production_stages",
+        stage.id,
+        stage,
+      );
     }
   }
 
@@ -191,7 +251,9 @@ export class StageService {
     if (!record) return;
     const updated = { ...record, status, last_modified: Date.now() };
     await db.production_stages.put(updated);
-    await SyncManager.queueOperation("UPDATE", "production_stages", id, { status });
+    await SyncManager.queueOperation("UPDATE", "production_stages", id, {
+      status,
+    });
   }
 }
 
@@ -199,14 +261,19 @@ export class SettingsService {
   static async getSettings() {
     const settingsList = await db.app_settings.toArray();
     const settingsMap: Record<string, string> = {};
-    settingsList.forEach(s => {
+    settingsList.forEach((s) => {
       settingsMap[s.key] = s.value;
     });
     return settingsMap;
   }
 
   static async save(key: string, value: string) {
-    const record = { key, value, updated_at: new Date().toISOString(), last_modified: Date.now() };
+    const record = {
+      key,
+      value,
+      updated_at: new Date().toISOString(),
+      last_modified: Date.now(),
+    };
     await db.app_settings.put(record);
     await SyncManager.queueOperation("INSERT", "app_settings", key, record);
   }

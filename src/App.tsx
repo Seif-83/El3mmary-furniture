@@ -539,9 +539,7 @@ const ProductionPage: React.FC<{
                               isAdmin &&
                               onStageUpdate(
                                 stageRecord.id,
-                                isDone
-                                  ? "not_started"
-                                  : "done",
+                                isDone ? "not_started" : "done",
                               )
                             }
                             disabled={!isAdmin}
@@ -1768,12 +1766,16 @@ const isMissingRoomTypesColumnError = (error: any) => {
 };
 
 const isMissingAroVeneerColumnError = (error: any) => {
-  const raw = [error?.code, error?.message, error?.details, error?.hint].filter(Boolean).join(' ').toLowerCase();
-  return (raw.includes('room_aro_veneer') || raw.includes('aro_veneer')) && (
-    raw.includes('schema cache') ||
-    raw.includes('could not find') ||
-    raw.includes('column') ||
-    raw.includes('pgrst204')
+  const raw = [error?.code, error?.message, error?.details, error?.hint]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return (
+    (raw.includes("room_aro_veneer") || raw.includes("aro_veneer")) &&
+    (raw.includes("schema cache") ||
+      raw.includes("could not find") ||
+      raw.includes("column") ||
+      raw.includes("pgrst204"))
   );
 };
 
@@ -1788,7 +1790,8 @@ const withoutAroVeneer = (payload: Record<string, any>) => {
 };
 
 const withoutRoomTypesAndAroVeneer = (payload: Record<string, any>) => {
-  const { room_types, room_aro_veneer, room_aro_veneer_price, ...rest } = payload;
+  const { room_types, room_aro_veneer, room_aro_veneer_price, ...rest } =
+    payload;
   return rest;
 };
 
@@ -1851,7 +1854,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
-  const [showSplash, setShowSplash] = useState(true);
+  const [showSplash, setShowSplash] = useState(false);
   const allowedEmails = [ADMIN_EMAIL, VIEWER_EMAIL];
   const isAdminUser = currentUser?.email === ADMIN_EMAIL;
   const isAuthorizedUser =
@@ -2033,11 +2036,14 @@ export default function App() {
   const [customPieceName, setCustomPieceName] = useState("");
   const [customPieceQty, setCustomPieceQty] = useState(1);
   const [customPiecePrice, setCustomPiecePrice] = useState("");
-  const [recentlyClickedItem, setRecentlyClickedItem] = useState<string | null>(null);
+  const [recentlyClickedItem, setRecentlyClickedItem] = useState<string | null>(
+    null,
+  );
 
   // Contract upload states
   const [isContractUploadOpen, setIsContractUploadOpen] = useState(false);
-  const [pendingContractInspection, setPendingContractInspection] = useState<Inspection | null>(null);
+  const [pendingContractInspection, setPendingContractInspection] =
+    useState<Inspection | null>(null);
   const [contractUploadLoading, setContractUploadLoading] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const galleryInputRef = useRef<HTMLInputElement | null>(null);
@@ -2371,12 +2377,23 @@ export default function App() {
         })),
       );
       const totalAmount = quoteTotal();
-      const roomAroVeneer = parseRecordSource<boolean>(selectedRecord?.room_aro_veneer || selectedRecord?.roomAroVeneer);
-      const roomAroVeneerPrice = parseRecordSource<number>(selectedRecord?.room_aro_veneer_price || selectedRecord?.roomAroVeneerPrice);
-      const updates = { pieces, total_amount: totalAmount, rooms: quoteDrafts.length, room_aro_veneer: roomAroVeneer, room_aro_veneer_price: roomAroVeneerPrice };
+      const roomAroVeneer = parseRecordSource<boolean>(
+        selectedRecord?.room_aro_veneer || selectedRecord?.roomAroVeneer,
+      );
+      const roomAroVeneerPrice = parseRecordSource<number>(
+        selectedRecord?.room_aro_veneer_price ||
+          selectedRecord?.roomAroVeneerPrice,
+      );
+      const updates = {
+        pieces,
+        total_amount: totalAmount,
+        rooms: quoteDrafts.length,
+        room_aro_veneer: roomAroVeneer,
+        room_aro_veneer_price: roomAroVeneerPrice,
+      };
       // Optimistic UI: update locally and queue sync
       await OrderService.updateInspection(selectedRecord.id, updates);
-      toast.success(lang === 'ar' ? 'تم حفظ العرض' : 'Quote saved');
+      toast.success(lang === "ar" ? "تم حفظ العرض" : "Quote saved");
       await refreshAllData();
       // refresh selectedRecord
       const refreshed = (
@@ -2539,28 +2556,79 @@ export default function App() {
           { data: paymentsData },
           { data: clientsData },
         ] = await Promise.all([
-          supabase.from("catalogs").select("*").order("created_at", { ascending: false }),
-          supabase.from("customers").select("*").order("created_at", { ascending: false }),
-          supabase.from("inspections").select("*").order("created_at", { ascending: false }),
-          supabase.from("contracted_customers").select("*").order("finalized_at", { ascending: false }),
-          supabase.from("non_contracted_customers").select("*").order("finalized_at", { ascending: false }),
+          supabase
+            .from("catalogs")
+            .select("*")
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("customers")
+            .select("*")
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("inspections")
+            .select("*")
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("contracted_customers")
+            .select("*")
+            .order("finalized_at", { ascending: false }),
+          supabase
+            .from("non_contracted_customers")
+            .select("*")
+            .order("finalized_at", { ascending: false }),
           supabase.from("production_stages").select("*"),
           supabase.from("app_settings").select("*"),
-          supabase.from("payments").select("id, amount, paid_at, installment, note").order("paid_at", { ascending: false }),
+          supabase
+            .from("payments")
+            .select("id, amount, paid_at, installment, note")
+            .order("paid_at", { ascending: false }),
           supabase.from("clients").select("*"),
         ]);
 
         // Phase 3: Update IndexedDB with conflict resolution
         const updatePromises: Promise<boolean>[] = [];
-        if (catData) catData.forEach((r: any) => updatePromises.push(SyncManager.resolveConflict("catalogs", r)));
-        if (custData) custData.forEach((r: any) => updatePromises.push(SyncManager.resolveConflict("customers", r)));
-        if (inspData) inspData.forEach((r: any) => updatePromises.push(SyncManager.resolveConflict("inspections", r)));
-        if (contrData) contrData.forEach((r: any) => updatePromises.push(SyncManager.resolveConflict("contracted_customers", r)));
-        if (nonContrData) nonContrData.forEach((r: any) => updatePromises.push(SyncManager.resolveConflict("non_contracted_customers", r)));
-        if (stagesData) stagesData.forEach((r: any) => updatePromises.push(SyncManager.resolveConflict("production_stages", r)));
-        if (settingsData) settingsData.forEach((r: any) => updatePromises.push(SyncManager.resolveConflict("app_settings", r)));
-        if (paymentsData) paymentsData.forEach((r: any) => updatePromises.push(SyncManager.resolveConflict("payments", r)));
-        if (clientsData) clientsData.forEach((r: any) => updatePromises.push(SyncManager.resolveConflict("clients", r)));
+        if (catData)
+          catData.forEach((r: any) =>
+            updatePromises.push(SyncManager.resolveConflict("catalogs", r)),
+          );
+        if (custData)
+          custData.forEach((r: any) =>
+            updatePromises.push(SyncManager.resolveConflict("customers", r)),
+          );
+        if (inspData)
+          inspData.forEach((r: any) =>
+            updatePromises.push(SyncManager.resolveConflict("inspections", r)),
+          );
+        if (contrData)
+          contrData.forEach((r: any) =>
+            updatePromises.push(
+              SyncManager.resolveConflict("contracted_customers", r),
+            ),
+          );
+        if (nonContrData)
+          nonContrData.forEach((r: any) =>
+            updatePromises.push(
+              SyncManager.resolveConflict("non_contracted_customers", r),
+            ),
+          );
+        if (stagesData)
+          stagesData.forEach((r: any) =>
+            updatePromises.push(
+              SyncManager.resolveConflict("production_stages", r),
+            ),
+          );
+        if (settingsData)
+          settingsData.forEach((r: any) =>
+            updatePromises.push(SyncManager.resolveConflict("app_settings", r)),
+          );
+        if (paymentsData)
+          paymentsData.forEach((r: any) =>
+            updatePromises.push(SyncManager.resolveConflict("payments", r)),
+          );
+        if (clientsData)
+          clientsData.forEach((r: any) =>
+            updatePromises.push(SyncManager.resolveConflict("clients", r)),
+          );
 
         await Promise.all(updatePromises);
 
@@ -2679,7 +2747,12 @@ export default function App() {
     payload: Record<string, any>,
   ) => {
     const id = payload.id || crypto.randomUUID();
-    const record = { ...payload, id, created_at: payload.created_at || new Date().toISOString(), last_modified: Date.now() };
+    const record = {
+      ...payload,
+      id,
+      created_at: payload.created_at || new Date().toISOString(),
+      last_modified: Date.now(),
+    };
     if (tableName === "contracted_customers") {
       await OrderService.insertContracted(record);
       return;
@@ -2743,8 +2816,17 @@ export default function App() {
     if (updates.completed_at !== undefined) {
       const stageRecord = await db.production_stages.get(stageId);
       if (stageRecord) {
-        await db.production_stages.put({ ...stageRecord, completed_at: updates.completed_at || undefined, last_modified: Date.now() });
-        await SyncManager.queueOperation("UPDATE", "production_stages", stageId, { completed_at: updates.completed_at });
+        await db.production_stages.put({
+          ...stageRecord,
+          completed_at: updates.completed_at || undefined,
+          last_modified: Date.now(),
+        });
+        await SyncManager.queueOperation(
+          "UPDATE",
+          "production_stages",
+          stageId,
+          { completed_at: updates.completed_at },
+        );
       }
     }
     const currentStage = stages.find((s) => s.id === stageId);
@@ -2879,7 +2961,12 @@ export default function App() {
         if (!title) return;
         setIsLoading(true);
         const newCatId = crypto.randomUUID();
-        const newCat = { id: newCatId, title, data, created_at: new Date().toISOString() };
+        const newCat = {
+          id: newCatId,
+          title,
+          data,
+          created_at: new Date().toISOString(),
+        };
         // Optimistic UI: save locally & queue sync
         await ProductService.insert(newCat);
         await refreshAllData(newCatId);
@@ -3274,6 +3361,8 @@ export default function App() {
           rooms: inspectionFormData.rooms || 0,
           pieces: inspectionFormData.pieces || [],
           total_amount: inspectionFormData.totalAmount || 0,
+          portfolio: inspectionFormData.portfolio || null,
+          portfolio_date: inspectionFormData.portfolioDate || null,
           room_aro_veneer: inspectionFormData.room_aro_veneer || {},
           room_aro_veneer_price: inspectionFormData.room_aro_veneer_price || {},
         };
@@ -3331,16 +3420,20 @@ export default function App() {
         rooms: inspectionFormData.rooms || 0,
         pieces: inspectionFormData.pieces || [],
         total_amount: inspectionFormData.totalAmount || 0,
+        portfolio: inspectionFormData.portfolio || null,
         room_aro_veneer: inspectionFormData.room_aro_veneer || {},
         room_aro_veneer_price: inspectionFormData.room_aro_veneer_price || {},
         pickup_date: inspectionFormData.pickupDate || null,
-        portfolio_date: inspectionFormData.portfolio_date || null,
+        portfolio_date: inspectionFormData.portfolioDate || null,
         contract_date: inspectionFormData.contractDate || null,
       };
 
       if (inspectionFormData.id) {
         // Update existing inspection record via service
-        await OrderService.updateInspection(inspectionFormData.id, inspectionDbData);
+        await OrderService.updateInspection(
+          inspectionFormData.id,
+          inspectionDbData,
+        );
       } else {
         // Create new inspection and remove from customers
         const newId = await insertInspectionRecord(inspectionDbData);
@@ -3476,9 +3569,12 @@ export default function App() {
       const randomId = Math.random().toString(36).substring(2, 8);
       const fileName = `contract_${pendingContractInspection.id}_${timestamp}_${randomId}.jpg`;
 
-      toast.loading(lang === "ar" ? "جاري رفع العقد..." : "Uploading contract...", {
-        id: toastId,
-      });
+      toast.loading(
+        lang === "ar" ? "جاري رفع العقد..." : "Uploading contract...",
+        {
+          id: toastId,
+        },
+      );
       let uploadResult = await supabase.storage
         .from(CONTRACT_BUCKET)
         .upload(fileName, compressedBlob, {
@@ -3520,20 +3616,31 @@ export default function App() {
         throw uploadResult.error;
       }
 
-      const publicUrlData = supabase.storage.from(CONTRACT_BUCKET).getPublicUrl(fileName);
+      const publicUrlData = supabase.storage
+        .from(CONTRACT_BUCKET)
+        .getPublicUrl(fileName);
       if (publicUrlData.error) throw publicUrlData.error;
       const contractUrl = publicUrlData.data?.publicUrl;
       if (!contractUrl) throw new Error("Unable to build contract URL");
 
-      toast.loading(lang === "ar" ? "جاري حفظ البيانات..." : "Saving order...", {
-        id: toastId,
-      });
-      await handleFinalizeInspection("contracted", pendingContractInspection, contractUrl);
+      toast.loading(
+        lang === "ar" ? "جاري حفظ البيانات..." : "Saving order...",
+        {
+          id: toastId,
+        },
+      );
+      await handleFinalizeInspection(
+        "contracted",
+        pendingContractInspection,
+        contractUrl,
+      );
 
       setIsContractUploadOpen(false);
       setPendingContractInspection(null);
       toast.success(
-        lang === "ar" ? "تم تحميل العقد بنجاح ✓" : "Contract uploaded successfully",
+        lang === "ar"
+          ? "تم تحميل العقد بنجاح ✓"
+          : "Contract uploaded successfully",
         { id: toastId },
       );
     } catch (err: any) {
@@ -3549,7 +3656,9 @@ export default function App() {
     }
   };
 
-  const handleContractInputSelection = async (event: ChangeEvent<HTMLInputElement>) => {
+  const handleContractInputSelection = async (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
     const file = event.target.files?.[0];
     if (!file) return;
     await handleContractUpload(file);
@@ -3799,7 +3908,11 @@ export default function App() {
             let clientId = localClient?.id || null;
             if (!clientId) {
               clientId = crypto.randomUUID();
-              await CustomerService.saveClient({ id: clientId, name: name || phone, phones: [phone] });
+              await CustomerService.saveClient({
+                id: clientId,
+                name: name || phone,
+                phones: [phone],
+              });
             }
             if (clientId) {
               const stagesPayload = STAGE_ORDER.map((stage) => ({
@@ -3839,20 +3952,8 @@ export default function App() {
     );
   };
 
-  const computeInspectionTotalAmount = (
-    pieces: FurniturePiece[],
-    roomAroVeneer?: Record<string, boolean>,
-    roomAroVeneerPrice?: Record<string, number>,
-  ) => {
-    const piecesTotal = pieces.reduce((sum, p) => sum + pieceTotal(p), 0);
-    const veneerTotal = Object.entries(roomAroVeneerPrice || {}).reduce(
-      (sum, [roomKey, price]) => {
-        const enabled = Boolean(roomAroVeneer?.[roomKey]) || Number(price) > 0;
-        return sum + (enabled ? Number(price || 0) : 0);
-      },
-      0,
-    );
-    return piecesTotal + veneerTotal;
+  const computeInspectionTotalAmount = (pieces: FurniturePiece[]) => {
+    return pieces.reduce((sum, p) => sum + pieceTotal(p), 0);
   };
 
   const addPiece = (name: string, roomType?: string) => {
@@ -3862,8 +3963,6 @@ export default function App() {
     const existingIndex = pieces.findIndex(
       (p) => p.name === name && (p.room_type || "other") === defaultRoom,
     );
-    const defaultAro =
-      inspectionFormData.room_aro_veneer?.[defaultRoom] || false;
 
     if (existingIndex >= 0) {
       pieces[existingIndex].quantity =
@@ -3874,57 +3973,69 @@ export default function App() {
         price: 0,
         quantity: 1,
         room_type: defaultRoom,
-        aro_veneer_addon: defaultAro,
+        aro_veneer_addon: false,
         aro_surcharge: 0,
       });
     }
 
-    const totalAmount = computeInspectionTotalAmount(
-      pieces,
-      inspectionFormData.room_aro_veneer,
-      inspectionFormData.room_aro_veneer_price,
-    );
+    const totalAmount = computeInspectionTotalAmount(pieces);
     setInspectionFormData({ ...inspectionFormData, pieces, totalAmount });
+  };
+
+  const getRoomTypeCount = (roomKey: string) =>
+    (inspectionFormData.room_types || []).filter((key) => key === roomKey)
+      .length;
+
+  const syncRoomCount = (roomTypes: string[]) => Math.max(0, roomTypes.length);
+
+  const buildRoomTypeState = (nextRoomTypes: string[]) => {
+    const totalAmount = computeInspectionTotalAmount(
+      inspectionFormData.pieces || [],
+    );
+    return {
+      room_types: nextRoomTypes,
+      rooms: syncRoomCount(nextRoomTypes),
+      totalAmount,
+    };
   };
 
   const toggleRoomType = (roomKey: string) => {
     const roomTypes = inspectionFormData.room_types || [];
-    const nextRoomTypes = roomTypes.includes(roomKey)
-      ? roomTypes.filter((key) => key !== roomKey)
-      : [...roomTypes, roomKey];
-    const nextRoomAroVeneer = { ...(inspectionFormData.room_aro_veneer || {}) };
-    const nextRoomAroVeneerPrice = {
-      ...(inspectionFormData.room_aro_veneer_price || {}),
-    };
-    if (nextRoomTypes.includes(roomKey)) {
-      nextRoomAroVeneer[roomKey] = nextRoomAroVeneer[roomKey] ?? false;
-      nextRoomAroVeneerPrice[roomKey] = nextRoomAroVeneerPrice[roomKey] ?? 0;
-    } else {
-      delete nextRoomAroVeneer[roomKey];
-      delete nextRoomAroVeneerPrice[roomKey];
-    }
-    const totalAmount = computeInspectionTotalAmount(
-      inspectionFormData.pieces || [],
-      nextRoomAroVeneer,
-      nextRoomAroVeneerPrice,
-    );
+    const selectedIndex = roomTypes.indexOf(roomKey);
+    const nextRoomTypes =
+      selectedIndex >= 0
+        ? roomTypes.filter((_, index) => index !== selectedIndex)
+        : [...roomTypes, roomKey];
     setInspectionFormData({
       ...inspectionFormData,
-      room_types: nextRoomTypes,
-      room_aro_veneer: nextRoomAroVeneer,
-      room_aro_veneer_price: nextRoomAroVeneerPrice,
-      totalAmount,
+      ...buildRoomTypeState(nextRoomTypes),
+    });
+  };
+
+  const addRoomTypeInstance = (roomKey: string) => {
+    const roomTypes = inspectionFormData.room_types || [];
+    const nextRoomTypes = [...roomTypes, roomKey];
+    setInspectionFormData({
+      ...inspectionFormData,
+      ...buildRoomTypeState(nextRoomTypes),
+    });
+  };
+
+  const removeRoomTypeInstance = (roomKey: string) => {
+    const roomTypes = inspectionFormData.room_types || [];
+    const idx = roomTypes.findIndex((key) => key === roomKey);
+    if (idx < 0) return;
+    const nextRoomTypes = roomTypes.filter((_, index) => index !== idx);
+    setInspectionFormData({
+      ...inspectionFormData,
+      ...buildRoomTypeState(nextRoomTypes),
     });
   };
 
   const updatePiece = (index: number, field: string, value: any) => {
     const pieces = [...(inspectionFormData.pieces || [])];
     pieces[index] = { ...pieces[index], [field]: value };
-    const total = computeInspectionTotalAmount(
-      pieces,
-      inspectionFormData.room_aro_veneer,
-      inspectionFormData.room_aro_veneer_price,
-    );
+    const total = computeInspectionTotalAmount(pieces);
     setInspectionFormData({
       ...inspectionFormData,
       pieces,
@@ -3933,14 +4044,12 @@ export default function App() {
   };
 
   const pieceTotal = (piece: FurniturePiece) =>
-    Number(piece.price || 0) * Number(piece.quantity || 1);
-  const inspectionRoomAroVeneerSubtotal = (roomKey: string) =>
-    Number(inspectionFormData.room_aro_veneer_price?.[roomKey] || 0);
+    Number(piece.price || 0) * Number(piece.quantity || 1) +
+    (piece.aro_veneer_addon ? Number(piece.aro_surcharge || 0) : 0);
   const inspectionRoomSubtotal = (roomKey: string) =>
     (inspectionFormData.pieces || [])
       .filter((p) => p.room_type === roomKey)
-      .reduce((sum, p) => sum + pieceTotal(p), 0) +
-    inspectionRoomAroVeneerSubtotal(roomKey);
+      .reduce((sum, p) => sum + pieceTotal(p), 0);
   const availableRoomTypes = inspectionFormData.room_types?.length
     ? inspectionFormData.room_types
     : ["other"];
@@ -3948,11 +4057,7 @@ export default function App() {
   const updatePiecePrice = (index: number, price: number) => {
     const pieces = [...(inspectionFormData.pieces || [])];
     pieces[index].price = price;
-    const totalAmount = computeInspectionTotalAmount(
-      pieces,
-      inspectionFormData.room_aro_veneer,
-      inspectionFormData.room_aro_veneer_price,
-    );
+    const totalAmount = computeInspectionTotalAmount(pieces);
     setInspectionFormData({ ...inspectionFormData, pieces, totalAmount });
   };
 
@@ -3960,11 +4065,7 @@ export default function App() {
     const pieces =
       inspectionFormData.pieces?.filter((_: any, i: number) => i !== index) ||
       [];
-    const totalAmount = computeInspectionTotalAmount(
-      pieces,
-      inspectionFormData.room_aro_veneer,
-      inspectionFormData.room_aro_veneer_price,
-    );
+    const totalAmount = computeInspectionTotalAmount(pieces);
     setInspectionFormData({ ...inspectionFormData, pieces, totalAmount });
   };
 
@@ -4003,6 +4104,9 @@ export default function App() {
   const [governorateFilter, setGovernorateFilter] = useState<
     "all" | "القاهرة" | "الاسكندرية"
   >("all");
+  const [phonebookStatusFilter, setPhonebookStatusFilter] = useState<
+    "all" | "contracted" | "not-contracted" | "customers" | "inspections"
+  >("all");
 
   const matchesFilters = (r: any) => {
     const searchMatch =
@@ -4015,6 +4119,19 @@ export default function App() {
       governorateFilter === "all" ||
       (r.governorate || "") === governorateFilter;
     return searchMatch && govMatch;
+  };
+
+  const isPhonebookEntryVisible = (sources: string[]) => {
+    if (phonebookStatusFilter === "all") return true;
+    if (phonebookStatusFilter === "contracted")
+      return sources.includes("contracted");
+    if (phonebookStatusFilter === "not-contracted")
+      return sources.includes("not-contracted");
+    if (phonebookStatusFilter === "customers")
+      return sources.includes("customers");
+    if (phonebookStatusFilter === "inspections")
+      return sources.includes("inspections");
+    return true;
   };
 
   const openEditFinalizedRecord = (
@@ -4116,7 +4233,7 @@ export default function App() {
       if (modalMode === "add") {
         // Check local IndexedDB for existing record first
         const localExisting = await db.customers
-          .filter(c => c.phone === combinedPhone)
+          .filter((c) => c.phone === combinedPhone)
           .first();
 
         if (localExisting) {
@@ -4816,11 +4933,59 @@ export default function App() {
                     {adminSubView === "phonebook" ? (
                       <div className="space-y-6">
                         <div className="glass rounded-[2.5rem] p-6 md:p-10 shadow-xl border border-white/40 glass-table">
-                          <div className="flex items-center gap-3 mb-6">
-                            <PhoneCall className="w-6 h-6 text-accent-tan" />
-                            <h2 className="text-2xl font-bold text-zinc-900">
-                              {t.phonebook}
-                            </h2>
+                          <div className="flex flex-col gap-4 mb-6">
+                            <div className="flex items-center gap-3">
+                              <PhoneCall className="w-6 h-6 text-accent-tan" />
+                              <h2 className="text-2xl font-bold text-zinc-900">
+                                {t.phonebook}
+                              </h2>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {(
+                                [
+                                  {
+                                    key: "all",
+                                    label: lang === "ar" ? "الكل" : "All",
+                                  },
+                                  {
+                                    key: "contracted",
+                                    label:
+                                      lang === "ar" ? "متعاقد" : "Contracted",
+                                  },
+                                  {
+                                    key: "not-contracted",
+                                    label:
+                                      lang === "ar"
+                                        ? "غير متعاقد"
+                                        : "Not contracted",
+                                  },
+                                  {
+                                    key: "customers",
+                                    label: lang === "ar" ? "عميل" : "Customer",
+                                  },
+                                  {
+                                    key: "inspections",
+                                    label:
+                                      lang === "ar" ? "معاينات" : "Inspections",
+                                  },
+                                ] as const
+                              ).map((filter) => (
+                                <button
+                                  key={filter.key}
+                                  type="button"
+                                  onClick={() =>
+                                    setPhonebookStatusFilter(filter.key)
+                                  }
+                                  className={`px-4 py-2 rounded-2xl text-sm font-semibold transition-all ${
+                                    phonebookStatusFilter === filter.key
+                                      ? "bg-zinc-900 text-white"
+                                      : "bg-white text-zinc-700 border border-zinc-200 hover:border-zinc-300"
+                                  }`}
+                                >
+                                  {filter.label}
+                                </button>
+                              ))}
+                            </div>
                           </div>
                           {(() => {
                             const allNumbers = [
@@ -4870,11 +5035,41 @@ export default function App() {
                                 });
                               }
                             });
-                            const sortedEntries = Array.from(
-                              phoneMap.entries(),
-                            ).sort((a, b) =>
-                              a[1].name.localeCompare(b[1].name, "ar"),
-                            );
+                            const statusPriority: Record<string, number> = {
+                              contracted: 1,
+                              "not-contracted": 2,
+                              customers: 3,
+                              inspections: 4,
+                            };
+                            const sortedEntries = Array.from(phoneMap.entries())
+                              .filter(([phone, data]) =>
+                                isPhonebookEntryVisible(data.sources),
+                              )
+                              .sort((a, b) => {
+                                const aStatus = a[1].sources.includes(
+                                  "contracted",
+                                )
+                                  ? "contracted"
+                                  : a[1].sources.includes("not-contracted")
+                                    ? "not-contracted"
+                                    : a[1].sources.includes("customers")
+                                      ? "customers"
+                                      : "inspections";
+                                const bStatus = b[1].sources.includes(
+                                  "contracted",
+                                )
+                                  ? "contracted"
+                                  : b[1].sources.includes("not-contracted")
+                                    ? "not-contracted"
+                                    : b[1].sources.includes("customers")
+                                      ? "customers"
+                                      : "inspections";
+                                const statusDiff =
+                                  statusPriority[aStatus] -
+                                  statusPriority[bStatus];
+                                if (statusDiff !== 0) return statusDiff;
+                                return a[1].name.localeCompare(b[1].name, "ar");
+                              });
                             return sortedEntries.length > 0 ? (
                               <div className="space-y-2">
                                 {sortedEntries.map(([phone, data]) => {
@@ -4885,17 +5080,17 @@ export default function App() {
                                     ? lang === "ar"
                                       ? "متعاقد"
                                       : "Contracted"
-                                    : data.sources.includes("inspections")
+                                    : data.sources.includes("not-contracted")
                                       ? lang === "ar"
-                                        ? "معاينة"
-                                        : "Inspection"
-                                      : data.sources.includes("not-contracted")
+                                        ? "غير متعاقد"
+                                        : "Not Contracted"
+                                      : data.sources.includes("customers")
                                         ? lang === "ar"
-                                          ? "غير متعاقد"
-                                          : "Not Contracted"
-                                        : lang === "ar"
                                           ? "عميل"
-                                          : "Customer";
+                                          : "Customer"
+                                        : lang === "ar"
+                                          ? "معاينة"
+                                          : "Inspection";
                                   return (
                                     <div
                                       key={phone}
@@ -6329,7 +6524,9 @@ export default function App() {
                 </div>
                 <div>
                   <h2 className="text-2xl font-bold text-zinc-900">
-                    {lang === "ar" ? "رفع العقد الموقع" : "Upload signed contract"}
+                    {lang === "ar"
+                      ? "رفع العقد الموقع"
+                      : "Upload signed contract"}
                   </h2>
                   <p className="mt-2 text-sm text-zinc-500 leading-relaxed">
                     {lang === "ar"
@@ -6350,7 +6547,9 @@ export default function App() {
                   className="flex items-center justify-center gap-3 rounded-2xl border border-zinc-200 bg-white px-5 py-4 text-sm font-bold text-zinc-700 shadow-sm transition-all hover:border-emerald-200 hover:text-emerald-600 disabled:opacity-60"
                 >
                   <Camera className="h-5 w-5" />
-                  {lang === "ar" ? "التقاط صورة بالكاميرا" : "Take photo with camera"}
+                  {lang === "ar"
+                    ? "التقاط صورة بالكاميرا"
+                    : "Take photo with camera"}
                 </button>
                 <button
                   type="button"
@@ -6359,7 +6558,9 @@ export default function App() {
                   className="flex items-center justify-center gap-3 rounded-2xl border border-zinc-200 bg-white px-5 py-4 text-sm font-bold text-zinc-700 shadow-sm transition-all hover:border-emerald-200 hover:text-emerald-600 disabled:opacity-60"
                 >
                   <ImageIcon className="h-5 w-5" />
-                  {lang === "ar" ? "اختيار صورة من المعرض" : "Choose from gallery"}
+                  {lang === "ar"
+                    ? "اختيار صورة من المعرض"
+                    : "Choose from gallery"}
                 </button>
               </div>
 
@@ -6677,16 +6878,10 @@ export default function App() {
                         {t.rooms}
                       </label>
                       <input
-                        required
+                        readOnly
                         type="number"
-                        className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl"
-                        value={inspectionFormData.rooms}
-                        onChange={(e) =>
-                          setInspectionFormData({
-                            ...inspectionFormData,
-                            rooms: parseInt(e.target.value),
-                          })
-                        }
+                        className="w-full px-5 py-4 bg-black/10 border border-black/10 rounded-2xl text-zinc-500"
+                        value={inspectionFormData.room_types?.length || 0}
                       />
                     </div>
 
@@ -6697,16 +6892,20 @@ export default function App() {
                         </div>
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                           {ROOM_TYPES.map((room) => {
-                            const selected =
-                              inspectionFormData.room_types?.includes(room.key);
+                            const count = getRoomTypeCount(room.key);
                             return (
                               <button
                                 key={room.key}
                                 type="button"
                                 onClick={() => toggleRoomType(room.key)}
-                                className={`px-3 py-2 rounded-3xl text-sm font-bold transition-all ${selected ? "bg-zinc-900 text-white" : "bg-white border border-black/10 text-zinc-700 hover:bg-zinc-100"}`}
+                                className={`flex items-center justify-center gap-2 px-3 py-2 rounded-3xl text-sm font-bold transition-all ${count > 0 ? "bg-zinc-900 text-white" : "bg-white border border-black/10 text-zinc-700 hover:bg-zinc-100"}`}
                               >
-                                {room.ar}
+                                <span>{room.ar}</span>
+                                {count > 0 ? (
+                                  <span className="inline-flex h-6 min-w-[24px] items-center justify-center rounded-full bg-white text-[10px] font-black text-zinc-900 px-1">
+                                    {count}
+                                  </span>
+                                ) : null}
                               </button>
                             );
                           })}
@@ -6746,13 +6945,7 @@ export default function App() {
                                 (r) => r.key === roomKey,
                               );
                               if (!room) return null;
-                              const checked =
-                                inspectionFormData.room_aro_veneer?.[roomKey] ||
-                                false;
-                              const roomVeneerPrice =
-                                inspectionFormData.room_aro_veneer_price?.[
-                                  roomKey
-                                ] || 0;
+                              const roomCount = getRoomTypeCount(roomKey);
                               return (
                                 <div
                                   key={roomKey}
@@ -6766,76 +6959,42 @@ export default function App() {
                                       <div className="text-[11px] text-zinc-500">
                                         {room.en}
                                       </div>
-                                    </div>
-                                    <div className="flex flex-col gap-3 sm:items-end">
-                                      <label className="inline-flex items-center gap-2 rounded-full border border-black/10 px-3 py-2 bg-white">
-                                        <input
-                                          type="checkbox"
-                                          checked={checked}
-                                          onChange={(e) => {
-                                            const nextRoomAroVeneer = {
-                                              ...(inspectionFormData.room_aro_veneer ||
-                                                {}),
-                                              [roomKey]: e.target.checked,
-                                            };
-                                            const totalAmount =
-                                              computeInspectionTotalAmount(
-                                                inspectionFormData.pieces || [],
-                                                nextRoomAroVeneer,
-                                                inspectionFormData.room_aro_veneer_price,
-                                              );
-                                            setInspectionFormData({
-                                              ...inspectionFormData,
-                                              room_aro_veneer:
-                                                nextRoomAroVeneer,
-                                              totalAmount,
-                                            });
-                                          }}
-                                          className="accent-[#d4a373]"
-                                        />
-                                        <span className="text-sm">
-                                          {lang === "ar"
-                                            ? "قشرة أرو"
-                                            : "Aro veneer"}
+                                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-zinc-600">
+                                        <span>
+                                          {lang === "ar" ? "عدد" : "Count"}:{" "}
+                                          {roomCount}
                                         </span>
-                                      </label>
-                                      <div className="flex items-center gap-2">
-                                        <input
-                                          type="number"
-                                          min={0}
-                                          value={roomVeneerPrice}
-                                          onChange={(e) => {
-                                            const nextRoomAroVeneerPrice = {
-                                              ...(inspectionFormData.room_aro_veneer_price ||
-                                                {}),
-                                              [roomKey]: Number(e.target.value),
-                                            };
-                                            const totalAmount =
-                                              computeInspectionTotalAmount(
-                                                inspectionFormData.pieces || [],
-                                                inspectionFormData.room_aro_veneer,
-                                                nextRoomAroVeneerPrice,
-                                              );
-                                            setInspectionFormData({
-                                              ...inspectionFormData,
-                                              room_aro_veneer_price:
-                                                nextRoomAroVeneerPrice,
-                                              totalAmount,
-                                            });
-                                          }}
-                                          className="rounded-3xl border border-black/10 bg-white px-3 py-2 text-sm w-28 text-right"
-                                        />
-                                        <span className="text-sm text-zinc-500">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            addRoomTypeInstance(room.key)
+                                          }
+                                          className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] font-semibold text-zinc-700 hover:bg-zinc-100"
+                                        >
                                           {lang === "ar"
-                                            ? "سعر القشرة"
-                                            : "Veneer price"}
-                                        </span>
+                                            ? `أضف ${room.ar} أخرى`
+                                            : `Add another ${room.en}`}
+                                        </button>
+                                        {roomCount > 1 ? (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              removeRoomTypeInstance(room.key)
+                                            }
+                                            className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] font-semibold text-zinc-700 hover:bg-zinc-100"
+                                          >
+                                            {lang === "ar"
+                                              ? "إزالة غرفة"
+                                              : "Remove room"}
+                                          </button>
+                                        ) : null}
                                       </div>
                                     </div>
                                   </div>
                                   <div className="flex flex-wrap gap-2">
                                     {room.defaults.map((itemName) => {
-                                      const isHighlighted = recentlyClickedItem === itemName;
+                                      const isHighlighted =
+                                        recentlyClickedItem === itemName;
                                       return (
                                         <button
                                           key={itemName}
@@ -6843,7 +7002,11 @@ export default function App() {
                                           onClick={() => {
                                             addPiece(itemName, roomKey);
                                             setRecentlyClickedItem(itemName);
-                                            setTimeout(() => setRecentlyClickedItem(null), 300);
+                                            setTimeout(
+                                              () =>
+                                                setRecentlyClickedItem(null),
+                                              300,
+                                            );
                                           }}
                                           className={`rounded-full px-3 py-2 text-xs font-bold transition-all ${
                                             isHighlighted
@@ -6928,11 +7091,8 @@ export default function App() {
                                   room_type: roomType,
                                 });
                               }
-                              const totalAmount = computeInspectionTotalAmount(
-                                pieces,
-                                inspectionFormData.room_aro_veneer,
-                                inspectionFormData.room_aro_veneer_price,
-                              );
+                              const totalAmount =
+                                computeInspectionTotalAmount(pieces);
                               setInspectionFormData({
                                 ...inspectionFormData,
                                 pieces,
@@ -6968,10 +7128,7 @@ export default function App() {
                                 .filter(
                                   (p) => (p.room_type || "other") === roomKey,
                                 );
-                              const roomVeneerTotal =
-                                inspectionRoomAroVeneerSubtotal(roomKey);
-                              if (!items.length && roomVeneerTotal === 0)
-                                return null;
+                              if (!items.length) return null;
                               const subtotal = inspectionRoomSubtotal(roomKey);
                               return (
                                 <div
@@ -6993,14 +7150,6 @@ export default function App() {
                                       {subtotal.toLocaleString()} EGP
                                     </div>
                                   </div>
-                                  {roomVeneerTotal > 0 && (
-                                    <div className="mb-3 rounded-3xl border border-black/10 bg-[#faf7f1] px-4 py-3 text-sm text-zinc-700">
-                                      {lang === "ar"
-                                        ? "سعر قشرة أرو"
-                                        : "Aro veneer cost"}
-                                      : {roomVeneerTotal.toLocaleString()} EGP
-                                    </div>
-                                  )}
                                   <div className="space-y-3">
                                     {items.map((p) => (
                                       <div
@@ -7033,13 +7182,21 @@ export default function App() {
                                                   updatePiece(
                                                     p.idx,
                                                     "quantity",
-                                                    e.target.value === "" ? "" : Number(e.target.value),
+                                                    e.target.value === ""
+                                                      ? ""
+                                                      : Number(e.target.value),
                                                   )
                                                 }
                                                 onBlur={(e) => {
-                                                  const val = Number(e.target.value);
+                                                  const val = Number(
+                                                    e.target.value,
+                                                  );
                                                   if (isNaN(val) || val < 1) {
-                                                    updatePiece(p.idx, "quantity", 1);
+                                                    updatePiece(
+                                                      p.idx,
+                                                      "quantity",
+                                                      1,
+                                                    );
                                                   }
                                                 }}
                                                 className="w-20 bg-transparent outline-none text-right"
@@ -7065,61 +7222,107 @@ export default function App() {
                                             </div>
                                           </div>
                                         </div>
-                                        <div className="grid gap-3 sm:grid-cols-[1fr_auto] items-start">
-                                          <div>
-                                            <label className="text-[10px] font-bold uppercase text-zinc-400">
-                                              {lang === "ar"
-                                                ? "التفاصيل"
-                                                : "Details"}
+                                        <div className="grid gap-3">
+                                          <div className="grid gap-3 sm:grid-cols-[1fr_1fr]">
+                                            <label className="inline-flex items-center gap-2 rounded-3xl border border-black/10 bg-white px-4 py-3 text-sm">
+                                              <input
+                                                type="checkbox"
+                                                checked={Boolean(
+                                                  p.aro_veneer_addon,
+                                                )}
+                                                onChange={(e) =>
+                                                  updatePiece(
+                                                    p.idx,
+                                                    "aro_veneer_addon",
+                                                    e.target.checked,
+                                                  )
+                                                }
+                                                className="accent-[#d4a373]"
+                                              />
+                                              <span>
+                                                {lang === "ar"
+                                                  ? "قشرة أرو"
+                                                  : "Aro veneer"}
+                                              </span>
                                             </label>
-                                            <textarea
-                                              placeholder={
-                                                lang === "ar"
-                                                  ? "أضف تفاصيل للمنتج..."
-                                                  : "Add product details..."
-                                              }
-                                              rows={2}
-                                              value={p.details || ""}
-                                              onChange={(e) =>
-                                                updatePiece(
-                                                  p.idx,
-                                                  "details",
-                                                  e.target.value,
-                                                )
-                                              }
-                                              className="w-full px-4 py-3 bg-white border border-black/5 rounded-xl text-sm text-zinc-700 placeholder:text-zinc-300 outline-none focus:border-accent-tan/40 transition-all resize-none"
-                                            />
+                                            <div className="rounded-3xl border border-black/10 bg-white px-4 py-3">
+                                              <label className="text-[10px] text-zinc-400 block mb-1">
+                                                {lang === "ar"
+                                                  ? "سعر القشرة"
+                                                  : "Veneer surcharge"}
+                                              </label>
+                                              <input
+                                                type="number"
+                                                min={0}
+                                                value={p.aro_surcharge || ""}
+                                                onChange={(e) =>
+                                                  updatePiece(
+                                                    p.idx,
+                                                    "aro_surcharge",
+                                                    Number(e.target.value),
+                                                  )
+                                                }
+                                                className="w-full bg-transparent outline-none text-right"
+                                              />
+                                            </div>
                                           </div>
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const pieces =
-                                                inspectionFormData.pieces?.filter(
-                                                  (_, i) => i !== p.idx,
-                                                ) || [];
-                                              const totalAmount =
-                                                computeInspectionTotalAmount(
+                                          <div className="grid gap-3 sm:grid-cols-[1fr_auto] items-start">
+                                            <div>
+                                              <label className="text-[10px] font-bold uppercase text-zinc-400">
+                                                {lang === "ar"
+                                                  ? "التفاصيل"
+                                                  : "Details"}
+                                              </label>
+                                              <textarea
+                                                placeholder={
+                                                  lang === "ar"
+                                                    ? "أضف تفاصيل للالمنتج..."
+                                                    : "Add product details..."
+                                                }
+                                                rows={2}
+                                                value={p.details || ""}
+                                                onChange={(e) =>
+                                                  updatePiece(
+                                                    p.idx,
+                                                    "details",
+                                                    e.target.value,
+                                                  )
+                                                }
+                                                className="w-full px-4 py-3 bg-white border border-black/5 rounded-xl text-sm text-zinc-700 placeholder:text-zinc-300 outline-none focus:border-accent-tan/40 transition-all resize-none"
+                                              />
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                const pieces =
+                                                  inspectionFormData.pieces?.filter(
+                                                    (_, i) => i !== p.idx,
+                                                  ) || [];
+                                                const totalAmount =
+                                                  computeInspectionTotalAmount(
+                                                    pieces,
+                                                  );
+                                                setInspectionFormData({
+                                                  ...inspectionFormData,
                                                   pieces,
-                                                  inspectionFormData.room_aro_veneer,
-                                                  inspectionFormData.room_aro_veneer_price,
+                                                  totalAmount,
+                                                });
+                                                setExpandedPieceDetails(
+                                                  (prev) =>
+                                                    prev
+                                                      .filter(
+                                                        (i) => i !== p.idx,
+                                                      )
+                                                      .map((i) =>
+                                                        i > p.idx ? i - 1 : i,
+                                                      ),
                                                 );
-                                              setInspectionFormData({
-                                                ...inspectionFormData,
-                                                pieces,
-                                                totalAmount,
-                                              });
-                                              setExpandedPieceDetails((prev) =>
-                                                prev
-                                                  .filter((i) => i !== p.idx)
-                                                  .map((i) =>
-                                                    i > p.idx ? i - 1 : i,
-                                                  ),
-                                              );
-                                            }}
-                                            className="min-w-[56px] p-3 bg-white border border-red-200 text-red-600 rounded-3xl shadow-[0_12px_24px_rgba(239,68,68,0.12)] hover:bg-red-50 transition-all duration-200 flex items-center justify-center"
-                                          >
-                                            <Trash2 className="w-5 h-5" />
-                                          </button>
+                                              }}
+                                              className="min-w-[56px] p-3 bg-white border border-red-200 text-red-600 rounded-3xl shadow-[0_12px_24px_rgba(239,68,68,0.12)] hover:bg-red-50 transition-all duration-200 flex items-center justify-center"
+                                            >
+                                              <Trash2 className="w-5 h-5" />
+                                            </button>
+                                          </div>
                                         </div>
                                       </div>
                                     ))}
@@ -7537,9 +7740,22 @@ export default function App() {
                                     key={`${roomIndex}-${itemIndex}`}
                                     className="rounded-3xl border border-black/10 bg-white p-4"
                                   >
-                                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 cursor-pointer" onClick={() => setExpandedPieceDetails((prev) => prev.includes(itemIndex) ? prev.filter((i) => i !== itemIndex) : [...prev, itemIndex])}>
+                                    <div
+                                      className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 cursor-pointer"
+                                      onClick={() =>
+                                        setExpandedPieceDetails((prev) =>
+                                          prev.includes(itemIndex)
+                                            ? prev.filter(
+                                                (i) => i !== itemIndex,
+                                              )
+                                            : [...prev, itemIndex],
+                                        )
+                                      }
+                                    >
                                       <div className="space-y-1">
-                                        <div className={`font-semibold ${expandedPieceDetails.includes(itemIndex) ? "text-accent-tan ring-2 ring-accent-tan/30" : "text-zinc-900"}`}>
+                                        <div
+                                          className={`font-semibold ${expandedPieceDetails.includes(itemIndex) ? "text-accent-tan ring-2 ring-accent-tan/30" : "text-zinc-900"}`}
+                                        >
                                           {item.item_name ||
                                             (lang === "ar"
                                               ? "عنصر مخصص"
