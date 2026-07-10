@@ -42,6 +42,17 @@ import {
 import * as XLSX from "xlsx";
 import { supabase, supabaseAdmin } from "./lib/supabase";
 import { User } from "@supabase/supabase-js";
+import { SyncManager } from "./services/sync";
+import {
+  CustomerService,
+  OrderService,
+  ProductService,
+  InvoiceService,
+  StageService,
+  SettingsService,
+  ActivityLogService,
+} from "./services/data";
+import { db } from "./services/db";
 
 interface FakeTimestamp {
   toDate: () => Date;
@@ -584,8 +595,8 @@ interface PaymentRecord {
   id: string;
   amount: number;
   paid_at: string;
-  installment: string | null;
-  note: string | null;
+  installment?: string | null;
+  note?: string | null;
 }
 const PaymentsPage: React.FC<{
   contractedCustomers: Inspection[];
@@ -633,11 +644,21 @@ const PaymentsPage: React.FC<{
   const fetchPayments = async () => {
     setLoadingPayments(true);
     try {
-      const { data, error } = await supabase
-        .from("payments")
-        .select("id, amount, paid_at, installment, note")
-        .order("paid_at", { ascending: false });
-      if (!error && data) setAllPayments(data);
+      const localPayments = await InvoiceService.getPayments();
+      setAllPayments(localPayments);
+      if (navigator.onLine) {
+        const { data, error } = await supabase
+          .from("payments")
+          .select("id, amount, paid_at, installment, note")
+          .order("paid_at", { ascending: false });
+        if (!error && data) {
+          for (const r of data) {
+            await SyncManager.resolveConflict("payments", r);
+          }
+          const updatedPayments = await InvoiceService.getPayments();
+          setAllPayments(updatedPayments);
+        }
+      }
     } catch (_) {}
     setLoadingPayments(false);
   };
@@ -681,17 +702,18 @@ const PaymentsPage: React.FC<{
       const remaining =
         (selectedCustomer.totalAmount || 0) - totalPaid - Number(paymentAmount);
 
-      const { error } = await supabase.from("payments").insert({
+      const newPayment = {
+        id: crypto.randomUUID(),
         client_id: null,
         visit_id: null,
         amount: Number(paymentAmount),
         paid_at: new Date().toISOString(),
         installment: paymentStage,
         note: `cc:${selectedCustomer.id}:${selectedCustomer.customerName}`,
-      });
-
-      if (error) throw error;
-
+        created_at: new Date().toISOString(),
+      };
+      // Optimistic UI: save locally & queue sync
+      await InvoiceService.insert(newPayment);
       await fetchPayments();
 
       if (selectedCustomer.phone) {
@@ -1698,7 +1720,7 @@ const mapInspectionFromDB = (dbInsp: any): Inspection =>
     rooms: dbInsp.rooms,
     pieces: parseMaybeJsonArray<FurniturePiece>(dbInsp.pieces) || [],
     totalAmount: Number(dbInsp.total_amount || 0),
-    status: dbInsp.status,
+    status: dbInsp.status || "pending",
     portfolio: dbInsp.portfolio,
     room_types: parseMaybeJsonArray<string>(dbInsp.room_types) || [],
     room_aro_veneer:
@@ -1822,6 +1844,7 @@ const playSound = async (type: "success" | "error" | "delete") => {
 
 export default function App() {
   const [lang, setLang] = useState<"en" | "ar">("ar");
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
   const t = translations[lang];
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -2002,6 +2025,7 @@ export default function App() {
 
   const [stages, setStages] = useState<any[]>([]);
   const [settings, setSettings] = useState<Record<string, string>>({});
+  const [allPayments, setAllPayments] = useState<PaymentRecord[]>([]);
 
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<any>(null);
@@ -2349,8 +2373,9 @@ export default function App() {
       const totalAmount = quoteTotal();
       const roomAroVeneer = parseRecordSource<boolean>(selectedRecord?.room_aro_veneer || selectedRecord?.roomAroVeneer);
       const roomAroVeneerPrice = parseRecordSource<number>(selectedRecord?.room_aro_veneer_price || selectedRecord?.roomAroVeneerPrice);
-      const { error } = await supabase.from('inspections').update({ pieces, total_amount: totalAmount, rooms: quoteDrafts.length, room_aro_veneer: roomAroVeneer, room_aro_veneer_price: roomAroVeneerPrice }).eq('id', selectedRecord.id);
-      if (error) throw error;
+      const updates = { pieces, total_amount: totalAmount, rooms: quoteDrafts.length, room_aro_veneer: roomAroVeneer, room_aro_veneer_price: roomAroVeneerPrice };
+      // Optimistic UI: update locally and queue sync
+      await OrderService.updateInspection(selectedRecord.id, updates);
       toast.success(lang === 'ar' ? 'تم حفظ العرض' : 'Quote saved');
       await refreshAllData();
       // refresh selectedRecord
@@ -2453,12 +2478,9 @@ export default function App() {
   };
 
   const refreshAllData = async (preferredSheetId?: string | null) => {
-    const { data: catData, error: catError } = await supabase
-      .from("catalogs")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (catError) throw catError;
-    const sheets = (catData || []).map((r: any) => ({
+    // Phase 1: Load instantly from IndexedDB
+    const localCatalogs = await ProductService.getCatalogs();
+    const sheets = localCatalogs.map((r: any) => ({
       ...r,
       createdAt: toTimestamp(r.created_at),
     })) as CatalogSheet[];
@@ -2470,51 +2492,122 @@ export default function App() {
       return sheets[0]?.id ?? null;
     });
 
-    const { data: custData, error: custError } = await supabase
-      .from("customers")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (custError) throw custError;
-    setCustomerRecords((custData || []).map(mapCustomerFromDB));
+    const localCustomers = await CustomerService.getAll();
+    setCustomerRecords(localCustomers.map(mapCustomerFromDB));
 
-    const { data: inspData, error: inspError } = await supabase
-      .from("inspections")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (inspError) throw inspError;
-    setInspections((inspData || []).map(mapInspectionFromDB));
+    const localInspections = await OrderService.getInspections();
+    setInspections(localInspections.map(mapInspectionFromDB));
 
-    const { data: contrData, error: contrError } = await supabase
-      .from("contracted_customers")
-      .select("*")
-      .order("finalized_at", { ascending: false });
-    if (contrError) throw contrError;
+    const localContracted = await OrderService.getContracted();
     setContractedCustomers(
       sortContractedRecordsByContractDate(
-        (contrData || []).map(mapInspectionFromDB),
+        localContracted.map(mapInspectionFromDB),
       ),
     );
 
-    const { data: nonContrData, error: nonContrError } = await supabase
-      .from("non_contracted_customers")
-      .select("*")
-      .order("finalized_at", { ascending: false });
-    if (nonContrError) throw nonContrError;
-    setNotContractedCustomers((nonContrData || []).map(mapInspectionFromDB));
+    const localNonContracted = await OrderService.getNonContracted();
+    setNotContractedCustomers(localNonContracted.map(mapInspectionFromDB));
 
-    const { data: stagesData } = await supabase
-      .from("production_stages")
-      .select("*, client:client_id(phones)");
-    setStages(stagesData || []);
+    const localStages = await StageService.getStages();
+    setStages(localStages);
 
-    const { data: settingsData } = await supabase
-      .from("app_settings")
-      .select("*");
-    const settingsMap: Record<string, string> = {};
-    (settingsData || []).forEach((s: any) => {
-      settingsMap[s.key] = s.value;
-    });
-    setSettings(settingsMap);
+    const localSettings = await SettingsService.getSettings();
+    setSettings(localSettings);
+
+    const localPayments = await InvoiceService.getPayments();
+    setAllPayments(
+      localPayments.map((p: any) => ({
+        id: p.id,
+        amount: p.amount,
+        paid_at: p.paid_at,
+        installment: p.installment ?? null,
+        note: p.note ?? null,
+      })),
+    );
+
+    // Phase 2: If online, fetch fresh data from Supabase in the background
+    if (navigator.onLine) {
+      try {
+        const [
+          { data: catData },
+          { data: custData },
+          { data: inspData },
+          { data: contrData },
+          { data: nonContrData },
+          { data: stagesData },
+          { data: settingsData },
+          { data: paymentsData },
+          { data: clientsData },
+        ] = await Promise.all([
+          supabase.from("catalogs").select("*").order("created_at", { ascending: false }),
+          supabase.from("customers").select("*").order("created_at", { ascending: false }),
+          supabase.from("inspections").select("*").order("created_at", { ascending: false }),
+          supabase.from("contracted_customers").select("*").order("finalized_at", { ascending: false }),
+          supabase.from("non_contracted_customers").select("*").order("finalized_at", { ascending: false }),
+          supabase.from("production_stages").select("*"),
+          supabase.from("app_settings").select("*"),
+          supabase.from("payments").select("id, amount, paid_at, installment, note").order("paid_at", { ascending: false }),
+          supabase.from("clients").select("*"),
+        ]);
+
+        // Phase 3: Update IndexedDB with conflict resolution
+        const updatePromises: Promise<boolean>[] = [];
+        if (catData) catData.forEach((r: any) => updatePromises.push(SyncManager.resolveConflict("catalogs", r)));
+        if (custData) custData.forEach((r: any) => updatePromises.push(SyncManager.resolveConflict("customers", r)));
+        if (inspData) inspData.forEach((r: any) => updatePromises.push(SyncManager.resolveConflict("inspections", r)));
+        if (contrData) contrData.forEach((r: any) => updatePromises.push(SyncManager.resolveConflict("contracted_customers", r)));
+        if (nonContrData) nonContrData.forEach((r: any) => updatePromises.push(SyncManager.resolveConflict("non_contracted_customers", r)));
+        if (stagesData) stagesData.forEach((r: any) => updatePromises.push(SyncManager.resolveConflict("production_stages", r)));
+        if (settingsData) settingsData.forEach((r: any) => updatePromises.push(SyncManager.resolveConflict("app_settings", r)));
+        if (paymentsData) paymentsData.forEach((r: any) => updatePromises.push(SyncManager.resolveConflict("payments", r)));
+        if (clientsData) clientsData.forEach((r: any) => updatePromises.push(SyncManager.resolveConflict("clients", r)));
+
+        await Promise.all(updatePromises);
+
+        // Phase 4: Reload from IndexedDB to show fresh synced data and update UI
+        const syncedCatalogs = await ProductService.getCatalogs();
+        const syncedSheets = syncedCatalogs.map((r: any) => ({
+          ...r,
+          createdAt: toTimestamp(r.created_at),
+        })) as CatalogSheet[];
+        setCatalogs(syncedSheets);
+
+        const syncedCustomers = await CustomerService.getAll();
+        setCustomerRecords(syncedCustomers.map(mapCustomerFromDB));
+
+        const syncedInspections = await OrderService.getInspections();
+        setInspections(syncedInspections.map(mapInspectionFromDB));
+
+        const syncedContracted = await OrderService.getContracted();
+        setContractedCustomers(
+          sortContractedRecordsByContractDate(
+            syncedContracted.map(mapInspectionFromDB),
+          ),
+        );
+
+        const syncedNonContracted = await OrderService.getNonContracted();
+        setNotContractedCustomers(syncedNonContracted.map(mapInspectionFromDB));
+
+        const syncedStages = await StageService.getStages();
+        setStages(syncedStages);
+
+        const syncedSettings = await SettingsService.getSettings();
+        setSettings(syncedSettings);
+
+        const syncedPayments = await InvoiceService.getPayments();
+        setAllPayments(
+          syncedPayments.map((p: any) => ({
+            id: p.id,
+            amount: p.amount,
+            paid_at: p.paid_at,
+            installment: p.installment ?? null,
+            note: p.note ?? null,
+          })),
+        );
+      } catch (err) {
+        console.error("Background sync fetch failed:", err);
+      }
+    }
   };
 
   const isLegacyInspectionStatusConstraintError = (error: any) => {
@@ -2548,52 +2641,15 @@ export default function App() {
   const insertInspectionRecord = async (
     inspectionDbData: Record<string, any>,
   ) => {
-    const { data, error } = await supabase
-      .from("inspections")
-      .insert(inspectionDbData)
-      .select("id")
-      .single();
-
-    if (!error) return data?.id;
-
-    if (isMissingRoomAroVeneerColumnError(error)) {
-      console.warn(
-        "Supabase schema is missing room_aro_veneer columns; retrying insert without these fields.",
-        error,
-      );
-      const { data: retryData, error: retryError } = await supabase
-        .from("inspections")
-        .insert(withoutRoomAroVeneer(inspectionDbData))
-        .select("id")
-        .single();
-      if (!retryError) return retryData?.id;
-      throw retryError;
-    }
-
-    if (isLegacyInspectionStatusConstraintError(error)) {
-      const { data: legacyData, error: legacyInsertError } = await supabase
-        .from("inspections")
-        .insert({
-          ...inspectionDbData,
-          status: "scheduled",
-        })
-        .select("id")
-        .single();
-
-      if (!legacyInsertError) return legacyData?.id;
-      throw legacyInsertError;
-    }
-
-    // Handle missing room_aro_veneer columns (migration 0011 not applied)
-    if (isMissingAroVeneerColumnError(error)) {
-      console.warn('room_aro_veneer missing on inspections (insert), retrying without aro veneer fields', error);
-      const payloadWithoutAro = withoutAroVeneer(inspectionDbData);
-      const { data: retryData, error: retryError } = await supabase.from('inspections').insert(payloadWithoutAro).select('id').single();
-      if (!retryError) return retryData?.id;
-      throw retryError;
-    }
-
-    throw error;
+    const id = inspectionDbData.id || crypto.randomUUID();
+    const record = {
+      ...inspectionDbData,
+      id,
+      created_at: inspectionDbData.created_at || new Date().toISOString(),
+      last_modified: Date.now(),
+    };
+    await OrderService.insertInspection(record);
+    return id;
   };
 
   const updateRecordWithOptionalRoomTypes = async (
@@ -2604,109 +2660,34 @@ export default function App() {
     payload: Record<string, any>,
     id: string,
   ) => {
-    const { error } = await supabase
-      .from(tableName)
-      .update(payload)
-      .eq("id", id);
-    if (!error) return;
-
-    // Handle missing room_aro_veneer columns (migration 0011 not applied)
-    if (isMissingAroVeneerColumnError(error)) {
-      console.warn(
-        `Supabase column ${tableName}.room_aro_veneer is missing; retrying without aro_veneer fields. Apply supabase/migrations/0011_add_room_aro_veneer_columns.sql.`,
-        error
-      );
-      const payloadWithoutAro = withoutAroVeneer(payload);
-      const { error: retryError } = await supabase.from(tableName).update(payloadWithoutAro).eq('id', id);
-      if (!retryError) return;
-      // If still failing due to room_types, strip that too
-      if ('room_types' in payloadWithoutAro && isMissingRoomTypesColumnError(retryError)) {
-        const { error: finalError } = await supabase.from(tableName).update(withoutRoomTypesAndAroVeneer(payload)).eq('id', id);
-        if (finalError) throw finalError;
-        return;
-      }
-      throw retryError;
-    }
-
-    if ("room_types" in payload && isMissingRoomTypesColumnError(error)) {
-      console.warn(
-        `Supabase column ${tableName}.room_types is missing; retrying without room types. Apply supabase/migrations/0006_add_inspection_room_types.sql to persist room categories.`,
-        error,
-      );
-      const { error: retryError } = await supabase
-        .from(tableName)
-        .update(withoutRoomTypes(payload))
-        .eq("id", id);
-      if (retryError) throw retryError;
+    if (tableName === "inspections") {
+      await OrderService.updateInspection(id, payload);
       return;
     }
-
-    if (isMissingRoomAroVeneerColumnError(error)) {
-      console.warn(
-        `Supabase table ${tableName} is missing room_aro_veneer columns; retrying without these fields. Apply supabase/migrations/0011_add_room_aro_veneer_columns.sql to persist them.`,
-        error,
-      );
-      const { error: retryError } = await supabase
-        .from(tableName)
-        .update(withoutRoomAroVeneer(payload))
-        .eq("id", id);
-      if (retryError) throw retryError;
+    if (tableName === "contracted_customers") {
+      await OrderService.updateContracted(id, payload);
       return;
     }
-
-    throw error;
+    if (tableName === "non_contracted_customers") {
+      await OrderService.updateNonContracted(id, payload);
+      return;
+    }
   };
 
   const insertRecordWithOptionalRoomTypes = async (
     tableName: "contracted_customers" | "non_contracted_customers",
     payload: Record<string, any>,
   ) => {
-    const { error } = await supabase.from(tableName).insert(payload);
-    if (!error) return;
-
-    // Handle missing room_aro_veneer columns (migration 0011 not applied)
-    if (isMissingAroVeneerColumnError(error)) {
-      console.warn(
-        `Supabase column ${tableName}.room_aro_veneer is missing; retrying without aro_veneer fields. Apply supabase/migrations/0011_add_room_aro_veneer_columns.sql.`,
-        error
-      );
-      const payloadWithoutAro = withoutAroVeneer(payload);
-      const { error: retryError } = await supabase.from(tableName).insert(payloadWithoutAro);
-      if (!retryError) return;
-      // If still failing due to room_types, strip that too
-      if ('room_types' in payloadWithoutAro && isMissingRoomTypesColumnError(retryError)) {
-        const { error: finalError } = await supabase.from(tableName).insert(withoutRoomTypesAndAroVeneer(payload));
-        if (finalError) throw finalError;
-        return;
-      }
-      throw retryError;
-    }
-
-    if ("room_types" in payload && isMissingRoomTypesColumnError(error)) {
-      console.warn(
-        `Supabase column ${tableName}.room_types is missing; retrying without room types. Apply supabase/migrations/0006_add_inspection_room_types.sql to persist room categories.`,
-        error,
-      );
-      const { error: retryError } = await supabase
-        .from(tableName)
-        .insert(withoutRoomTypes(payload));
-      if (retryError) throw retryError;
+    const id = payload.id || crypto.randomUUID();
+    const record = { ...payload, id, created_at: payload.created_at || new Date().toISOString(), last_modified: Date.now() };
+    if (tableName === "contracted_customers") {
+      await OrderService.insertContracted(record);
       return;
     }
-
-    if (isMissingRoomAroVeneerColumnError(error)) {
-      console.warn(
-        `Supabase table ${tableName} is missing room_aro_veneer columns; retrying without these fields. Apply supabase/migrations/0011_add_room_aro_veneer_columns.sql to persist them.`,
-        error,
-      );
-      const { error: retryError } = await supabase
-        .from(tableName)
-        .insert(withoutRoomAroVeneer(payload));
-      if (retryError) throw retryError;
+    if (tableName === "non_contracted_customers") {
+      await OrderService.insertNonContracted(record);
       return;
     }
-
-    throw error;
   };
 
   const deleteRecordById = async (
@@ -2718,18 +2699,23 @@ export default function App() {
       | "non_contracted_customers",
     id: string,
   ) => {
-    const { data, error } = await supabase
-      .from(table)
-      .delete()
-      .eq("id", id)
-      .select("id");
-    if (error) throw error;
-    if (!data || data.length === 0) {
-      throw new Error(
-        lang === "ar"
-          ? "لم يتم حذف أي سجل. قد يكون السجل غير موجود أو لا تملك صلاحية الحذف."
-          : "No record was deleted. The record may not exist or you may not have permission.",
-      );
+    // Optimistic UI: delete locally first, then queue remote sync
+    switch (table) {
+      case "catalogs":
+        await ProductService.delete(id);
+        break;
+      case "customers":
+        await CustomerService.delete(id);
+        break;
+      case "inspections":
+        await OrderService.deleteInspection(id);
+        break;
+      case "contracted_customers":
+        await OrderService.deleteContracted(id);
+        break;
+      case "non_contracted_customers":
+        await OrderService.deleteNonContracted(id);
+        break;
     }
   };
 
@@ -2752,13 +2738,14 @@ export default function App() {
     } else {
       updates.completed_at = null;
     }
-    const { error } = await supabase
-      .from("production_stages")
-      .update(updates)
-      .eq("id", stageId);
-    if (error) {
-      toast.error(lang === "ar" ? "فشل تحديث المرحلة" : "Stage update failed");
-      return;
+    // Optimistic UI: update locally & queue sync
+    await StageService.updateStatus(stageId, updates.status);
+    if (updates.completed_at !== undefined) {
+      const stageRecord = await db.production_stages.get(stageId);
+      if (stageRecord) {
+        await db.production_stages.put({ ...stageRecord, completed_at: updates.completed_at || undefined, last_modified: Date.now() });
+        await SyncManager.queueOperation("UPDATE", "production_stages", stageId, { completed_at: updates.completed_at });
+      }
     }
     const currentStage = stages.find((s) => s.id === stageId);
     if (status === "done" && currentStage) {
@@ -2772,18 +2759,14 @@ export default function App() {
             s.client_id === currentStage.client_id && s.stage === nextStage.key,
         );
         if (nextStageRecord && nextStageRecord.status === "not_started") {
-          await supabase
-            .from("production_stages")
-            .update({ status: "in_progress" })
-            .eq("id", nextStageRecord.id);
+          // Optimistic: update next stage locally & queue sync
+          await StageService.updateStatus(nextStageRecord.id, "in_progress");
         }
       }
-      const { data: clientData } = await supabase
-        .from("clients")
-        .select("name,phones")
-        .eq("id", currentStage.client_id)
-        .limit(1)
-        .single();
+      // Read client data from local IndexedDB
+      const clientData = currentStage.client_id
+        ? await db.clients.get(currentStage.client_id)
+        : null;
       if (clientData) {
         const stageName =
           lang === "ar"
@@ -2820,6 +2803,13 @@ export default function App() {
   };
 
   useEffect(() => {
+    SyncManager.init((online) => {
+      setIsOnline(online);
+      if (online) {
+        void refreshAllData();
+      }
+    });
+
     let pollingInterval: ReturnType<typeof setInterval> | null = null;
 
     const syncAuthorizedUser = async (user: User | null) => {
@@ -2888,13 +2878,11 @@ export default function App() {
         );
         if (!title) return;
         setIsLoading(true);
-        const { data: newCat, error } = await supabase
-          .from("catalogs")
-          .insert({ title, data })
-          .select()
-          .single();
-        if (error) throw error;
-        await refreshAllData(newCat.id);
+        const newCatId = crypto.randomUUID();
+        const newCat = { id: newCatId, title, data, created_at: new Date().toISOString() };
+        // Optimistic UI: save locally & queue sync
+        await ProductService.insert(newCat);
+        await refreshAllData(newCatId);
         void playSound("success");
         toast.success(
           lang === "ar" ? "تم النشر بنجاح" : "Sheet published successfully",
@@ -2962,11 +2950,8 @@ export default function App() {
       const newData = [...sheet.data];
       newData[editingCatalogRow.rowIndex] = editingCatalogRow.data;
 
-      const { error } = await supabase
-        .from("catalogs")
-        .update({ data: newData })
-        .eq("id", editingCatalogRow.sheetId);
-      if (error) throw error;
+      // Optimistic UI: update locally & queue sync
+      await ProductService.update(editingCatalogRow.sheetId, { data: newData });
       await refreshAllData(editingCatalogRow.sheetId);
       void playSound("success");
       toast.success(lang === "ar" ? "تم تحديث البيانات" : "Data updated");
@@ -2988,7 +2973,9 @@ export default function App() {
     details?: Record<string, any>,
   ) => {
     try {
-      await supabase.from("activity_logs").insert({
+      // Offline-first: store locally and queue for sync
+      await ActivityLogService.insert({
+        id: crypto.randomUUID(),
         type,
         message,
         success: true,
@@ -3090,28 +3077,25 @@ export default function App() {
         : "Do you want to move this customer to the non-contracted list?",
       async () => {
         try {
-          const { error } = await supabase
-            .from("non_contracted_customers")
-            .insert({
-              customer_name: customer.name?.trim(),
-              address: customer.address?.trim() || null,
-              delivery_address: customer.deliveryAddress?.trim() || null,
-              phone: customer.phone?.trim(),
-              visit_date: customer.visitDate || null,
-              notes: customer.notes || null,
-              rooms: 0,
-              pieces: [],
-              total_amount: 0,
-              status: "refused",
-              finalized_at: new Date().toISOString(),
-            });
-          if (error) throw error;
-
-          const { error: deleteError } = await supabase
-            .from("customers")
-            .delete()
-            .eq("id", customer.id);
-          if (deleteError) throw deleteError;
+          const id = crypto.randomUUID();
+          const record = {
+            id,
+            customer_name: customer.name?.trim(),
+            address: customer.address?.trim() || null,
+            delivery_address: customer.deliveryAddress?.trim() || null,
+            phone: customer.phone?.trim(),
+            visit_date: customer.visitDate || null,
+            notes: customer.notes || null,
+            rooms: 0,
+            pieces: [],
+            total_amount: 0,
+            status: "refused",
+            finalized_at: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+            last_modified: Date.now(),
+          };
+          await OrderService.insertNonContracted(record);
+          await CustomerService.delete(customer.id);
 
           await refreshAllData();
           void playSound("delete");
@@ -3215,21 +3199,17 @@ export default function App() {
             inspectionFormData.id,
           );
         } else if (editingId) {
-          const { error } = await supabase
-            .from("customers")
-            .update({
-              name: inspectionFormData.customerName?.trim(),
-              phone: inspectionFormData.phone?.trim(),
-              address: inspectionFormData.address?.trim(),
-              delivery_address: inspectionFormData.deliveryAddress?.trim(),
-              governorate: inspectionFormData.governorate || null,
-              visit_date: inspectionFormData.visitDate,
-              notes: inspectionFormData.notes,
-              pickup_date: inspectionFormData.pickupDate || null,
-              portfolio_date: inspectionFormData.portfolio_date || null,
-            })
-            .eq("id", editingId);
-          if (error) throw error;
+          await CustomerService.update(editingId, {
+            name: inspectionFormData.customerName?.trim(),
+            phone: inspectionFormData.phone?.trim(),
+            address: inspectionFormData.address?.trim(),
+            delivery_address: inspectionFormData.deliveryAddress?.trim(),
+            governorate: inspectionFormData.governorate || null,
+            visit_date: inspectionFormData.visitDate,
+            notes: inspectionFormData.notes,
+            pickup_date: inspectionFormData.pickupDate || null,
+            portfolio_date: inspectionFormData.portfolio_date || null,
+          });
         }
         await refreshAllData();
         void playSound("success");
@@ -3359,26 +3339,11 @@ export default function App() {
       };
 
       if (inspectionFormData.id) {
-        // Update existing inspection record
-        const { error } = await supabase.from('inspections').update(inspectionDbData).eq('id', inspectionFormData.id);
-        if (error) throw error;
+        // Update existing inspection record via service
+        await OrderService.updateInspection(inspectionFormData.id, inspectionDbData);
       } else {
         // Create new inspection and remove from customers
         const newId = await insertInspectionRecord(inspectionDbData);
-        if (editingId) {
-          try {
-            const { error: deleteError } = await supabase
-              .from("customers")
-              .delete()
-              .eq("id", editingId);
-            if (deleteError) throw deleteError;
-          } catch (err) {
-            console.error(
-              "Failed to remove customer after creating inspection",
-              err,
-            );
-          }
-        }
         if (editingCollection === "customers" && newId) {
           setInspectionFormData((prev) => ({ ...prev, id: newId }));
           setEditingCollection(null);
@@ -3500,7 +3465,7 @@ export default function App() {
     }
 
     setContractUploadLoading(true);
-    let toastId: string | number | undefined;
+    let toastId: string | undefined;
     try {
       toastId = toast.loading(
         lang === "ar" ? "جاري ضغط الصورة..." : "Compressing image...",
@@ -3627,43 +3592,40 @@ export default function App() {
         portfolio_date: recordToSave.portfolioDate || null,
         contract_date: recordToSave.contractDate || null,
         contract_url: contractUrl || null,
+        finalized_at: new Date().toISOString(),
       };
       await insertRecordWithOptionalRoomTypes(tableName, dbData);
       const inspectionId = directRecord?.id || inspectionFormData.id;
       if (inspectionId) {
-        const { error: deleteError } = await supabase
-          .from("inspections")
-          .delete()
-          .eq("id", inspectionId);
-        if (deleteError) throw deleteError;
+        // Optimistic UI: delete inspection locally & queue sync
+        await OrderService.deleteInspection(inspectionId);
       }
       if (status === "contracted") {
         const phone = recordToSave.phone?.trim();
         const name = recordToSave.customerName?.trim();
         if (phone) {
-          const { data: existingClient } = await supabase
-            .from("clients")
-            .select("id")
-            .eq("phones", `{${phone}}`)
-            .limit(1);
-          let clientId = existingClient?.[0]?.id || null;
+          // Check local clients first
+          let localClient = await CustomerService.getClientByPhone(phone);
+          let clientId = localClient?.id || null;
           if (!clientId) {
-            const { data: newClient } = await supabase
-              .from("clients")
-              .insert({ name: name || phone, phones: [phone] })
-              .select("id")
-              .single();
-            if (newClient) clientId = newClient.id;
+            clientId = crypto.randomUUID();
+            await CustomerService.saveClient({
+              id: clientId,
+              name: name || phone,
+              phones: [phone],
+            });
           }
           if (clientId) {
-            await supabase.from("production_stages").insert(
-              STAGE_ORDER.map((stage) => ({
-                client_id: clientId,
-                visit_id: null,
-                stage: stage.key,
-                status: "not_started",
-              })),
-            );
+            const stagesPayload = STAGE_ORDER.map((stage) => ({
+              id: crypto.randomUUID(),
+              client_id: clientId,
+              visit_id: null,
+              stage: stage.key,
+              status: "not_started",
+              created_at: new Date().toISOString(),
+            }));
+            // Optimistic UI: insert stages locally & queue sync
+            await StageService.insertMultiple(stagesPayload);
           }
         }
       }
@@ -3713,6 +3675,25 @@ export default function App() {
       async () => {
         try {
           const rec = contractedCustomers.find((c) => c.id === id);
+          if (rec) {
+            const existingCustomer = await CustomerService.getAll();
+            const hasCustomer = existingCustomer.some(
+              (c) => c.phone === rec.phone || c.name === rec.customerName,
+            );
+            if (!hasCustomer) {
+              await CustomerService.insert({
+                id: crypto.randomUUID(),
+                name: rec.customerName || rec.phone || "",
+                phone: rec.phone || "",
+                address: rec.address || "",
+                delivery_address: rec.deliveryAddress || "",
+                visit_date: rec.visitDate || null,
+                notes: rec.notes || null,
+                governorate: rec.governorate || null,
+                created_at: new Date().toISOString(),
+              });
+            }
+          }
           await deleteRecordById("contracted_customers", id);
           await refreshAllData();
           void playSound("delete");
@@ -3737,6 +3718,25 @@ export default function App() {
       async () => {
         try {
           const rec = notContractedCustomers.find((c) => c.id === id);
+          if (rec) {
+            const existingCustomer = await CustomerService.getAll();
+            const hasCustomer = existingCustomer.some(
+              (c) => c.phone === rec.phone || c.name === rec.customerName,
+            );
+            if (!hasCustomer) {
+              await CustomerService.insert({
+                id: crypto.randomUUID(),
+                name: rec.customerName || rec.phone || "",
+                phone: rec.phone || "",
+                address: rec.address || "",
+                delivery_address: rec.deliveryAddress || "",
+                visit_date: rec.visitDate || null,
+                notes: rec.notes || null,
+                governorate: rec.governorate || null,
+                created_at: new Date().toISOString(),
+              });
+            }
+          }
           await deleteRecordById("non_contracted_customers", id);
           await refreshAllData();
           void playSound("delete");
@@ -3783,6 +3783,7 @@ export default function App() {
             pickup_date: r.pickupDate || r.address || null,
             portfolio_date: r.portfolioDate || null,
             contract_date: r.contractDate || null,
+            finalized_at: new Date().toISOString(),
           };
 
           await insertRecordWithOptionalRoomTypes(
@@ -3794,29 +3795,22 @@ export default function App() {
           const phone = r.phone?.trim();
           const name = r.customerName?.trim();
           if (phone) {
-            const { data: existingClient } = await supabase
-              .from("clients")
-              .select("id")
-              .eq("phones", `{${phone}}`)
-              .limit(1);
-            let clientId = existingClient?.[0]?.id || null;
+            let localClient = await CustomerService.getClientByPhone(phone);
+            let clientId = localClient?.id || null;
             if (!clientId) {
-              const { data: newClient } = await supabase
-                .from("clients")
-                .insert({ name: name || phone, phones: [phone] })
-                .select("id")
-                .single();
-              if (newClient) clientId = newClient.id;
+              clientId = crypto.randomUUID();
+              await CustomerService.saveClient({ id: clientId, name: name || phone, phones: [phone] });
             }
             if (clientId) {
-              await supabase.from("production_stages").insert(
-                STAGE_ORDER.map((stage) => ({
-                  client_id: clientId,
-                  visit_id: null,
-                  stage: stage.key,
-                  status: "not_started",
-                })),
-              );
+              const stagesPayload = STAGE_ORDER.map((stage) => ({
+                id: crypto.randomUUID(),
+                client_id: clientId,
+                visit_id: null,
+                stage: stage.key,
+                status: "not_started",
+                created_at: new Date().toISOString(),
+              }));
+              await StageService.insertMultiple(stagesPayload);
             }
           }
 
@@ -4120,42 +4114,41 @@ export default function App() {
     setIsLoading(true);
     try {
       if (modalMode === "add") {
-        const { data: existing, error: checkError } = await supabase
-          .from("customers")
-          .select("id")
-          .eq("phone", combinedPhone)
-          .limit(1);
+        // Check local IndexedDB for existing record first
+        const localExisting = await db.customers
+          .filter(c => c.phone === combinedPhone)
+          .first();
 
-        if (checkError) throw checkError;
-        if (existing && existing.length > 0) {
+        if (localExisting) {
           toast.error("Already registered");
           setIsLoading(false);
           return;
         }
 
-        const { error: insertError } = await supabase.from("customers").insert({
+        const newCustomer = {
+          id: crypto.randomUUID(),
           name: formData.name.trim(),
           phone: combinedPhone,
           address: formData.address || null,
           pickup_date: formData.pickupDate || null,
           governorate: formData.governorate || null,
-        });
-        if (insertError) throw insertError;
+          created_at: new Date().toISOString(),
+        };
+        // Optimistic UI: save locally & queue sync
+        await CustomerService.insert(newCustomer);
         await refreshAllData();
         void playSound("success");
         toast.success("Added success");
       } else {
-        const { error: updateError } = await supabase
-          .from("customers")
-          .update({
-            name: formData.name.trim(),
-            phone: combinedPhone,
-            address: formData.address || null,
-            pickup_date: formData.pickupDate || null,
-            governorate: formData.governorate || null,
-          })
-          .eq("id", editingId!);
-        if (updateError) throw updateError;
+        const updates = {
+          name: formData.name.trim(),
+          phone: combinedPhone,
+          address: formData.address || null,
+          pickup_date: formData.pickupDate || null,
+          governorate: formData.governorate || null,
+        };
+        // Optimistic UI: update locally & queue sync
+        await CustomerService.update(editingId!, updates);
         await refreshAllData();
         void playSound("success");
         toast.success("Updated success");
