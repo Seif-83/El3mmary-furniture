@@ -6081,6 +6081,7 @@ export default function App() {
                               </thead>
                               <tbody>
                                 {unifiedCustomers
+                                  .filter((r) => r.status === "customers")
                                   .filter((r) => matchesFilters(r))
                                   .map((r) => (
                                     <tr
@@ -6216,7 +6217,7 @@ export default function App() {
                                       </td>
                                     </tr>
                                   ))}
-                                {unifiedCustomers.filter((r) => matchesFilters(r)).length === 0 && (
+                                {unifiedCustomers.filter((r) => r.status === "customers").filter((r) => matchesFilters(r)).length === 0 && (
                                   <tr>
                                     <td
                                       colSpan={6}
@@ -6236,6 +6237,7 @@ export default function App() {
 
                         <div className="grid grid-cols-1 gap-4 md:hidden">
                           {unifiedCustomers
+                            .filter((r) => r.status === "customers")
                             .filter((r) => matchesFilters(r))
                             .map((r) => (
                               <div
@@ -6336,7 +6338,7 @@ export default function App() {
                                 )}
                               </div>
                             ))}
-                          {unifiedCustomers.filter((r) => matchesFilters(r)).length === 0 && (
+                          {unifiedCustomers.filter((r) => r.status === "customers").filter((r) => matchesFilters(r)).length === 0 && (
                             <div className="py-20 text-center">
                               <Users className="w-10 h-10 text-zinc-200 mx-auto mb-3" />
                               <p className="text-zinc-400 font-semibold">
