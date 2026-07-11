@@ -1758,6 +1758,16 @@ const normalizePhone = (p: any) => {
     .replace(/\D/g, "");
 };
 
+const isTestCustomer = (c: any) => {
+  const name = String((c?.name || c?.customerName || "") || "").toLowerCase();
+  const phone = String((c?.phone || "") || "").replace(/\D/g, "");
+  if (!name && !phone) return false;
+  if (phone === "1234567890") return true;
+  if (name.includes("test authenticated") || name.includes("test") && name.includes("authenticated")) return true;
+  if (name.includes("test")) return true;
+  return false;
+};
+
 const formatCellValue = (v: any) => {
   if (v === null || v === undefined) return "";
 
@@ -2712,7 +2722,9 @@ export default function App() {
     });
 
     const localCustomers = await CustomerService.getAll();
-    setCustomerRecords(localCustomers.map(mapCustomerFromDB));
+    setCustomerRecords(
+      localCustomers.map(mapCustomerFromDB).filter((c) => !isTestCustomer(c)),
+    );
 
     const localInspections = await OrderService.getInspections();
     setInspections(localInspections.map(mapInspectionFromDB));
@@ -2843,7 +2855,9 @@ export default function App() {
         setCatalogs(syncedSheets);
 
         const syncedCustomers = await CustomerService.getAll();
-        setCustomerRecords(syncedCustomers.map(mapCustomerFromDB));
+        setCustomerRecords(
+          syncedCustomers.map(mapCustomerFromDB).filter((c) => !isTestCustomer(c)),
+        );
 
         const syncedInspections = await OrderService.getInspections();
         setInspections(syncedInspections.map(mapInspectionFromDB));
@@ -6057,7 +6071,7 @@ export default function App() {
                                 </tr>
                               </thead>
                               <tbody>
-                                {customerRecords
+                                {unifiedCustomers
                                   .filter((r) => matchesFilters(r))
                                   .map((r) => (
                                     <tr
@@ -6193,7 +6207,7 @@ export default function App() {
                                       </td>
                                     </tr>
                                   ))}
-                                {customerRecords.length === 0 && (
+                                {unifiedCustomers.filter((r) => matchesFilters(r)).length === 0 && (
                                   <tr>
                                     <td
                                       colSpan={6}
@@ -6212,7 +6226,7 @@ export default function App() {
                         </div>
 
                         <div className="grid grid-cols-1 gap-4 md:hidden">
-                          {customerRecords
+                          {unifiedCustomers
                             .filter((r) => matchesFilters(r))
                             .map((r) => (
                               <div
@@ -6313,8 +6327,7 @@ export default function App() {
                                 )}
                               </div>
                             ))}
-                          {unifiedCustomers.filter((r) => matchesFilters(r))
-                            .length === 0 && (
+                          {unifiedCustomers.filter((r) => matchesFilters(r)).length === 0 && (
                             <div className="py-20 text-center">
                               <Users className="w-10 h-10 text-zinc-200 mx-auto mb-3" />
                               <p className="text-zinc-400 font-semibold">
