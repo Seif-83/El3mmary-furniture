@@ -48,8 +48,8 @@ export class SyncManager {
     this.isSyncing = true;
 
     try {
-      await this.pullRemoteData();
       await this.processQueue();
+      await this.pullRemoteData();
     } finally {
       this.isSyncing = false;
     }
@@ -71,6 +71,7 @@ export class SyncManager {
     ];
 
     for (const tableName of tablesToSync) {
+      const pkColumn = tableName === "app_settings" ? "key" : "id";
       const { data, error } = await supabase.from(tableName).select("*");
       if (error) {
         console.warn(`Failed to pull remote data for ${tableName}:`, error.message || error);
@@ -78,8 +79,30 @@ export class SyncManager {
       }
       if (!Array.isArray(data)) continue;
 
+      const remoteIds = new Set<string>();
       for (const remoteRecord of data) {
+        const remoteKey = String(remoteRecord?.[pkColumn] ?? "").trim();
+        if (!remoteKey) continue;
+        remoteIds.add(remoteKey);
         await this.resolveConflict(tableName, remoteRecord);
+      }
+
+      const localTable = db.table<any>(tableName);
+      const localRecords = await localTable.toArray();
+      for (const localRecord of localRecords) {
+        const localKey = String(localRecord?.[pkColumn] ?? "").trim();
+        if (!localKey) continue;
+        if (remoteIds.has(localKey)) continue;
+
+        const pending = await db.sync_queue
+          .where("tableName")
+          .equals(tableName)
+          .and((x) => x.recordId === localKey)
+          .first();
+
+        if (!pending) {
+          await localTable.delete(localKey);
+        }
       }
     }
   }
