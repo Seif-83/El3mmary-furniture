@@ -2800,13 +2800,22 @@ export default function App() {
         ]);
 
         // Phase 3: Update IndexedDB with conflict resolution
+        // Filter out known test/sample records from remote data to avoid reintroducing them
+        const filteredCatData = catData || [];
+        const filteredCustData = (custData || []).filter((r: any) => {
+          try {
+            return !isTestCustomer(mapCustomerFromDB(r));
+          } catch {
+            return true;
+          }
+        });
         const updatePromises: Promise<boolean>[] = [];
-        if (catData)
-          catData.forEach((r: any) =>
+        if (filteredCatData)
+          filteredCatData.forEach((r: any) =>
             updatePromises.push(SyncManager.resolveConflict("catalogs", r)),
           );
-        if (custData)
-          custData.forEach((r: any) =>
+        if (filteredCustData)
+          filteredCustData.forEach((r: any) =>
             updatePromises.push(SyncManager.resolveConflict("customers", r)),
           );
         if (inspData)
