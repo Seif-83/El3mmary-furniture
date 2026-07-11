@@ -2526,6 +2526,15 @@ export default function App() {
   );
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  useEffect(() => {
+    setSidebarOpen(false);
+
+    if (adminSubView === "inspections") {
+      setSearchQuery("");
+      setGovernorateFilter("all");
+    }
+  }, [adminSubView]);
+
   const selectedSheet = catalogs.find(
     (c: CatalogSheet) => c.id === selectedSheetId,
   );
