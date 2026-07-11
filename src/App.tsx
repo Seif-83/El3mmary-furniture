@@ -1524,7 +1524,15 @@ const SettingsPage: React.FC<{
   settings: Record<string, string>;
   currentUserEmail?: string;
   onSyncTrigger?: () => Promise<void>;
-}> = ({ lang, setLang, isAdmin, t, settings, currentUserEmail, onSyncTrigger }) => {
+}> = ({
+  lang,
+  setLang,
+  isAdmin,
+  t,
+  settings,
+  currentUserEmail,
+  onSyncTrigger,
+}) => {
   const [saving, setSaving] = useState(false);
   const [queueCount, setQueueCount] = useState<number>(0);
   const [syncing, setSyncing] = useState(false);
@@ -1554,7 +1562,9 @@ const SettingsPage: React.FC<{
       }
       await checkQueueCount();
       toast.success(
-        lang === "ar" ? "تمت المزامنة وتحديث البيانات" : "Data synchronized successfully",
+        lang === "ar"
+          ? "تمت المزامنة وتحديث البيانات"
+          : "Data synchronized successfully",
       );
     } catch (err: any) {
       toast.error(err?.message || "Sync failed");
@@ -1709,7 +1719,9 @@ const SettingsPage: React.FC<{
             </div>
             <div className="bg-white/60 p-6 rounded-2xl border border-white/60">
               <div className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2">
-                {lang === "ar" ? "العمليات المعلقة في الخلفية" : "Pending Operations"}
+                {lang === "ar"
+                  ? "العمليات المعلقة في الخلفية"
+                  : "Pending Operations"}
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-lg font-bold text-zinc-900">
@@ -1736,9 +1748,7 @@ const SettingsPage: React.FC<{
               <span>{lang === "ar" ? "جاري المزامنة..." : "Syncing..."}</span>
             ) : (
               <span>
-                {lang === "ar"
-                  ? "مزامنة البيانات الآن ↻"
-                  : "Sync Data Now ↻"}
+                {lang === "ar" ? "مزامنة البيانات الآن ↻" : "Sync Data Now ↻"}
               </span>
             )}
           </button>
@@ -1747,7 +1757,6 @@ const SettingsPage: React.FC<{
     </div>
   );
 };
-
 
 const normalizePhone = (p: any) => {
   if (!p) return "";
@@ -1759,11 +1768,15 @@ const normalizePhone = (p: any) => {
 };
 
 const isTestCustomer = (c: any) => {
-  const name = String((c?.name || c?.customerName || "") || "").toLowerCase();
-  const phone = String((c?.phone || "") || "").replace(/\D/g, "");
+  const name = String(c?.name || c?.customerName || "" || "").toLowerCase();
+  const phone = String(c?.phone || "" || "").replace(/\D/g, "");
   if (!name && !phone) return false;
   if (phone === "1234567890") return true;
-  if (name.includes("test authenticated") || name.includes("test") && name.includes("authenticated")) return true;
+  if (
+    name.includes("test authenticated") ||
+    (name.includes("test") && name.includes("authenticated"))
+  )
+    return true;
   if (name.includes("test")) return true;
   return false;
 };
@@ -2378,12 +2391,14 @@ export default function App() {
       return roomDrafts.get(id)!;
     };
 
-    const fallbackRoomTypes = Array.isArray(roomTypes) && roomTypes.length > 0
-      ? roomTypes
-      : [];
+    const fallbackRoomTypes =
+      Array.isArray(roomTypes) && roomTypes.length > 0 ? roomTypes : [];
 
     fallbackRoomTypes.forEach((room_type, index) => {
-      addRoomDraft(`${getRoomTypeKey(room_type)}:${index + 1}`, getRoomTypeKey(room_type));
+      addRoomDraft(
+        `${getRoomTypeKey(room_type)}:${index + 1}`,
+        getRoomTypeKey(room_type),
+      );
     });
 
     Object.keys(roomAroVeneerSource).forEach((room_type) => {
@@ -2395,7 +2410,8 @@ export default function App() {
 
     pieces.forEach((piece, index) => {
       const roomTypeKey = getRoomTypeKey(piece.room_type);
-      const instanceId = piece.room_instance_id || `${roomTypeKey}:${index + 1}`;
+      const instanceId =
+        piece.room_instance_id || `${roomTypeKey}:${index + 1}`;
       const customLabel = getCustomRoomLabel(instanceId);
       const roomDraft = addRoomDraft(instanceId, roomTypeKey, customLabel);
       roomDraft.items.push(buildQuoteDraftItem(piece));
@@ -2428,14 +2444,16 @@ export default function App() {
             (_, idx) => `room_${idx + 1}`,
           );
 
-    const defaultRooms = defaultRoomTypes.map((room_type: string, index: number) => ({
-      id: `${getRoomTypeKey(room_type)}:${index + 1}`,
-      room_type,
-      aro_veneer: false,
-      aro_veneer_price: 0,
-      items: [] as RoomDraftItem[],
-      customLabel: null,
-    }));
+    const defaultRooms = defaultRoomTypes.map(
+      (room_type: string, index: number) => ({
+        id: `${getRoomTypeKey(room_type)}:${index + 1}`,
+        room_type,
+        aro_veneer: false,
+        aro_veneer_price: 0,
+        items: [] as RoomDraftItem[],
+        customLabel: null,
+      }),
+    );
 
     setQuoteDrafts(defaultRooms);
   }, [selectedRecord]);
@@ -2886,7 +2904,9 @@ export default function App() {
 
         const syncedCustomers = await CustomerService.getAll();
         setCustomerRecords(
-          syncedCustomers.map(mapCustomerFromDB).filter((c) => !isTestCustomer(c)),
+          syncedCustomers
+            .map(mapCustomerFromDB)
+            .filter((c) => !isTestCustomer(c)),
         );
 
         const syncedInspections = await OrderService.getInspections();
@@ -4235,12 +4255,7 @@ export default function App() {
       const existingIndex = pieces.findIndex(
         (p) =>
           p.name === name &&
-          pieceMatchesRoomInstance(
-            p,
-            resolvedRoomType,
-            resolvedInstanceId,
-            0,
-          ),
+          pieceMatchesRoomInstance(p, resolvedRoomType, resolvedInstanceId, 0),
       );
 
       if (existingIndex >= 0) {
@@ -4347,7 +4362,9 @@ export default function App() {
     roomIndex: number,
   ) =>
     (inspectionFormData.pieces || [])
-      .filter((p) => pieceMatchesRoomInstance(p, roomType, roomInstanceId, roomIndex))
+      .filter((p) =>
+        pieceMatchesRoomInstance(p, roomType, roomInstanceId, roomIndex),
+      )
       .reduce((sum, p) => sum + pieceTotal(p), 0);
   const availableRoomTypes = inspectionFormData.room_types?.length
     ? inspectionFormData.room_types
@@ -6217,14 +6234,28 @@ export default function App() {
                                                 onClick={() => {
                                                   const id = r.id || r.raw?.id;
                                                   if (!id) return;
-                                                  if (r.status === "customers" || !r.status)
+                                                  if (
+                                                    r.status === "customers" ||
+                                                    !r.status
+                                                  )
                                                     handleDeleteCustomer(id);
-                                                  else if (r.status === "inspections")
-                                                    void handleDeleteInspection(id);
-                                                  else if (r.status === "contracted")
+                                                  else if (
+                                                    r.status === "inspections"
+                                                  )
+                                                    void handleDeleteInspection(
+                                                      id,
+                                                    );
+                                                  else if (
+                                                    r.status === "contracted"
+                                                  )
                                                     handleDeleteContracted(id);
-                                                  else if (r.status === "not-contracted")
-                                                    handleDeleteNonContracted(id);
+                                                  else if (
+                                                    r.status ===
+                                                    "not-contracted"
+                                                  )
+                                                    handleDeleteNonContracted(
+                                                      id,
+                                                    );
                                                 }}
                                                 className="btn-3d btn-3d-danger flex items-center gap-2 bg-white-50 text-white-500 border border-white-100 px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-white-500 hover:text-white active:scale-95 transition-all duration-200 hover:shadow-lg hover:shadow-white-100"
                                               >
@@ -6237,7 +6268,9 @@ export default function App() {
                                       </td>
                                     </tr>
                                   ))}
-                                {unifiedCustomers.filter((r) => matchesFilters(r)).length === 0 && (
+                                {unifiedCustomers.filter((r) =>
+                                  matchesFilters(r),
+                                ).length === 0 && (
                                   <tr>
                                     <td
                                       colSpan={6}
@@ -6357,7 +6390,8 @@ export default function App() {
                                 )}
                               </div>
                             ))}
-                          {unifiedCustomers.filter((r) => matchesFilters(r)).length === 0 && (
+                          {unifiedCustomers.filter((r) => matchesFilters(r))
+                            .length === 0 && (
                             <div className="py-20 text-center">
                               <Users className="w-10 h-10 text-zinc-200 mx-auto mb-3" />
                               <p className="text-zinc-400 font-semibold">
@@ -7240,97 +7274,116 @@ export default function App() {
                             <button
                               type="button"
                               onClick={() => {
-                                const firstRoomType = inspectionFormData.room_types?.[0];
+                                const firstRoomType =
+                                  inspectionFormData.room_types?.[0];
                                 if (firstRoomType) {
                                   addRoomTypeInstance(firstRoomType);
                                 }
                               }}
                               className="rounded-full bg-zinc-900 px-4 py-2 text-xs font-bold text-white hover:bg-zinc-800"
                             >
-                              {lang === "ar" ? "إضافة غرفة جديدة" : "Add new room"}
+                              {lang === "ar"
+                                ? "إضافة غرفة جديدة"
+                                : "Add new room"}
                             </button>
                           </div>
                           <div className="space-y-4">
-                            {inspectionFormData.room_types.map((roomKey, roomIndex) => {
-                              const room = ROOM_TYPES.find(
-                                (r) => r.key === roomKey,
-                              );
-                              if (!room) return null;
-                              const roomCount = getRoomTypeCount(roomKey);
-                              const roomInstanceId = getRoomInstanceKey(roomKey, roomIndex);
-                              return (
-                                <div
-                                  key={`${roomKey}-${roomIndex}`}
-                                  className="rounded-3xl border border-black/10 p-4 bg-[#faf7f1]"
-                                >
-                                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
-                                    <div>
-                                      <div className="text-base font-semibold">
-                                        {getRoomDisplayName(room.key, roomIndex)}
-                                      </div>
-                                      <div className="text-[11px] text-zinc-500">
-                                        {room.en}
-                                      </div>
-                                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-zinc-600">
-                                        <span>
-                                          {lang === "ar" ? "عدد" : "Count"}: {roomCount}
-                                        </span>
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            addRoomTypeInstance(room.key)
-                                          }
-                                          className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] font-semibold text-zinc-700 hover:bg-zinc-100"
-                                        >
-                                          {lang === "ar"
-                                            ? "إضافة نفس النوع"
-                                            : "Add same type"}
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            removeRoomTypeInstance(room.key, roomIndex)
-                                          }
-                                          className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] font-semibold text-zinc-700 hover:bg-zinc-100"
-                                        >
-                                          {lang === "ar"
-                                            ? "إزالة غرفة"
-                                            : "Remove room"}
-                                        </button>
+                            {inspectionFormData.room_types.map(
+                              (roomKey, roomIndex) => {
+                                const room = ROOM_TYPES.find(
+                                  (r) => r.key === roomKey,
+                                );
+                                if (!room) return null;
+                                const roomCount = getRoomTypeCount(roomKey);
+                                const roomInstanceId = getRoomInstanceKey(
+                                  roomKey,
+                                  roomIndex,
+                                );
+                                return (
+                                  <div
+                                    key={`${roomKey}-${roomIndex}`}
+                                    className="rounded-3xl border border-black/10 p-4 bg-[#faf7f1]"
+                                  >
+                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+                                      <div>
+                                        <div className="text-base font-semibold">
+                                          {getRoomDisplayName(
+                                            room.key,
+                                            roomIndex,
+                                          )}
+                                        </div>
+                                        <div className="text-[11px] text-zinc-500">
+                                          {room.en}
+                                        </div>
+                                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-zinc-600">
+                                          <span>
+                                            {lang === "ar" ? "عدد" : "Count"}:{" "}
+                                            {roomCount}
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              addRoomTypeInstance(room.key)
+                                            }
+                                            className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] font-semibold text-zinc-700 hover:bg-zinc-100"
+                                          >
+                                            {lang === "ar"
+                                              ? "إضافة نفس النوع"
+                                              : "Add same type"}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              removeRoomTypeInstance(
+                                                room.key,
+                                                roomIndex,
+                                              )
+                                            }
+                                            className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] font-semibold text-zinc-700 hover:bg-zinc-100"
+                                          >
+                                            {lang === "ar"
+                                              ? "إزالة غرفة"
+                                              : "Remove room"}
+                                          </button>
+                                        </div>
                                       </div>
                                     </div>
+                                    <div className="flex flex-wrap gap-2">
+                                      {room.defaults.map((itemName) => {
+                                        const isHighlighted =
+                                          recentlyClickedItem === itemName;
+                                        return (
+                                          <button
+                                            key={itemName}
+                                            type="button"
+                                            onClick={() => {
+                                              addPiece(
+                                                itemName,
+                                                roomKey,
+                                                roomInstanceId,
+                                              );
+                                              setRecentlyClickedItem(itemName);
+                                              setTimeout(
+                                                () =>
+                                                  setRecentlyClickedItem(null),
+                                                300,
+                                              );
+                                            }}
+                                            className={`rounded-full px-3 py-2 text-xs font-bold transition-all ${
+                                              isHighlighted
+                                                ? "bg-zinc-900 text-white"
+                                                : "border border-black/10 bg-white text-zinc-700 hover:bg-zinc-100"
+                                            }`}
+                                          >
+                                            {itemName}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
                                   </div>
-                                  <div className="flex flex-wrap gap-2">
-                                    {room.defaults.map((itemName) => {
-                                      const isHighlighted =
-                                        recentlyClickedItem === itemName;
-                                      return (
-                                        <button
-                                          key={itemName}
-                                          type="button"
-                                          onClick={() => {
-                                            addPiece(itemName, roomKey, roomInstanceId);
-                                            setRecentlyClickedItem(itemName);
-                                            setTimeout(
-                                              () =>
-                                                setRecentlyClickedItem(null),
-                                              300,
-                                            );
-                                          }}
-                                          className={`rounded-full px-3 py-2 text-xs font-bold transition-all ${
-                                            isHighlighted
-                                              ? "bg-zinc-900 text-white"
-                                              : "border border-black/10 bg-white text-zinc-700 hover:bg-zinc-100"
-                                          }`}
-                                        >
-                                          {itemName}
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              );
-                            })}
+                                );
+                              },
+                            )}
                           </div>
                         </div>
                       ) : null}
@@ -7395,8 +7448,14 @@ export default function App() {
                         <div className="grid gap-3 sm:grid-cols-[1fr_120px] mt-3">
                           <input
                             value={customPieceRoomLabel}
-                            onChange={(e) => setCustomPieceRoomLabel(e.target.value)}
-                            placeholder={lang === "ar" ? "اسم الغرفة (اختياري)" : "Room name (optional)"}
+                            onChange={(e) =>
+                              setCustomPieceRoomLabel(e.target.value)
+                            }
+                            placeholder={
+                              lang === "ar"
+                                ? "اسم الغرفة (اختياري)"
+                                : "Room name (optional)"
+                            }
                             className="rounded-3xl border border-black/10 px-4 py-3"
                           />
                           <button
@@ -7410,11 +7469,11 @@ export default function App() {
                                 customPieceRoomInstanceId?.trim();
                               const roomType = selectedRoomInstanceId
                                 ? selectedRoomInstanceId.split(":")[0]
-                                : inspectionFormData.room_types?.[0] ||
-                                  "other";
+                                : inspectionFormData.room_types?.[0] || "other";
 
                               const roomInstanceId =
-                                customPieceRoomLabel && customPieceRoomLabel.trim()
+                                customPieceRoomLabel &&
+                                customPieceRoomLabel.trim()
                                   ? `${getRoomTypeKey(roomType)}:custom:${encodeURIComponent(
                                       customPieceRoomLabel
                                         .trim()
@@ -7453,7 +7512,8 @@ export default function App() {
                                 return {
                                   ...prev,
                                   pieces,
-                                  totalAmount: computeInspectionTotalAmount(pieces),
+                                  totalAmount:
+                                    computeInspectionTotalAmount(pieces),
                                 };
                               });
 
@@ -7474,253 +7534,311 @@ export default function App() {
                         const pieces = inspectionFormData.pieces || [];
 
                         // base instances from selected room types
-                        const baseInstances = (inspectionFormData.room_types || ["other"]).map(
-                          (roomKey, roomIndex) => {
-                            const roomInstanceId = getRoomInstanceKey(roomKey, roomIndex);
-                            const room = ROOM_TYPES.find((r) => r.key === roomKey);
-                            const items = pieces
-                              .map((p, idx) => ({ ...p, idx }))
-                              .filter((p) =>
-                                pieceMatchesRoomInstance(
-                                  p,
-                                  roomKey,
-                                  roomInstanceId,
-                                  roomIndex,
-                                ),
-                              );
-                            return { roomKey, roomInstanceId, room, items, customLabel: null as string | null };
-                          },
-                        );
+                        const baseInstances = (
+                          inspectionFormData.room_types || ["other"]
+                        ).map((roomKey, roomIndex) => {
+                          const roomInstanceId = getRoomInstanceKey(
+                            roomKey,
+                            roomIndex,
+                          );
+                          const room = ROOM_TYPES.find(
+                            (r) => r.key === roomKey,
+                          );
+                          const items = pieces
+                            .map((p, idx) => ({ ...p, idx }))
+                            .filter((p) =>
+                              pieceMatchesRoomInstance(
+                                p,
+                                roomKey,
+                                roomInstanceId,
+                                roomIndex,
+                              ),
+                            );
+                          return {
+                            roomKey,
+                            roomInstanceId,
+                            room,
+                            items,
+                            customLabel: null as string | null,
+                          };
+                        });
 
                         // include any custom room_instance_id that are not part of baseInstances
-                        const existingIds = new Set(baseInstances.map((r) => r.roomInstanceId));
-                        const extraMap = new Map<string, { roomKey: string; roomInstanceId: string; room: any; items: any[]; customLabel: string | null }>();
+                        const existingIds = new Set(
+                          baseInstances.map((r) => r.roomInstanceId),
+                        );
+                        const extraMap = new Map<
+                          string,
+                          {
+                            roomKey: string;
+                            roomInstanceId: string;
+                            room: any;
+                            items: any[];
+                            customLabel: string | null;
+                          }
+                        >();
                         pieces.forEach((p, idx) => {
-                          if (p.room_instance_id && !existingIds.has(p.room_instance_id)) {
+                          if (
+                            p.room_instance_id &&
+                            !existingIds.has(p.room_instance_id)
+                          ) {
                             if (!extraMap.has(p.room_instance_id)) {
                               const roomKey = getRoomTypeKey(p.room_type);
-                              const room = ROOM_TYPES.find((r) => r.key === roomKey);
+                              const room = ROOM_TYPES.find(
+                                (r) => r.key === roomKey,
+                              );
                               // decode custom label encoded as key:custom:label
-                              const m = String(p.room_instance_id).match(/:custom:(.+)$/);
-                              const customLabel = m ? decodeURIComponent(m[1]).replace(/_/g, " ") : null;
-                              extraMap.set(p.room_instance_id, { roomKey, roomInstanceId: p.room_instance_id, room, items: [], customLabel });
+                              const m = String(p.room_instance_id).match(
+                                /:custom:(.+)$/,
+                              );
+                              const customLabel = m
+                                ? decodeURIComponent(m[1]).replace(/_/g, " ")
+                                : null;
+                              extraMap.set(p.room_instance_id, {
+                                roomKey,
+                                roomInstanceId: p.room_instance_id,
+                                room,
+                                items: [],
+                                customLabel,
+                              });
                             }
                             const entry = extraMap.get(p.room_instance_id)!;
                             entry.items.push({ ...p, idx });
                           }
                         });
 
-                        const roomInstances = [...baseInstances, ...Array.from(extraMap.values())];
+                        const roomInstances = [
+                          ...baseInstances,
+                          ...Array.from(extraMap.values()),
+                        ];
 
                         return (
                           <div className="space-y-4">
-                            {roomInstances.map(({ roomKey, roomInstanceId, room, items, customLabel }, roomIdx) => {
-                              if (!items.length) return null;
-                              const subtotal = inspectionRoomSubtotal(
-                                roomKey,
-                                roomInstanceId,
+                            {roomInstances.map(
+                              (
+                                {
+                                  roomKey,
+                                  roomInstanceId,
+                                  room,
+                                  items,
+                                  customLabel,
+                                },
                                 roomIdx,
-                              );
-                              return (
-                                <div
-                                  key={roomInstanceId}
-                                  className="rounded-3xl border border-black/10 bg-white p-4"
-                                >
-                                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-                                    <div>
-                                      <div className="text-base font-semibold">
-                                        {customLabel
-                                          ? customLabel
-                                          : `${getRoomDisplayName(roomKey, roomIdx)}`}
+                              ) => {
+                                if (!items.length) return null;
+                                const subtotal = inspectionRoomSubtotal(
+                                  roomKey,
+                                  roomInstanceId,
+                                  roomIdx,
+                                );
+                                return (
+                                  <div
+                                    key={roomInstanceId}
+                                    className="rounded-3xl border border-black/10 bg-white p-4"
+                                  >
+                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                                      <div>
+                                        <div className="text-base font-semibold">
+                                          {customLabel
+                                            ? customLabel
+                                            : `${getRoomDisplayName(roomKey, roomIdx)}`}
+                                        </div>
+                                        <div className="text-[11px] text-zinc-500">
+                                          {lang === "ar"
+                                            ? "إجمالي هذه الغرفة"
+                                            : "Room subtotal"}
+                                        </div>
                                       </div>
-                                      <div className="text-[11px] text-zinc-500">
-                                        {lang === "ar"
-                                          ? "إجمالي هذه الغرفة"
-                                          : "Room subtotal"}
+                                      <div className="text-xl font-bold">
+                                        {subtotal.toLocaleString()} EGP
                                       </div>
                                     </div>
-                                    <div className="text-xl font-bold">
-                                      {subtotal.toLocaleString()} EGP
-                                    </div>
-                                  </div>
-                                  <div className="space-y-3">
-                                    {items.map((p) => (
-                                      <div
-                                        key={p.idx}
-                                        className="flex flex-col gap-3 rounded-3xl border border-black/10 bg-[#faf7f1] p-4"
-                                      >
-                                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                                          <div className="space-y-1">
-                                            <div className="font-bold text-lg text-zinc-800">
-                                              {p.name}
-                                            </div>
-                                            <div className="text-xs text-zinc-500">
-                                              {lang === "ar"
-                                                ? "الغرفة"
-                                                : "Room"}
-                                              : {room?.ar || roomKey}
-                                            </div>
-                                          </div>
-                                          <div className="grid gap-2 sm:grid-cols-[auto_auto] items-center">
-                                            <div className="relative rounded-3xl bg-white px-4 py-3 text-sm font-bold text-zinc-800">
-                                              <span className="text-[10px] text-zinc-400 block mb-1">
+                                    <div className="space-y-3">
+                                      {items.map((p) => (
+                                        <div
+                                          key={p.idx}
+                                          className="flex flex-col gap-3 rounded-3xl border border-black/10 bg-[#faf7f1] p-4"
+                                        >
+                                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                            <div className="space-y-1">
+                                              <div className="font-bold text-lg text-zinc-800">
+                                                {p.name}
+                                              </div>
+                                              <div className="text-xs text-zinc-500">
                                                 {lang === "ar"
-                                                  ? "العدد"
-                                                  : "Qty"}
-                                              </span>
-                                              <input
-                                                type="number"
-                                                value={p.quantity || ""}
-                                                onChange={(e) =>
-                                                  updatePiece(
-                                                    p.idx,
-                                                    "quantity",
-                                                    e.target.value === ""
-                                                      ? ""
-                                                      : Number(e.target.value),
-                                                  )
-                                                }
-                                                onBlur={(e) => {
-                                                  const val = Number(
-                                                    e.target.value,
-                                                  );
-                                                  if (isNaN(val) || val < 1) {
+                                                  ? "الغرفة"
+                                                  : "Room"}
+                                                : {room?.ar || roomKey}
+                                              </div>
+                                            </div>
+                                            <div className="grid gap-2 sm:grid-cols-[auto_auto] items-center">
+                                              <div className="relative rounded-3xl bg-white px-4 py-3 text-sm font-bold text-zinc-800">
+                                                <span className="text-[10px] text-zinc-400 block mb-1">
+                                                  {lang === "ar"
+                                                    ? "العدد"
+                                                    : "Qty"}
+                                                </span>
+                                                <input
+                                                  type="number"
+                                                  value={p.quantity || ""}
+                                                  onChange={(e) =>
                                                     updatePiece(
                                                       p.idx,
                                                       "quantity",
-                                                      1,
-                                                    );
+                                                      e.target.value === ""
+                                                        ? ""
+                                                        : Number(
+                                                            e.target.value,
+                                                          ),
+                                                    )
                                                   }
+                                                  onBlur={(e) => {
+                                                    const val = Number(
+                                                      e.target.value,
+                                                    );
+                                                    if (isNaN(val) || val < 1) {
+                                                      updatePiece(
+                                                        p.idx,
+                                                        "quantity",
+                                                        1,
+                                                      );
+                                                    }
+                                                  }}
+                                                  className="w-20 bg-transparent outline-none text-right"
+                                                />
+                                              </div>
+                                              <div className="relative rounded-3xl bg-white px-4 py-3 text-sm font-bold text-zinc-800">
+                                                <span className="text-[10px] text-zinc-400 block mb-1">
+                                                  EGP
+                                                </span>
+                                                <input
+                                                  type="number"
+                                                  min={0}
+                                                  value={p.price || ""}
+                                                  onChange={(e) =>
+                                                    updatePiece(
+                                                      p.idx,
+                                                      "price",
+                                                      Number(e.target.value),
+                                                    )
+                                                  }
+                                                  className="w-24 bg-transparent outline-none text-right"
+                                                />
+                                              </div>
+                                            </div>
+                                          </div>
+                                          <div className="grid gap-3">
+                                            <div className="grid gap-3 sm:grid-cols-[1fr_1fr]">
+                                              <label className="inline-flex items-center gap-2 rounded-3xl border border-black/10 bg-white px-4 py-3 text-sm">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={Boolean(
+                                                    p.aro_veneer_addon,
+                                                  )}
+                                                  onChange={(e) =>
+                                                    updatePiece(
+                                                      p.idx,
+                                                      "aro_veneer_addon",
+                                                      e.target.checked,
+                                                    )
+                                                  }
+                                                  className="accent-[#d4a373]"
+                                                />
+                                                <span>
+                                                  {lang === "ar"
+                                                    ? "قشرة أرو"
+                                                    : "Aro veneer"}
+                                                </span>
+                                              </label>
+                                              <div className="rounded-3xl border border-black/10 bg-white px-4 py-3">
+                                                <label className="text-[10px] text-zinc-400 block mb-1">
+                                                  {lang === "ar"
+                                                    ? "سعر القشرة"
+                                                    : "Veneer surcharge"}
+                                                </label>
+                                                <input
+                                                  type="number"
+                                                  min={0}
+                                                  value={p.aro_surcharge || ""}
+                                                  onChange={(e) =>
+                                                    updatePiece(
+                                                      p.idx,
+                                                      "aro_surcharge",
+                                                      Number(e.target.value),
+                                                    )
+                                                  }
+                                                  className="w-full bg-transparent outline-none text-right"
+                                                />
+                                              </div>
+                                            </div>
+                                            <div className="grid gap-3 sm:grid-cols-[1fr_auto] items-start">
+                                              <div>
+                                                <label className="text-[10px] font-bold uppercase text-zinc-400">
+                                                  {lang === "ar"
+                                                    ? "التفاصيل"
+                                                    : "Details"}
+                                                </label>
+                                                <textarea
+                                                  placeholder={
+                                                    lang === "ar"
+                                                      ? "أضف تفاصيل للالمنتج..."
+                                                      : "Add product details..."
+                                                  }
+                                                  rows={2}
+                                                  value={p.details || ""}
+                                                  onChange={(e) =>
+                                                    updatePiece(
+                                                      p.idx,
+                                                      "details",
+                                                      e.target.value,
+                                                    )
+                                                  }
+                                                  className="w-full px-4 py-3 bg-white border border-black/5 rounded-xl text-sm text-zinc-700 placeholder:text-zinc-300 outline-none focus:border-accent-tan/40 transition-all resize-none"
+                                                />
+                                              </div>
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  setInspectionFormData(
+                                                    (prev) => {
+                                                      const pieces =
+                                                        prev.pieces?.filter(
+                                                          (_, i) => i !== p.idx,
+                                                        ) || [];
+                                                      return {
+                                                        ...prev,
+                                                        pieces,
+                                                        totalAmount:
+                                                          computeInspectionTotalAmount(
+                                                            pieces,
+                                                          ),
+                                                      };
+                                                    },
+                                                  );
+                                                  setExpandedPieceDetails(
+                                                    (prev) =>
+                                                      prev
+                                                        .filter(
+                                                          (i) => i !== p.idx,
+                                                        )
+                                                        .map((i) =>
+                                                          i > p.idx ? i - 1 : i,
+                                                        ),
+                                                  );
                                                 }}
-                                                className="w-20 bg-transparent outline-none text-right"
-                                              />
-                                            </div>
-                                            <div className="relative rounded-3xl bg-white px-4 py-3 text-sm font-bold text-zinc-800">
-                                              <span className="text-[10px] text-zinc-400 block mb-1">
-                                                EGP
-                                              </span>
-                                              <input
-                                                type="number"
-                                                min={0}
-                                                value={p.price || ""}
-                                                onChange={(e) =>
-                                                  updatePiece(
-                                                    p.idx,
-                                                    "price",
-                                                    Number(e.target.value),
-                                                  )
-                                                }
-                                                className="w-24 bg-transparent outline-none text-right"
-                                              />
+                                                className="min-w-[56px] p-3 bg-white border border-red-200 text-red-600 rounded-3xl shadow-[0_12px_24px_rgba(239,68,68,0.12)] hover:bg-red-50 transition-all duration-200 flex items-center justify-center"
+                                              >
+                                                <Trash2 className="w-5 h-5" />
+                                              </button>
                                             </div>
                                           </div>
                                         </div>
-                                        <div className="grid gap-3">
-                                          <div className="grid gap-3 sm:grid-cols-[1fr_1fr]">
-                                            <label className="inline-flex items-center gap-2 rounded-3xl border border-black/10 bg-white px-4 py-3 text-sm">
-                                              <input
-                                                type="checkbox"
-                                                checked={Boolean(
-                                                  p.aro_veneer_addon,
-                                                )}
-                                                onChange={(e) =>
-                                                  updatePiece(
-                                                    p.idx,
-                                                    "aro_veneer_addon",
-                                                    e.target.checked,
-                                                  )
-                                                }
-                                                className="accent-[#d4a373]"
-                                              />
-                                              <span>
-                                                {lang === "ar"
-                                                  ? "قشرة أرو"
-                                                  : "Aro veneer"}
-                                              </span>
-                                            </label>
-                                            <div className="rounded-3xl border border-black/10 bg-white px-4 py-3">
-                                              <label className="text-[10px] text-zinc-400 block mb-1">
-                                                {lang === "ar"
-                                                  ? "سعر القشرة"
-                                                  : "Veneer surcharge"}
-                                              </label>
-                                              <input
-                                                type="number"
-                                                min={0}
-                                                value={p.aro_surcharge || ""}
-                                                onChange={(e) =>
-                                                  updatePiece(
-                                                    p.idx,
-                                                    "aro_surcharge",
-                                                    Number(e.target.value),
-                                                  )
-                                                }
-                                                className="w-full bg-transparent outline-none text-right"
-                                              />
-                                            </div>
-                                          </div>
-                                          <div className="grid gap-3 sm:grid-cols-[1fr_auto] items-start">
-                                            <div>
-                                              <label className="text-[10px] font-bold uppercase text-zinc-400">
-                                                {lang === "ar"
-                                                  ? "التفاصيل"
-                                                  : "Details"}
-                                              </label>
-                                              <textarea
-                                                placeholder={
-                                                  lang === "ar"
-                                                    ? "أضف تفاصيل للالمنتج..."
-                                                    : "Add product details..."
-                                                }
-                                                rows={2}
-                                                value={p.details || ""}
-                                                onChange={(e) =>
-                                                  updatePiece(
-                                                    p.idx,
-                                                    "details",
-                                                    e.target.value,
-                                                  )
-                                                }
-                                                className="w-full px-4 py-3 bg-white border border-black/5 rounded-xl text-sm text-zinc-700 placeholder:text-zinc-300 outline-none focus:border-accent-tan/40 transition-all resize-none"
-                                              />
-                                            </div>
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                setInspectionFormData((prev) => {
-                                                  const pieces =
-                                                    prev.pieces?.filter(
-                                                      (_, i) => i !== p.idx,
-                                                    ) || [];
-                                                  return {
-                                                    ...prev,
-                                                    pieces,
-                                                    totalAmount: computeInspectionTotalAmount(pieces),
-                                                  };
-                                                });
-                                                setExpandedPieceDetails(
-                                                  (prev) =>
-                                                    prev
-                                                      .filter(
-                                                        (i) => i !== p.idx,
-                                                      )
-                                                      .map((i) =>
-                                                        i > p.idx ? i - 1 : i,
-                                                      ),
-                                                );
-                                              }}
-                                              className="min-w-[56px] p-3 bg-white border border-red-200 text-red-600 rounded-3xl shadow-[0_12px_24px_rgba(239,68,68,0.12)] hover:bg-red-50 transition-all duration-200 flex items-center justify-center"
-                                            >
-                                              <Trash2 className="w-5 h-5" />
-                                            </button>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    ))}
+                                      ))}
+                                    </div>
                                   </div>
-                                </div>
-                              );
-                            })}
+                                );
+                              },
+                            )}
                           </div>
                         );
                       })()}
@@ -8068,7 +8186,8 @@ export default function App() {
                               className="flex items-center justify-between gap-2"
                             >
                               <span>
-                                {room.customLabel ?? getRoomDisplayName(room.room_type, roomIndex)}
+                                {room.customLabel ??
+                                  getRoomDisplayName(room.room_type, roomIndex)}
                               </span>
                               <span className="font-semibold">
                                 {quoteRoomSubtotal(room).toLocaleString()} جنيه
@@ -8114,7 +8233,10 @@ export default function App() {
                                 <input
                                   value={
                                     room.customLabel ??
-                                    getRoomDisplayName(room.room_type, roomIndex)
+                                    getRoomDisplayName(
+                                      room.room_type,
+                                      roomIndex,
+                                    )
                                   }
                                   onChange={(e) =>
                                     setRoomLabel(roomIndex, e.target.value)
@@ -8179,7 +8301,14 @@ export default function App() {
                                             className="w-full rounded-3xl border border-black/10 px-4 py-3 text-sm text-zinc-800"
                                           />
                                           <div className="text-xs text-zinc-500">
-                                            {lang === "ar" ? "الإجمالي" : "Total"}: {quoteItemTotal(item).toLocaleString()} جنيه
+                                            {lang === "ar"
+                                              ? "الإجمالي"
+                                              : "Total"}
+                                            :{" "}
+                                            {quoteItemTotal(
+                                              item,
+                                            ).toLocaleString()}{" "}
+                                            جنيه
                                           </div>
                                         </div>
                                         <button
@@ -8265,7 +8394,9 @@ export default function App() {
                                             }
                                             className="accent-[#d4a373]"
                                           />
-                                          {lang === "ar" ? "قشرة أرو" : "Aro veneer"}
+                                          {lang === "ar"
+                                            ? "قشرة أرو"
+                                            : "Aro veneer"}
                                         </label>
                                         {item.aro_veneer_addon && (
                                           <div className="rounded-3xl border border-black/10 bg-white px-4 py-3 text-sm font-bold text-zinc-800">

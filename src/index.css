@@ -1,9 +1,9 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap");
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  
+
   --color-bg-warm: #f2eee8;
   --color-accent-tan: #d4a373;
   --color-accent-sage: #a5a58d;
@@ -46,11 +46,14 @@
 body {
   position: relative;
   background-color: var(--background);
-  background-image: 
-    radial-gradient(at 0% 0%, #d4a37322 0px, transparent 50%), 
+  background-image:
+    radial-gradient(at 0% 0%, #d4a37322 0px, transparent 50%),
     radial-gradient(at 100% 100%, #a5a58d22 0px, transparent 50%),
     url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3仿真%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-  background-size: auto, auto, 100px 100px;
+  background-size:
+    auto,
+    auto,
+    100px 100px;
   background-blend-mode: normal, normal, overlay;
   color: var(--foreground);
   font-family: var(--font-sans);
@@ -76,37 +79,53 @@ body {
 
 .btn-3d-primary {
   background: var(--color-accent-tan);
-  box-shadow: 0 5px 0 #b07e4d, 0 10px 20px rgba(212, 164, 115, 0.2);
+  box-shadow:
+    0 5px 0 #b07e4d,
+    0 10px 20px rgba(212, 164, 115, 0.2);
 }
 .btn-3d-primary:hover {
-  box-shadow: 0 7px 0 #b07e4d, 0 12px 24px rgba(212, 164, 115, 0.25);
+  box-shadow:
+    0 7px 0 #b07e4d,
+    0 12px 24px rgba(212, 164, 115, 0.25);
 }
 
 .btn-3d-zinc {
   background: #18181b;
-  box-shadow: 0 5px 0 #000, 0 10px 20px rgba(0, 0, 0, 0.15);
+  box-shadow:
+    0 5px 0 #000,
+    0 10px 20px rgba(0, 0, 0, 0.15);
 }
 .btn-3d-zinc:hover {
-  box-shadow: 0 7px 0 #000, 0 12px 24px rgba(0, 0, 0, 0.2);
+  box-shadow:
+    0 7px 0 #000,
+    0 12px 24px rgba(0, 0, 0, 0.2);
 }
 
 .btn-3d-glass {
   background: rgba(255, 255, 255, 0.5);
   backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.05), 0 10px 20px rgba(0, 0, 0, 0.05);
+  box-shadow:
+    0 5px 0 rgba(0, 0, 0, 0.05),
+    0 10px 20px rgba(0, 0, 0, 0.05);
 }
 .btn-3d-glass:hover {
   background: rgba(255, 255, 255, 0.6);
-  box-shadow: 0 7px 0 rgba(0, 0, 0, 0.05), 0 12px 24px rgba(0, 0, 0, 0.08);
+  box-shadow:
+    0 7px 0 rgba(0, 0, 0, 0.05),
+    0 12px 24px rgba(0, 0, 0, 0.08);
 }
 
 .btn-3d-danger {
   background: var(--color-danger);
-  box-shadow: 0 5px 0 #bc5c43, 0 10px 20px rgba(224, 122, 95, 0.2);
+  box-shadow:
+    0 5px 0 #bc5c43,
+    0 10px 20px rgba(224, 122, 95, 0.2);
 }
 .btn-3d-danger:hover {
-  box-shadow: 0 7px 0 #bc5c43, 0 12px 24px rgba(224, 122, 95, 0.25);
+  box-shadow:
+    0 7px 0 #bc5c43,
+    0 12px 24px rgba(224, 122, 95, 0.25);
 }
 
 /* Background Decor */
@@ -123,8 +142,12 @@ body {
 }
 
 @keyframes blob-float {
-  0% { transform: translate(0, 0) scale(1); }
-  100% { transform: translate(100px, 50px) scale(1.1); }
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    transform: translate(100px, 50px) scale(1.1);
+  }
 }
 
 .heading-accent {
@@ -147,8 +170,12 @@ body {
 }
 
 @keyframes accent-grow {
-  from { width: 0; }
-  to { width: 78px; }
+  from {
+    width: 0;
+  }
+  to {
+    width: 78px;
+  }
 }
 
 .glass {
@@ -177,9 +204,21 @@ body {
   inset: 0;
   z-index: -1;
   background-image:
-    radial-gradient(circle at 20% 20%, rgba(212, 164, 115, 0.16), transparent 30%),
-    radial-gradient(circle at 80% 30%, rgba(165, 165, 141, 0.12), transparent 28%),
-    radial-gradient(circle at 50% 60%, rgba(255, 255, 255, 0.18), transparent 35%);
+    radial-gradient(
+      circle at 20% 20%,
+      rgba(212, 164, 115, 0.16),
+      transparent 30%
+    ),
+    radial-gradient(
+      circle at 80% 30%,
+      rgba(165, 165, 141, 0.12),
+      transparent 28%
+    ),
+    radial-gradient(
+      circle at 50% 60%,
+      rgba(255, 255, 255, 0.18),
+      transparent 35%
+    );
   filter: blur(20px);
 }
 
@@ -201,8 +240,13 @@ body {
 
 /* Skeleton Loading */
 @keyframes skeleton-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.8; }
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.8;
+  }
 }
 .skeleton {
   background: linear-gradient(90deg, #e0e0e0 25%, #f0f0f0 50%, #e0e0e0 75%);
@@ -211,8 +255,12 @@ body {
   border-radius: 0.75rem;
 }
 @keyframes skeleton-loading {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 /* Zebra table rows */
@@ -281,7 +329,7 @@ body {
   position: relative;
 }
 .glass-table::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: 15%;
@@ -298,7 +346,7 @@ body {
   position: relative;
 }
 .card-accent::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: 2rem;
@@ -322,40 +370,110 @@ html {
 
 /* Print Styles */
 @media print {
-  body { background: white !important; }
-  .fixed { display: none !important; }
-  aside { display: none !important; }
-  nav { display: none !important; }
-  .btn-3d { display: none !important; }
-  button { display: none !important; }
-  input { display: none !important; }
-  select { display: none !important; }
-  .glass { box-shadow: none !important; border: 1px solid #ddd !important; background: white !important; }
-  .glass-dark { display: none !important; }
-  #toast-root { display: none !important; }
-  [class*="bg-blob"] { display: none !important; }
-  main { max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
-  table { width: 100% !important; border-collapse: collapse !important; font-size: 12px !important; }
-  th, td { border: 1px solid #000 !important; padding: 8px 12px !important; color: #000 !important; background: white !important; }
-  th { background: #f5f5f5 !important; font-weight: bold !important; }
-  .hidden.md\:block { display: block !important; }
-  .md\:hidden { display: none !important; }
-  .overflow-x-auto { overflow: visible !important; }
-  @page { margin: 1.5cm; }
-  h1 { font-size: 24px !important; margin-bottom: 16px !important; }
-  .flex.flex-col.md\:flex-row { flex-direction: column !important; }
-  main > div > div > .flex { display: block !important; }
-  main > div > div > .flex > div, main > div > div > .flex > .relative, main > div > div > .flex > .flex { display: none !important; }
+  body {
+    background: white !important;
+  }
+  .fixed {
+    display: none !important;
+  }
+  aside {
+    display: none !important;
+  }
+  nav {
+    display: none !important;
+  }
+  .btn-3d {
+    display: none !important;
+  }
+  button {
+    display: none !important;
+  }
+  input {
+    display: none !important;
+  }
+  select {
+    display: none !important;
+  }
+  .glass {
+    box-shadow: none !important;
+    border: 1px solid #ddd !important;
+    background: white !important;
+  }
+  .glass-dark {
+    display: none !important;
+  }
+  #toast-root {
+    display: none !important;
+  }
+  [class*="bg-blob"] {
+    display: none !important;
+  }
+  main {
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 12px !important;
+  }
+  th,
+  td {
+    border: 1px solid #000 !important;
+    padding: 8px 12px !important;
+    color: #000 !important;
+    background: white !important;
+  }
+  th {
+    background: #f5f5f5 !important;
+    font-weight: bold !important;
+  }
+  .hidden.md\:block {
+    display: block !important;
+  }
+  .md\:hidden {
+    display: none !important;
+  }
+  .overflow-x-auto {
+    overflow: visible !important;
+  }
+  @page {
+    margin: 1.5cm;
+  }
+  h1 {
+    font-size: 24px !important;
+    margin-bottom: 16px !important;
+  }
+  .flex.flex-col.md\:flex-row {
+    flex-direction: column !important;
+  }
+  main > div > div > .flex {
+    display: block !important;
+  }
+  main > div > div > .flex > div,
+  main > div > div > .flex > .relative,
+  main > div > div > .flex > .flex {
+    display: none !important;
+  }
   /* Keep the title and count visible */
-  main h1 { display: block !important; }
+  main h1 {
+    display: block !important;
+  }
   /* Show table rows fully */
-  tr { page-break-inside: avoid; }
+  tr {
+    page-break-inside: avoid;
+  }
   /* Hide Actions column on print */
   .glass table th:last-child,
   .glass table td:last-child {
     display: none !important;
   }
-  .print-header { display: block !important; text-align: center; margin-bottom: 20px; }
+  .print-header {
+    display: block !important;
+    text-align: center;
+    margin-bottom: 20px;
+  }
 }
 
 /* iOS Date Input Fixes */
