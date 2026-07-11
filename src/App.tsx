@@ -2991,6 +2991,9 @@ export default function App() {
 
       if (user && allowedEmails.includes(user.email ?? "")) {
         try {
+          if (navigator.onLine) {
+            await SyncManager.triggerSync();
+          }
           await refreshAllData();
         } catch (error) {
           console.error("Failed to sync dashboard data", error);

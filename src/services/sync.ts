@@ -43,13 +43,45 @@ export class SyncManager {
     this.triggerSync();
   }
 
-  static triggerSync() {
+  static async triggerSync() {
     if (this.isSyncing || !navigator.onLine) return;
     this.isSyncing = true;
-    
-    this.processQueue().finally(() => {
+
+    try {
+      await this.pullRemoteData();
+      await this.processQueue();
+    } finally {
       this.isSyncing = false;
-    });
+    }
+  }
+
+  static async pullRemoteData() {
+    if (!navigator.onLine) return;
+
+    const tablesToSync = [
+      "inspections",
+      "customers",
+      "contracted_customers",
+      "non_contracted_customers",
+      "catalogs",
+      "payments",
+      "production_stages",
+      "clients",
+      "app_settings",
+    ];
+
+    for (const tableName of tablesToSync) {
+      const { data, error } = await supabase.from(tableName).select("*");
+      if (error) {
+        console.warn(`Failed to pull remote data for ${tableName}:`, error.message || error);
+        continue;
+      }
+      if (!Array.isArray(data)) continue;
+
+      for (const remoteRecord of data) {
+        await this.resolveConflict(tableName, remoteRecord);
+      }
+    }
   }
 
   private static async processQueue() {
