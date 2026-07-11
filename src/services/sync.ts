@@ -1,6 +1,32 @@
 import { db, SyncQueueItem } from "./db";
 import { supabase, SUPABASE_CONFIGURED } from "../lib/supabase";
 
+// Tables that represent real customer-facing entities. A "test" record
+// landing in any of these should never surface in the UI - and instead of
+// just hiding it locally, we actively remove it from Supabase too, since
+// something outside this app (manual QA against admin@gmail.com, or an
+// external script) keeps creating rows like "Test Authenticated" directly
+// in the database. This does not stop the source from re-inserting new rows,
+// but it guarantees every pull cleans them up immediately rather than
+// leaving them sitting on the server and reappearing unpredictably.
+const CUSTOMER_FACING_TABLES = new Set([
+  "customers",
+  "inspections",
+  "contracted_customers",
+  "non_contracted_customers",
+]);
+
+const isTestRecord = (record: any): boolean => {
+  const name = String(record?.name || record?.customer_name || "")
+    .toLowerCase()
+    .trim();
+  const phone = String(record?.phone || "").replace(/\D/g, "");
+  if (!name && !phone) return false;
+  if (phone === "1234567890") return true;
+  if (name.includes("test")) return true;
+  return false;
+};
+
 export class SyncManager {
   private static isSyncing = false;
   private static onStatusChangeListeners: ((online: boolean) => void)[] = [];
@@ -245,6 +271,22 @@ export class SyncManager {
   static async resolveConflict(tableName: string, remoteRecord: any): Promise<boolean> {
     const pkColumn = tableName === "app_settings" ? "key" : "id";
     const pkValue = remoteRecord[pkColumn];
+
+    // -1. Known test/QA record (e.g. "Test Authenticated") landed on a
+    // customer-facing table. Actively remove it - locally and on the server -
+    // instead of silently hiding it, so it can't keep reappearing.
+    if (CUSTOMER_FACING_TABLES.has(tableName) && isTestRecord(remoteRecord)) {
+      await db.table(tableName).delete(pkValue).catch(() => {});
+      await this.addTombstone(tableName, pkValue);
+      const pendingDelete = await db.sync_queue
+        .where("tableName").equals(tableName)
+        .and(x => x.recordId === pkValue && x.operation === "DELETE")
+        .first();
+      if (!pendingDelete) {
+        await this.queueOperation("DELETE", tableName, pkValue, null);
+      }
+      return false;
+    }
 
     // 0. Record was deleted locally (tombstoned). Never let a stale/racing
     // remote read (e.g. refreshAllData's direct Supabase fetch, which can run
