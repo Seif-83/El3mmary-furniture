@@ -125,10 +125,14 @@ export class SyncManager {
     this.isSyncing = true;
 
     try {
+      // Reset any stuck "syncing" items back to "pending" to retry them
+      await db.sync_queue
+        .where("status").equals("syncing")
+        .modify({ status: "pending" })
+        .catch((err) => console.warn("Failed to reset stuck syncing items", err));
+
       await this.processQueue();
       await this.pullRemoteData();
-      // Process any self-healed queue items immediately
-      await this.processQueue();
     } finally {
       this.isSyncing = false;
     }
