@@ -56,6 +56,8 @@ export class SyncManager {
     try {
       await this.processQueue();
       await this.pullRemoteData();
+      // Process any self-healed queue items immediately
+      await this.processQueue();
     } finally {
       this.isSyncing = false;
     }
@@ -95,6 +97,26 @@ export class SyncManager {
         if (!remoteKey) continue;
         remoteIds.add(remoteKey);
         await this.resolveConflict(tableName, remoteRecord);
+      }
+
+      // Self-healing sync: find local records that are missing on the remote database
+      const localRecords = await db.table(tableName).toArray();
+      for (const localRecord of localRecords) {
+        const localKey = String(localRecord[pkColumn] ?? "").trim();
+        if (!localKey) continue;
+
+        if (!remoteIds.has(localKey)) {
+          // Check if this record is already in the sync queue
+          const inQueue = await db.sync_queue
+            .where("tableName").equals(tableName)
+            .and(x => x.recordId === localKey)
+            .first();
+
+          if (!inQueue) {
+            console.log(`Healing sync: local record ${localKey} in ${tableName} is missing from Supabase. Queuing INSERT.`);
+            await this.queueOperation("INSERT", tableName, localKey, localRecord);
+          }
+        }
       }
 
       // Do not automatically delete local records when a remote row is missing.
