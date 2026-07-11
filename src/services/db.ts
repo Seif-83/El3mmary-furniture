@@ -164,6 +164,18 @@ export interface SyncQueueItem {
   errorMessage?: string;
 }
 
+// A tombstone marks a record as "deleted locally, waiting for (or confirming)
+// remote deletion". While a tombstone exists for a (tableName, recordId) pair,
+// resolveConflict() must never resurrect that record locally, even if a stale
+// remote read still returns it (e.g. a background refresh racing the pending
+// DELETE sync). See SyncManager.resolveConflict / pullRemoteData.
+export interface LocalTombstone {
+  id: string; // `${tableName}:${recordId}`
+  tableName: string;
+  recordId: string;
+  deletedAt: number;
+}
+
 export class FurnitureDB extends Dexie {
   catalogs!: Table<LocalCatalog>;
   customers!: Table<LocalCustomer>;
@@ -176,6 +188,7 @@ export class FurnitureDB extends Dexie {
   activity_logs!: Table<LocalActivityLog>;
   app_settings!: Table<LocalAppSetting>;
   sync_queue!: Table<SyncQueueItem>;
+  tombstones!: Table<LocalTombstone>;
 
   constructor() {
     super("FurnitureDB");
@@ -191,6 +204,11 @@ export class FurnitureDB extends Dexie {
       activity_logs: "id, created_at, last_modified",
       app_settings: "key, updated_at, last_modified",
       sync_queue: "++id, operation, tableName, recordId, status, createdAt",
+    });
+    // v2: add tombstones table to fix deleted records reappearing due to a
+    // race between the DELETE sync and refreshAllData()'s direct remote read.
+    this.version(2).stores({
+      tombstones: "id, tableName, recordId, deletedAt",
     });
   }
 }

@@ -24,6 +24,29 @@ export class SyncManager {
     }
   }
 
+  // Record that (tableName, recordId) was deleted locally. Must be called
+  // BEFORE/alongside queuing the DELETE operation, and checked by any code
+  // path that writes remote data back into IndexedDB, so a record can never
+  // be resurrected by a stale/racing remote read while its deletion is still
+  // in flight (or was missed due to network issues).
+  static async addTombstone(tableName: string, recordId: string) {
+    await db.tombstones.put({
+      id: `${tableName}:${recordId}`,
+      tableName,
+      recordId,
+      deletedAt: Date.now(),
+    });
+  }
+
+  static async isTombstoned(tableName: string, recordId: string) {
+    const t = await db.tombstones.get(`${tableName}:${recordId}`);
+    return !!t;
+  }
+
+  static async clearTombstone(tableName: string, recordId: string) {
+    await db.tombstones.delete(`${tableName}:${recordId}`);
+  }
+
   static async queueOperation(
     operation: "INSERT" | "UPDATE" | "DELETE",
     tableName: string,
@@ -123,6 +146,18 @@ export class SyncManager {
       // Remote reads can be incomplete due to permissions, row-level security, or
       // eventual sync latency, and deleting local rows here can remove newly
       // created records before they are confirmed on the server.
+
+      // Tombstone cleanup: once the remote table confirms a previously-deleted
+      // record is actually gone, we no longer need to guard against it, so
+      // drop the tombstone to keep the table small.
+      const tableTombstones = await db.tombstones
+        .where("tableName").equals(tableName)
+        .toArray();
+      for (const tomb of tableTombstones) {
+        if (!remoteIds.has(tomb.recordId)) {
+          await db.tombstones.delete(tomb.id);
+        }
+      }
     }
   }
 
@@ -210,6 +245,22 @@ export class SyncManager {
   static async resolveConflict(tableName: string, remoteRecord: any): Promise<boolean> {
     const pkColumn = tableName === "app_settings" ? "key" : "id";
     const pkValue = remoteRecord[pkColumn];
+
+    // 0. Record was deleted locally (tombstoned). Never let a stale/racing
+    // remote read (e.g. refreshAllData's direct Supabase fetch, which can run
+    // concurrently with the DELETE that's still syncing) resurrect it. If the
+    // remote still has this row, make sure a DELETE is (re)queued so it gets
+    // cleaned up on the server too, instead of silently skipping forever.
+    if (await this.isTombstoned(tableName, pkValue)) {
+      const pendingDelete = await db.sync_queue
+        .where("tableName").equals(tableName)
+        .and(x => x.recordId === pkValue && x.operation === "DELETE")
+        .first();
+      if (!pendingDelete) {
+        await this.queueOperation("DELETE", tableName, pkValue, null);
+      }
+      return false;
+    }
 
     // 1. Check if record has pending sync operations
     const pending = await db.sync_queue
