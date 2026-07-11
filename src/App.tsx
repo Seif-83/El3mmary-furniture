@@ -1739,19 +1739,6 @@ const SettingsPage: React.FC<{
               </div>
             </div>
           </div>
-          <button
-            onClick={handleSyncClick}
-            disabled={syncing}
-            className={`w-full py-5 rounded-2xl font-bold text-lg text-white transition-all flex items-center justify-center gap-3 shadow-lg scale-[1.02] ${syncing ? "bg-zinc-400 cursor-not-allowed" : "bg-zinc-900 hover:bg-zinc-800 active:scale-95"}`}
-          >
-            {syncing ? (
-              <span>{lang === "ar" ? "جاري المزامنة..." : "Syncing..."}</span>
-            ) : (
-              <span>
-                {lang === "ar" ? "مزامنة البيانات الآن ↻" : "Sync Data Now ↻"}
-              </span>
-            )}
-          </button>
         </div>
       </div>
     </div>
@@ -3251,17 +3238,41 @@ export default function App() {
       void syncAuthorizedUser(session?.user ?? null);
     });
 
-    // Start polling every 30s for reliability (replaces realtime channels)
-    const pollingId = setInterval(() => {
+    // Start polling every 15s for reliability and trigger sync automatically in the background
+    const pollingId = setInterval(async () => {
       const u = currentUserRef.current;
       if (u && allowedEmails.includes(u.email ?? "")) {
+        if (navigator.onLine) {
+          try {
+            await SyncManager.triggerSync();
+          } catch (e) {
+            console.error("Auto sync background error:", e);
+          }
+        }
         void refreshAllData();
       }
-    }, 30000);
+    }, 15000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        const u = currentUserRef.current;
+        if (u && allowedEmails.includes(u.email ?? "")) {
+          if (navigator.onLine) {
+            SyncManager.triggerSync()
+              .then(() => refreshAllData())
+              .catch((err) => console.error("Visibility auto sync error:", err));
+          } else {
+            void refreshAllData();
+          }
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       authListener.unsubscribe();
       clearInterval(pollingId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
 
@@ -5285,7 +5296,7 @@ export default function App() {
                               <div className="text-2xl font-semibold">
                                 {adminSubView === "customers"
                                   ? unifiedCustomers.filter(
-                                      (r) => r.status === "customers" && matchesFilters(r),
+                                      (r) => matchesFilters(r),
                                     ).length
                                   : adminSubView === "inspections"
                                     ? inspections.filter((r) =>
