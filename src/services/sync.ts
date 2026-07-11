@@ -170,22 +170,30 @@ export class SyncManager {
         await this.resolveConflict(tableName, remoteRecord);
       }
 
-      // Self-healing sync: find local records that are missing on the remote database
+      // Self-healing / reconciliation sync:
       const localRecords = await db.table(tableName).toArray();
       for (const localRecord of localRecords) {
         const localKey = String(localRecord[pkColumn] ?? "").trim();
         if (!localKey) continue;
 
         if (!remoteIds.has(localKey)) {
-          // Check if this record is already in the sync queue
-          const inQueue = await db.sync_queue
+          // Check if there is any pending operation for this record in the sync queue
+          const pendingOp = await db.sync_queue
             .where("tableName").equals(tableName)
             .and(x => x.recordId === localKey)
             .first();
 
-          if (!inQueue) {
-            console.log(`Healing sync: local record ${localKey} in ${tableName} is missing from Supabase. Queuing INSERT.`);
-            await this.queueOperation("INSERT", tableName, localKey, localRecord);
+          if (!pendingOp) {
+            // If the record was previously synced to Supabase and is now missing,
+            // it means it was deleted on another device.
+            if ((localRecord as any).synced) {
+              console.log(`Auto delete: local record ${localKey} in ${tableName} was deleted on remote. Deleting locally.`);
+              await db.table(tableName).delete(localKey);
+            } else {
+              // Unsynced local record. Queue an INSERT to push it to Supabase.
+              console.log(`Healing sync: local record ${localKey} in ${tableName} is missing from Supabase. Queuing INSERT.`);
+              await this.queueOperation("INSERT", tableName, localKey, localRecord);
+            }
           }
         }
       }
@@ -291,6 +299,18 @@ export class SyncManager {
       try {
         await db.sync_queue.update(item.id!, { status: "syncing" });
         await this.syncItem(item);
+
+        if (item.operation === "INSERT" || item.operation === "UPDATE") {
+          try {
+            const localRecord = await db.table(item.tableName).get(item.recordId);
+            if (localRecord) {
+              await db.table(item.tableName).update(item.recordId, { synced: true });
+            }
+          } catch (e) {
+            console.warn(`Failed to update synced status for ${item.tableName}:${item.recordId}`, e);
+          }
+        }
+
         await db.sync_queue.delete(item.id!);
       } catch (error: any) {
         console.error("Sync failed for item:", item, error);
@@ -456,7 +476,8 @@ export class SyncManager {
     // Insert or update remote record locally
     const recordToStore = {
       ...remoteRecord,
-      last_modified: Date.now()
+      last_modified: Date.now(),
+      synced: true
     };
     await db.table(tableName).put(recordToStore);
     return true;
