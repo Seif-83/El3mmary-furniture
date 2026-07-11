@@ -155,14 +155,24 @@ export class SyncManager {
     const { tableName, operation, recordId, payload } = item;
     const pkColumn = tableName === "app_settings" ? "key" : "id";
 
+    // Clean payload of local-only columns that do not exist in the Supabase schema
+    let cleanedPayload = payload;
+    if (payload && typeof payload === "object") {
+      cleanedPayload = { ...payload };
+      delete cleanedPayload.last_modified;
+      if (tableName === "production_stages") {
+        delete cleanedPayload.client;
+      }
+    }
+
     switch (operation) {
       case "INSERT": {
-        const { error } = await supabase.from(tableName).insert(payload);
+        const { error } = await supabase.from(tableName).insert(cleanedPayload);
         if (error && !error.message?.includes("duplicate key")) throw error;
         break;
       }
       case "UPDATE": {
-        const { error } = await supabase.from(tableName).update(payload).eq(pkColumn, recordId);
+        const { error } = await supabase.from(tableName).update(cleanedPayload).eq(pkColumn, recordId);
         if (error) throw error;
         break;
       }

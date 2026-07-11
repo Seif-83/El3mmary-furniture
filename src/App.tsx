@@ -97,6 +97,8 @@ interface CustomerRecord {
   deliveryDate?: string;
   pickupDate?: string;
   portfolioDate?: string;
+  status?: string;
+  raw?: any;
 }
 
 interface FurniturePiece {
