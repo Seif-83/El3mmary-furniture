@@ -40,7 +40,7 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 import * as XLSX from "xlsx";
-import { supabase, supabaseAdmin } from "./lib/supabase";
+import { supabase, supabaseAdmin, SUPABASE_CONFIGURED } from "./lib/supabase";
 import { User } from "@supabase/supabase-js";
 import { SyncManager } from "./services/sync";
 import {
@@ -1523,8 +1523,45 @@ const SettingsPage: React.FC<{
   t: Record<string, string>;
   settings: Record<string, string>;
   currentUserEmail?: string;
-}> = ({ lang, setLang, isAdmin, t, settings, currentUserEmail }) => {
+  onSyncTrigger?: () => Promise<void>;
+}> = ({ lang, setLang, isAdmin, t, settings, currentUserEmail, onSyncTrigger }) => {
   const [saving, setSaving] = useState(false);
+  const [queueCount, setQueueCount] = useState<number>(0);
+  const [syncing, setSyncing] = useState(false);
+
+  const checkQueueCount = async () => {
+    try {
+      const count = await db.sync_queue.count();
+      setQueueCount(count);
+    } catch (err) {
+      console.error("Failed to count sync queue", err);
+    }
+  };
+
+  useEffect(() => {
+    checkQueueCount();
+    const interval = setInterval(checkQueueCount, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleSyncClick = async () => {
+    setSyncing(true);
+    try {
+      if (onSyncTrigger) {
+        await onSyncTrigger();
+      } else {
+        await SyncManager.triggerSync();
+      }
+      await checkQueueCount();
+      toast.success(
+        lang === "ar" ? "تمت المزامنة وتحديث البيانات" : "Data synchronized successfully",
+      );
+    } catch (err: any) {
+      toast.error(err?.message || "Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const saveSetting = async (key: string, value: string) => {
     const { error } = await supabase
@@ -1635,10 +1672,82 @@ const SettingsPage: React.FC<{
             </div>
           </div>
         </div>
+
+        {/* Sync & Diagnostics */}
+        <div className="w-full glass rounded-[3rem] p-10 md:p-14 shadow-2xl border border-white/40">
+          <div className="flex items-center gap-5 mb-8">
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/10 flex items-center justify-center">
+              <Activity className="w-8 h-8 text-amber-500" />
+            </div>
+            <div>
+              <h3 className="text-2xl md:text-3xl font-bold text-zinc-900">
+                {lang === "ar" ? "مزامنة البيانات" : "Data Sync"}
+              </h3>
+              <p className="text-base text-zinc-500">
+                {lang === "ar"
+                  ? "حالة الاتصال والعمليات المعلقة في الخلفية"
+                  : "Connection status and pending background operations"}
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+            <div className="bg-white/60 p-6 rounded-2xl border border-white/60">
+              <div className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2">
+                {lang === "ar" ? "حالة قاعدة البيانات" : "Database Connection"}
+              </div>
+              <div
+                className={`text-lg font-bold ${SUPABASE_CONFIGURED ? "text-emerald-600" : "text-amber-600"}`}
+              >
+                {SUPABASE_CONFIGURED
+                  ? lang === "ar"
+                    ? "سحابية متصلة"
+                    : "Cloud Connected"
+                  : lang === "ar"
+                    ? "محلية فقط (غير متصل)"
+                    : "Local only (Not connected)"}
+              </div>
+            </div>
+            <div className="bg-white/60 p-6 rounded-2xl border border-white/60">
+              <div className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2">
+                {lang === "ar" ? "العمليات المعلقة في الخلفية" : "Pending Operations"}
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-lg font-bold text-zinc-900">
+                  {queueCount}
+                </span>
+                {queueCount > 0 ? (
+                  <span className="bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-xs font-bold animate-pulse">
+                    {lang === "ar" ? "جاري الرفع" : "Syncing..."}
+                  </span>
+                ) : (
+                  <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-xs font-bold">
+                    {lang === "ar" ? "مكتمل" : "Synced"}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={handleSyncClick}
+            disabled={syncing}
+            className={`w-full py-5 rounded-2xl font-bold text-lg text-white transition-all flex items-center justify-center gap-3 shadow-lg scale-[1.02] ${syncing ? "bg-zinc-400 cursor-not-allowed" : "bg-zinc-900 hover:bg-zinc-800 active:scale-95"}`}
+          >
+            {syncing ? (
+              <span>{lang === "ar" ? "جاري المزامنة..." : "Syncing..."}</span>
+            ) : (
+              <span>
+                {lang === "ar"
+                  ? "مزامنة البيانات الآن ↻"
+                  : "Sync Data Now ↻"}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );
 };
+
 
 const normalizePhone = (p: any) => {
   if (!p) return "";
@@ -5921,6 +6030,7 @@ export default function App() {
                         t={t}
                         settings={settings}
                         currentUserEmail={currentUser?.email}
+                        onSyncTrigger={refreshAllData}
                       />
                     ) : adminSubView === "customers" ? (
                       <div className="space-y-8">
