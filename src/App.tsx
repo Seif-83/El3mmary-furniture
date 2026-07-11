@@ -2809,6 +2809,27 @@ export default function App() {
             return true;
           }
         });
+        const filteredInspData = (inspData || []).filter((r: any) => {
+          try {
+            return !isTestCustomer(mapInspectionFromDB(r));
+          } catch {
+            return true;
+          }
+        });
+        const filteredContrData = (contrData || []).filter((r: any) => {
+          try {
+            return !isTestCustomer(mapInspectionFromDB(r));
+          } catch {
+            return true;
+          }
+        });
+        const filteredNonContrData = (nonContrData || []).filter((r: any) => {
+          try {
+            return !isTestCustomer(mapInspectionFromDB(r));
+          } catch {
+            return true;
+          }
+        });
         const updatePromises: Promise<boolean>[] = [];
         if (filteredCatData)
           filteredCatData.forEach((r: any) =>
@@ -2818,18 +2839,18 @@ export default function App() {
           filteredCustData.forEach((r: any) =>
             updatePromises.push(SyncManager.resolveConflict("customers", r)),
           );
-        if (inspData)
-          inspData.forEach((r: any) =>
+        if (filteredInspData)
+          filteredInspData.forEach((r: any) =>
             updatePromises.push(SyncManager.resolveConflict("inspections", r)),
           );
-        if (contrData)
-          contrData.forEach((r: any) =>
+        if (filteredContrData)
+          filteredContrData.forEach((r: any) =>
             updatePromises.push(
               SyncManager.resolveConflict("contracted_customers", r),
             ),
           );
-        if (nonContrData)
-          nonContrData.forEach((r: any) =>
+        if (filteredNonContrData)
+          filteredNonContrData.forEach((r: any) =>
             updatePromises.push(
               SyncManager.resolveConflict("non_contracted_customers", r),
             ),
