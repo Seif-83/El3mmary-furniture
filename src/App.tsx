@@ -105,6 +105,7 @@ interface FurniturePiece {
   quantity: number;
   details?: string;
   room_type?: string;
+  room_instance_id?: string;
   aro_veneer_addon?: boolean;
   aro_surcharge?: number;
 }
@@ -155,6 +156,7 @@ type RoomDraft = {
   aro_veneer: boolean;
   aro_veneer_price?: number;
   items: RoomDraftItem[];
+  customLabel?: string | null;
 };
 
 const ROOM_TYPES = [
@@ -2036,6 +2038,10 @@ export default function App() {
   const [customPieceName, setCustomPieceName] = useState("");
   const [customPieceQty, setCustomPieceQty] = useState(1);
   const [customPiecePrice, setCustomPiecePrice] = useState("");
+  const [customPieceRoomLabel, setCustomPieceRoomLabel] = useState("");
+  const [customPieceRoomInstanceId, setCustomPieceRoomInstanceId] = useState<
+    string | undefined
+  >(undefined);
   const [recentlyClickedItem, setRecentlyClickedItem] = useState<string | null>(
     null,
   );
@@ -2185,6 +2191,22 @@ export default function App() {
     return normalized;
   };
 
+  const getCustomRoomLabel = (roomInstanceId?: string) => {
+    if (!roomInstanceId) return null;
+    const match = String(roomInstanceId).match(/:custom:(.+)$/);
+    return match ? decodeURIComponent(match[1]).replace(/_/g, " ") : null;
+  };
+
+  const getRoomDisplayName = (roomType: string, roomIndex?: number) => {
+    const baseLabel = getRoomLabel(roomType);
+    if (typeof roomIndex === "number") {
+      return lang === "ar"
+        ? `${baseLabel} ${roomIndex + 1}`
+        : `${baseLabel} ${roomIndex + 1}`;
+    }
+    return baseLabel;
+  };
+
   const buildQuoteDraftItem = (p: any): RoomDraftItem => ({
     item_name: p.name || p.item_name || "",
     custom_item: p.custom_item || false,
@@ -2207,27 +2229,58 @@ export default function App() {
       selectedRecord?.room_aro_veneer_price ||
         selectedRecord?.roomAroVeneerPrice,
     );
-    const roomKeys = Array.from(
-      new Set([
-        ...pieces.map((p) => getRoomTypeKey(p.room_type)),
-        ...(Array.isArray(roomTypes)
-          ? roomTypes.filter(Boolean).map(getRoomTypeKey)
-          : []),
-        ...Object.keys(roomAroVeneerSource).map(getRoomTypeKey),
-        ...Object.keys(roomAroVeneerPriceSource).map(getRoomTypeKey),
-      ]),
-    );
+    const roomDrafts = new Map<string, RoomDraft>();
 
-    return roomKeys.map((room_type) => ({
+    const createRoomDraft = (
+      id: string,
+      room_type: string,
+      customLabel: string | null = null,
+    ): RoomDraft => ({
+      id,
       room_type,
       aro_veneer:
         getSelectedRecordRoomAroVeneerEnabled(room_type) ||
         getSelectedRecordRoomAroVeneerPrice(room_type) > 0,
       aro_veneer_price: getSelectedRecordRoomAroVeneerPrice(room_type),
-      items: pieces
-        .filter((p) => getRoomTypeKey(p.room_type) === room_type)
-        .map(buildQuoteDraftItem),
-    }));
+      items: [],
+      customLabel,
+    });
+
+    const addRoomDraft = (
+      id: string,
+      room_type: string,
+      customLabel: string | null = null,
+    ) => {
+      if (!roomDrafts.has(id)) {
+        roomDrafts.set(id, createRoomDraft(id, room_type, customLabel));
+      }
+      return roomDrafts.get(id)!;
+    };
+
+    const fallbackRoomTypes = Array.isArray(roomTypes) && roomTypes.length > 0
+      ? roomTypes
+      : [];
+
+    fallbackRoomTypes.forEach((room_type, index) => {
+      addRoomDraft(`${getRoomTypeKey(room_type)}:${index + 1}`, getRoomTypeKey(room_type));
+    });
+
+    Object.keys(roomAroVeneerSource).forEach((room_type) => {
+      addRoomDraft(`${getRoomTypeKey(room_type)}:1`, getRoomTypeKey(room_type));
+    });
+    Object.keys(roomAroVeneerPriceSource).forEach((room_type) => {
+      addRoomDraft(`${getRoomTypeKey(room_type)}:1`, getRoomTypeKey(room_type));
+    });
+
+    pieces.forEach((piece, index) => {
+      const roomTypeKey = getRoomTypeKey(piece.room_type);
+      const instanceId = piece.room_instance_id || `${roomTypeKey}:${index + 1}`;
+      const customLabel = getCustomRoomLabel(instanceId);
+      const roomDraft = addRoomDraft(instanceId, roomTypeKey, customLabel);
+      roomDraft.items.push(buildQuoteDraftItem(piece));
+    });
+
+    return Array.from(roomDrafts.values());
   };
 
   useEffect(() => {
@@ -2254,11 +2307,13 @@ export default function App() {
             (_, idx) => `room_${idx + 1}`,
           );
 
-    const defaultRooms = defaultRoomTypes.map((room_type: string) => ({
+    const defaultRooms = defaultRoomTypes.map((room_type: string, index: number) => ({
+      id: `${getRoomTypeKey(room_type)}:${index + 1}`,
       room_type,
       aro_veneer: false,
       aro_veneer_price: 0,
       items: [] as RoomDraftItem[],
+      customLabel: null,
     }));
 
     setQuoteDrafts(defaultRooms);
@@ -2273,6 +2328,32 @@ export default function App() {
       prev.map((room, index) =>
         index === roomIndex ? { ...room, [field]: value } : room,
       ),
+    );
+  };
+
+  const setRoomLabel = (roomIndex: number, label: string) => {
+    setQuoteDrafts((prev) =>
+      prev.map((room, index) => {
+        if (index !== roomIndex) return room;
+        const trimmed = label.trim();
+        const typeKey = getRoomTypeKey(room.room_type);
+        if (!trimmed) {
+          const defaultId = room.id || `${typeKey}:${roomIndex + 1}`;
+          return {
+            ...room,
+            id: defaultId,
+            customLabel: null,
+          };
+        }
+        const customId = `${typeKey}:custom:${encodeURIComponent(
+          trimmed.replace(/\s+/g, "_"),
+        )}`;
+        return {
+          ...room,
+          id: customId,
+          customLabel: trimmed,
+        };
+      }),
     );
   };
 
@@ -2372,6 +2453,7 @@ export default function App() {
           price: it.price,
           details: it.dimensions || it.notes || "",
           room_type: r.room_type,
+          room_instance_id: r.id,
           aro_veneer_addon: it.aro_veneer_addon,
           aro_surcharge: it.aro_surcharge,
         })),
@@ -3956,30 +4038,65 @@ export default function App() {
     return pieces.reduce((sum, p) => sum + pieceTotal(p), 0);
   };
 
-  const addPiece = (name: string, roomType?: string) => {
-    const defaultRoom =
-      roomType || inspectionFormData.room_types?.[0] || "other";
-    const pieces = [...(inspectionFormData.pieces || [])];
-    const existingIndex = pieces.findIndex(
-      (p) => p.name === name && (p.room_type || "other") === defaultRoom,
-    );
+  const getRoomInstanceKey = (roomType: string, roomIndex: number) =>
+    `${roomType}:${roomIndex + 1}`;
 
-    if (existingIndex >= 0) {
-      pieces[existingIndex].quantity =
-        (pieces[existingIndex].quantity || 1) + 1;
-    } else {
-      pieces.push({
-        name,
-        price: 0,
-        quantity: 1,
-        room_type: defaultRoom,
-        aro_veneer_addon: false,
-        aro_surcharge: 0,
-      });
+  const pieceMatchesRoomInstance = (
+    piece: FurniturePiece,
+    roomType: string,
+    roomInstanceId: string,
+    roomIndex: number,
+  ) => {
+    if (piece.room_instance_id) {
+      return piece.room_instance_id === roomInstanceId;
     }
+    return (piece.room_type || "other") === roomType && roomIndex === 0;
+  };
 
-    const totalAmount = computeInspectionTotalAmount(pieces);
-    setInspectionFormData({ ...inspectionFormData, pieces, totalAmount });
+  const addPiece = (
+    name: string,
+    roomType?: string,
+    roomInstanceId?: string,
+  ) => {
+    const resolvedRoomType =
+      roomType || inspectionFormData.room_types?.[0] || "other";
+    const resolvedInstanceId =
+      roomInstanceId || getRoomInstanceKey(resolvedRoomType, 0);
+
+    setInspectionFormData((prev) => {
+      const pieces = [...(prev.pieces || [])];
+      const existingIndex = pieces.findIndex(
+        (p) =>
+          p.name === name &&
+          pieceMatchesRoomInstance(
+            p,
+            resolvedRoomType,
+            resolvedInstanceId,
+            0,
+          ),
+      );
+
+      if (existingIndex >= 0) {
+        pieces[existingIndex].quantity =
+          (pieces[existingIndex].quantity || 1) + 1;
+      } else {
+        pieces.push({
+          name,
+          price: 0,
+          quantity: 1,
+          room_type: resolvedRoomType,
+          room_instance_id: resolvedInstanceId,
+          aro_veneer_addon: false,
+          aro_surcharge: 0,
+        });
+      }
+
+      return {
+        ...prev,
+        pieces,
+        totalAmount: computeInspectionTotalAmount(pieces),
+      };
+    });
   };
 
   const getRoomTypeCount = (roomKey: string) =>
@@ -3988,85 +4105,109 @@ export default function App() {
 
   const syncRoomCount = (roomTypes: string[]) => Math.max(0, roomTypes.length);
 
-  const buildRoomTypeState = (nextRoomTypes: string[]) => {
-    const totalAmount = computeInspectionTotalAmount(
-      inspectionFormData.pieces || [],
-    );
-    return {
-      room_types: nextRoomTypes,
-      rooms: syncRoomCount(nextRoomTypes),
-      totalAmount,
-    };
-  };
+  const buildRoomTypeState = (
+    nextRoomTypes: string[],
+    pieces: FurniturePiece[] = inspectionFormData.pieces || [],
+  ) => ({
+    room_types: nextRoomTypes,
+    rooms: syncRoomCount(nextRoomTypes),
+    totalAmount: computeInspectionTotalAmount(pieces),
+  });
 
   const toggleRoomType = (roomKey: string) => {
-    const roomTypes = inspectionFormData.room_types || [];
-    const selectedIndex = roomTypes.indexOf(roomKey);
-    const nextRoomTypes =
-      selectedIndex >= 0
-        ? roomTypes.filter((_, index) => index !== selectedIndex)
-        : [...roomTypes, roomKey];
-    setInspectionFormData({
-      ...inspectionFormData,
-      ...buildRoomTypeState(nextRoomTypes),
+    setInspectionFormData((prev) => {
+      const roomTypes = prev.room_types || [];
+      const selectedIndex = roomTypes.indexOf(roomKey);
+      const nextRoomTypes =
+        selectedIndex >= 0
+          ? roomTypes.filter((_, index) => index !== selectedIndex)
+          : [...roomTypes, roomKey];
+      return {
+        ...prev,
+        ...buildRoomTypeState(nextRoomTypes, prev.pieces || []),
+      };
     });
   };
 
   const addRoomTypeInstance = (roomKey: string) => {
-    const roomTypes = inspectionFormData.room_types || [];
-    const nextRoomTypes = [...roomTypes, roomKey];
-    setInspectionFormData({
-      ...inspectionFormData,
-      ...buildRoomTypeState(nextRoomTypes),
+    setInspectionFormData((prev) => {
+      const roomTypes = prev.room_types || [];
+      const nextRoomTypes = [...roomTypes, roomKey];
+      return {
+        ...prev,
+        ...buildRoomTypeState(nextRoomTypes, prev.pieces || []),
+      };
     });
   };
 
-  const removeRoomTypeInstance = (roomKey: string) => {
-    const roomTypes = inspectionFormData.room_types || [];
-    const idx = roomTypes.findIndex((key) => key === roomKey);
-    if (idx < 0) return;
-    const nextRoomTypes = roomTypes.filter((_, index) => index !== idx);
-    setInspectionFormData({
-      ...inspectionFormData,
-      ...buildRoomTypeState(nextRoomTypes),
+  const removeRoomTypeInstance = (roomKey: string, roomIndex?: number) => {
+    setInspectionFormData((prev) => {
+      const roomTypes = prev.room_types || [];
+      if (!roomTypes.length) return prev;
+      const indexToRemove =
+        typeof roomIndex === "number" && roomIndex >= 0
+          ? roomIndex
+          : roomTypes.findIndex((key) => key === roomKey);
+      if (indexToRemove < 0) return prev;
+      const nextRoomTypes = roomTypes.filter(
+        (_, index) => index !== indexToRemove,
+      );
+      return {
+        ...prev,
+        ...buildRoomTypeState(nextRoomTypes, prev.pieces || []),
+      };
     });
   };
 
   const updatePiece = (index: number, field: string, value: any) => {
-    const pieces = [...(inspectionFormData.pieces || [])];
-    pieces[index] = { ...pieces[index], [field]: value };
-    const total = computeInspectionTotalAmount(pieces);
-    setInspectionFormData({
-      ...inspectionFormData,
-      pieces,
-      totalAmount: total,
+    setInspectionFormData((prev) => {
+      const pieces = [...(prev.pieces || [])];
+      pieces[index] = { ...pieces[index], [field]: value };
+      return {
+        ...prev,
+        pieces,
+        totalAmount: computeInspectionTotalAmount(pieces),
+      };
     });
   };
 
   const pieceTotal = (piece: FurniturePiece) =>
     Number(piece.price || 0) * Number(piece.quantity || 1) +
     (piece.aro_veneer_addon ? Number(piece.aro_surcharge || 0) : 0);
-  const inspectionRoomSubtotal = (roomKey: string) =>
+  const inspectionRoomSubtotal = (
+    roomType: string,
+    roomInstanceId: string,
+    roomIndex: number,
+  ) =>
     (inspectionFormData.pieces || [])
-      .filter((p) => p.room_type === roomKey)
+      .filter((p) => pieceMatchesRoomInstance(p, roomType, roomInstanceId, roomIndex))
       .reduce((sum, p) => sum + pieceTotal(p), 0);
   const availableRoomTypes = inspectionFormData.room_types?.length
     ? inspectionFormData.room_types
     : ["other"];
 
   const updatePiecePrice = (index: number, price: number) => {
-    const pieces = [...(inspectionFormData.pieces || [])];
-    pieces[index].price = price;
-    const totalAmount = computeInspectionTotalAmount(pieces);
-    setInspectionFormData({ ...inspectionFormData, pieces, totalAmount });
+    setInspectionFormData((prev) => {
+      const pieces = [...(prev.pieces || [])];
+      pieces[index].price = price;
+      return {
+        ...prev,
+        pieces,
+        totalAmount: computeInspectionTotalAmount(pieces),
+      };
+    });
   };
 
   const removePiece = (index: number) => {
-    const pieces =
-      inspectionFormData.pieces?.filter((_: any, i: number) => i !== index) ||
-      [];
-    const totalAmount = computeInspectionTotalAmount(pieces);
-    setInspectionFormData({ ...inspectionFormData, pieces, totalAmount });
+    setInspectionFormData((prev) => {
+      const pieces =
+        prev.pieces?.filter((_: any, i: number) => i !== index) || [];
+      return {
+        ...prev,
+        pieces,
+        totalAmount: computeInspectionTotalAmount(pieces),
+      };
+    });
   };
 
   const handleOpenAddModal = () => {
@@ -6934,35 +7075,49 @@ export default function App() {
 
                       {inspectionFormData.room_types?.length ? (
                         <div className="rounded-3xl border border-black/10 bg-white p-4">
-                          <div className="text-sm font-semibold mb-3">
-                            {lang === "ar"
-                              ? "القائمة الافتراضية لكل غرفة"
-                              : "Default checklist per room"}
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-3">
+                            <div className="text-sm font-semibold">
+                              {lang === "ar"
+                                ? "القائمة الافتراضية لكل غرفة"
+                                : "Default checklist per room"}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const firstRoomType = inspectionFormData.room_types?.[0];
+                                if (firstRoomType) {
+                                  addRoomTypeInstance(firstRoomType);
+                                }
+                              }}
+                              className="rounded-full bg-zinc-900 px-4 py-2 text-xs font-bold text-white hover:bg-zinc-800"
+                            >
+                              {lang === "ar" ? "إضافة غرفة جديدة" : "Add new room"}
+                            </button>
                           </div>
                           <div className="space-y-4">
-                            {inspectionFormData.room_types.map((roomKey) => {
+                            {inspectionFormData.room_types.map((roomKey, roomIndex) => {
                               const room = ROOM_TYPES.find(
                                 (r) => r.key === roomKey,
                               );
                               if (!room) return null;
                               const roomCount = getRoomTypeCount(roomKey);
+                              const roomInstanceId = getRoomInstanceKey(roomKey, roomIndex);
                               return (
                                 <div
-                                  key={roomKey}
+                                  key={`${roomKey}-${roomIndex}`}
                                   className="rounded-3xl border border-black/10 p-4 bg-[#faf7f1]"
                                 >
                                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
                                     <div>
                                       <div className="text-base font-semibold">
-                                        {room.ar}
+                                        {getRoomDisplayName(room.key, roomIndex)}
                                       </div>
                                       <div className="text-[11px] text-zinc-500">
                                         {room.en}
                                       </div>
                                       <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-zinc-600">
                                         <span>
-                                          {lang === "ar" ? "عدد" : "Count"}:{" "}
-                                          {roomCount}
+                                          {lang === "ar" ? "عدد" : "Count"}: {roomCount}
                                         </span>
                                         <button
                                           type="button"
@@ -6972,22 +7127,20 @@ export default function App() {
                                           className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] font-semibold text-zinc-700 hover:bg-zinc-100"
                                         >
                                           {lang === "ar"
-                                            ? `أضف ${room.ar} أخرى`
-                                            : `Add another ${room.en}`}
+                                            ? "إضافة نفس النوع"
+                                            : "Add same type"}
                                         </button>
-                                        {roomCount > 1 ? (
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              removeRoomTypeInstance(room.key)
-                                            }
-                                            className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] font-semibold text-zinc-700 hover:bg-zinc-100"
-                                          >
-                                            {lang === "ar"
-                                              ? "إزالة غرفة"
-                                              : "Remove room"}
-                                          </button>
-                                        ) : null}
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            removeRoomTypeInstance(room.key, roomIndex)
+                                          }
+                                          className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] font-semibold text-zinc-700 hover:bg-zinc-100"
+                                        >
+                                          {lang === "ar"
+                                            ? "إزالة غرفة"
+                                            : "Remove room"}
+                                        </button>
                                       </div>
                                     </div>
                                   </div>
@@ -7000,7 +7153,7 @@ export default function App() {
                                           key={itemName}
                                           type="button"
                                           onClick={() => {
-                                            addPiece(itemName, roomKey);
+                                            addPiece(itemName, roomKey, roomInstanceId);
                                             setRecentlyClickedItem(itemName);
                                             setTimeout(
                                               () =>
@@ -7050,15 +7203,44 @@ export default function App() {
                             className="rounded-3xl border border-black/10 px-4 py-3"
                           />
                         </div>
+                        <div className="grid gap-3 mt-3">
+                          <select
+                            value={customPieceRoomInstanceId || ""}
+                            onChange={(e) =>
+                              setCustomPieceRoomInstanceId(
+                                e.target.value || undefined,
+                              )
+                            }
+                            className="rounded-3xl border border-black/10 px-4 py-3 bg-white"
+                          >
+                            <option value="">
+                              {lang === "ar"
+                                ? "اختر غرفة موجودة (اختياري)"
+                                : "Choose existing room (optional)"}
+                            </option>
+                            {(inspectionFormData.room_types || []).map(
+                              (roomKey, roomIndex) => {
+                                const roomInstanceId = getRoomInstanceKey(
+                                  roomKey,
+                                  roomIndex,
+                                );
+                                return (
+                                  <option
+                                    key={roomInstanceId}
+                                    value={roomInstanceId}
+                                  >
+                                    {getRoomDisplayName(roomKey, roomIndex)}
+                                  </option>
+                                );
+                              },
+                            )}
+                          </select>
+                        </div>
                         <div className="grid gap-3 sm:grid-cols-[1fr_120px] mt-3">
                           <input
-                            type="number"
-                            min={0}
-                            value={customPiecePrice}
-                            onChange={(e) =>
-                              setCustomPiecePrice(e.target.value)
-                            }
-                            placeholder={lang === "ar" ? "السعر" : "Price"}
+                            value={customPieceRoomLabel}
+                            onChange={(e) => setCustomPieceRoomLabel(e.target.value)}
+                            placeholder={lang === "ar" ? "اسم الغرفة (اختياري)" : "Room name (optional)"}
                             className="rounded-3xl border border-black/10 px-4 py-3"
                           />
                           <button
@@ -7068,39 +7250,63 @@ export default function App() {
                               const name = customPieceName.trim();
                               const qty = Math.max(1, customPieceQty);
                               const price = Number(customPiecePrice) || 0;
-                              const roomType =
-                                inspectionFormData.room_types?.[0] || "other";
-                              const pieces = [
-                                ...(inspectionFormData.pieces || []),
-                              ];
-                              const existingIndex = pieces.findIndex(
-                                (p) =>
-                                  p.name === name &&
-                                  (p.room_type || "other") === roomType,
-                              );
-                              if (existingIndex >= 0) {
-                                pieces[existingIndex].quantity =
-                                  (pieces[existingIndex].quantity || 1) + qty;
-                                pieces[existingIndex].price = price;
-                              } else {
-                                pieces.push({
-                                  name,
-                                  quantity: qty,
-                                  price,
-                                  details: "",
-                                  room_type: roomType,
-                                });
-                              }
-                              const totalAmount =
-                                computeInspectionTotalAmount(pieces);
-                              setInspectionFormData({
-                                ...inspectionFormData,
-                                pieces,
-                                totalAmount,
+                              const selectedRoomInstanceId =
+                                customPieceRoomInstanceId?.trim();
+                              const roomType = selectedRoomInstanceId
+                                ? selectedRoomInstanceId.split(":")[0]
+                                : inspectionFormData.room_types?.[0] ||
+                                  "other";
+
+                              const roomInstanceId =
+                                customPieceRoomLabel && customPieceRoomLabel.trim()
+                                  ? `${getRoomTypeKey(roomType)}:custom:${encodeURIComponent(
+                                      customPieceRoomLabel
+                                        .trim()
+                                        .replace(/\s+/g, "_"),
+                                    )}`
+                                  : selectedRoomInstanceId ||
+                                    getRoomInstanceKey(roomType, 0);
+
+                              // ensure pieces is based on latest state
+                              setInspectionFormData((prev) => {
+                                const pieces = [...(prev.pieces || [])];
+                                const existingIndex = pieces.findIndex(
+                                  (p) =>
+                                    p.name === name &&
+                                    pieceMatchesRoomInstance(
+                                      p,
+                                      roomType,
+                                      roomInstanceId,
+                                      0,
+                                    ),
+                                );
+                                if (existingIndex >= 0) {
+                                  pieces[existingIndex].quantity =
+                                    (pieces[existingIndex].quantity || 1) + qty;
+                                  pieces[existingIndex].price = price;
+                                } else {
+                                  pieces.push({
+                                    name,
+                                    quantity: qty,
+                                    price,
+                                    details: "",
+                                    room_type: roomType,
+                                    room_instance_id: roomInstanceId,
+                                  });
+                                }
+                                return {
+                                  ...prev,
+                                  pieces,
+                                  totalAmount: computeInspectionTotalAmount(pieces),
+                                };
                               });
+
                               setCustomPieceName("");
                               setCustomPieceQty(1);
                               setCustomPiecePrice("");
+                              setCustomPieceRoomLabel("");
+                              setCustomPieceRoomInstanceId(undefined);
+                              setCustomPieceRoomType(undefined);
                             }}
                             className="rounded-3xl bg-zinc-900 text-white px-4 py-3 text-sm font-bold hover:bg-zinc-800 transition-all"
                           >
@@ -7111,34 +7317,66 @@ export default function App() {
 
                       {(() => {
                         const pieces = inspectionFormData.pieces || [];
-                        const roomKeys = Array.from(
-                          new Set([
-                            ...(inspectionFormData.room_types || ["other"]),
-                            ...pieces.map((p) => p.room_type || "other"),
-                          ]),
+
+                        // base instances from selected room types
+                        const baseInstances = (inspectionFormData.room_types || ["other"]).map(
+                          (roomKey, roomIndex) => {
+                            const roomInstanceId = getRoomInstanceKey(roomKey, roomIndex);
+                            const room = ROOM_TYPES.find((r) => r.key === roomKey);
+                            const items = pieces
+                              .map((p, idx) => ({ ...p, idx }))
+                              .filter((p) =>
+                                pieceMatchesRoomInstance(
+                                  p,
+                                  roomKey,
+                                  roomInstanceId,
+                                  roomIndex,
+                                ),
+                              );
+                            return { roomKey, roomInstanceId, room, items, customLabel: null as string | null };
+                          },
                         );
+
+                        // include any custom room_instance_id that are not part of baseInstances
+                        const existingIds = new Set(baseInstances.map((r) => r.roomInstanceId));
+                        const extraMap = new Map<string, { roomKey: string; roomInstanceId: string; room: any; items: any[]; customLabel: string | null }>();
+                        pieces.forEach((p, idx) => {
+                          if (p.room_instance_id && !existingIds.has(p.room_instance_id)) {
+                            if (!extraMap.has(p.room_instance_id)) {
+                              const roomKey = getRoomTypeKey(p.room_type);
+                              const room = ROOM_TYPES.find((r) => r.key === roomKey);
+                              // decode custom label encoded as key:custom:label
+                              const m = String(p.room_instance_id).match(/:custom:(.+)$/);
+                              const customLabel = m ? decodeURIComponent(m[1]).replace(/_/g, " ") : null;
+                              extraMap.set(p.room_instance_id, { roomKey, roomInstanceId: p.room_instance_id, room, items: [], customLabel });
+                            }
+                            const entry = extraMap.get(p.room_instance_id)!;
+                            entry.items.push({ ...p, idx });
+                          }
+                        });
+
+                        const roomInstances = [...baseInstances, ...Array.from(extraMap.values())];
+
                         return (
                           <div className="space-y-4">
-                            {roomKeys.map((roomKey) => {
-                              const room = ROOM_TYPES.find(
-                                (r) => r.key === roomKey,
-                              );
-                              const items = pieces
-                                .map((p, idx) => ({ ...p, idx }))
-                                .filter(
-                                  (p) => (p.room_type || "other") === roomKey,
-                                );
+                            {roomInstances.map(({ roomKey, roomInstanceId, room, items, customLabel }, roomIdx) => {
                               if (!items.length) return null;
-                              const subtotal = inspectionRoomSubtotal(roomKey);
+                              const subtotal = inspectionRoomSubtotal(
+                                roomKey,
+                                roomInstanceId,
+                                roomIdx,
+                              );
                               return (
                                 <div
-                                  key={roomKey}
+                                  key={roomInstanceId}
                                   className="rounded-3xl border border-black/10 bg-white p-4"
                                 >
                                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
                                     <div>
                                       <div className="text-base font-semibold">
-                                        {room?.ar || roomKey}
+                                        {customLabel
+                                          ? customLabel
+                                          : `${getRoomDisplayName(roomKey, roomIdx)}`}
                                       </div>
                                       <div className="text-[11px] text-zinc-500">
                                         {lang === "ar"
@@ -7294,18 +7532,16 @@ export default function App() {
                                             <button
                                               type="button"
                                               onClick={() => {
-                                                const pieces =
-                                                  inspectionFormData.pieces?.filter(
-                                                    (_, i) => i !== p.idx,
-                                                  ) || [];
-                                                const totalAmount =
-                                                  computeInspectionTotalAmount(
+                                                setInspectionFormData((prev) => {
+                                                  const pieces =
+                                                    prev.pieces?.filter(
+                                                      (_, i) => i !== p.idx,
+                                                    ) || [];
+                                                  return {
+                                                    ...prev,
                                                     pieces,
-                                                  );
-                                                setInspectionFormData({
-                                                  ...inspectionFormData,
-                                                  pieces,
-                                                  totalAmount,
+                                                    totalAmount: computeInspectionTotalAmount(pieces),
+                                                  };
                                                 });
                                                 setExpandedPieceDetails(
                                                   (prev) =>
@@ -7676,7 +7912,9 @@ export default function App() {
                               key={`${room.room_type}-${roomIndex}`}
                               className="flex items-center justify-between gap-2"
                             >
-                              <span>{getRoomLabel(room.room_type)}</span>
+                              <span>
+                                {room.customLabel ?? getRoomDisplayName(room.room_type, roomIndex)}
+                              </span>
                               <span className="font-semibold">
                                 {quoteRoomSubtotal(room).toLocaleString()} جنيه
                               </span>
@@ -7685,6 +7923,20 @@ export default function App() {
                         )}
                       </div>
                     </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3 rounded-3xl border border-black/10 bg-[#f8f4ec] p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm text-zinc-600">
+                      {lang === "ar"
+                        ? "اضغط حفظ لحفظ أي تغييرات في العرض"
+                        : "Press Save to persist any changes in the quote."}
+                    </p>
+                    <button
+                      onClick={handleSaveQuote}
+                      className="rounded-full bg-[#18181b] text-white px-5 py-3 text-sm shadow-xl hover:bg-zinc-800 transition"
+                    >
+                      {lang === "ar" ? "حفظ العرض" : "Save quote"}
+                    </button>
                   </div>
 
                   <div className="rounded-3xl border border-black/10 bg-white p-4 shadow-sm">
@@ -7703,10 +7955,20 @@ export default function App() {
                             className="rounded-3xl border border-black/10 bg-[#faf7f1] p-4"
                           >
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
-                              <div>
-                                <div className="font-semibold text-lg">
-                                  {getRoomLabel(room.room_type)}
-                                </div>
+                              <div className="space-y-2">
+                                <input
+                                  value={
+                                    room.customLabel ??
+                                    getRoomDisplayName(room.room_type, roomIndex)
+                                  }
+                                  onChange={(e) =>
+                                    setRoomLabel(roomIndex, e.target.value)
+                                  }
+                                  placeholder={
+                                    lang === "ar" ? "اسم الغرفة" : "Room name"
+                                  }
+                                  className="w-full rounded-3xl border border-black/10 bg-white px-4 py-3 text-lg font-semibold text-zinc-900 outline-none"
+                                />
                                 <div className="text-xs text-zinc-500">
                                   {room.items.length}{" "}
                                   {lang === "ar" ? "عنصر" : "items"}
@@ -7740,72 +8002,141 @@ export default function App() {
                                     key={`${roomIndex}-${itemIndex}`}
                                     className="rounded-3xl border border-black/10 bg-white p-4"
                                   >
-                                    <div
-                                      className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 cursor-pointer"
-                                      onClick={() =>
-                                        setExpandedPieceDetails((prev) =>
-                                          prev.includes(itemIndex)
-                                            ? prev.filter(
-                                                (i) => i !== itemIndex,
+                                    <div className="grid gap-3">
+                                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                                        <div className="space-y-2 w-full">
+                                          <input
+                                            type="text"
+                                            value={item.item_name}
+                                            onChange={(e) =>
+                                              setRoomItemField(
+                                                roomIndex,
+                                                itemIndex,
+                                                "item_name",
+                                                e.target.value,
                                               )
-                                            : [...prev, itemIndex],
-                                        )
-                                      }
-                                    >
-                                      <div className="space-y-1">
-                                        <div
-                                          className={`font-semibold ${expandedPieceDetails.includes(itemIndex) ? "text-accent-tan ring-2 ring-accent-tan/30" : "text-zinc-900"}`}
-                                        >
-                                          {item.item_name ||
-                                            (lang === "ar"
-                                              ? "عنصر مخصص"
-                                              : "Custom item")}
+                                            }
+                                            placeholder={
+                                              lang === "ar"
+                                                ? "اسم العنصر"
+                                                : "Item name"
+                                            }
+                                            className="w-full rounded-3xl border border-black/10 px-4 py-3 text-sm text-zinc-800"
+                                          />
+                                          <div className="text-xs text-zinc-500">
+                                            {lang === "ar" ? "الإجمالي" : "Total"}: {quoteItemTotal(item).toLocaleString()} جنيه
+                                          </div>
                                         </div>
-                                        <div className="text-xs text-zinc-500">
-                                          {lang === "ar" ? "الكمية" : "Qty"}:{" "}
-                                          {item.quantity} ·{" "}
-                                          {lang === "ar" ? "السعر" : "Price"}:{" "}
-                                          {item.price.toLocaleString()} جنيه
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            removeRoomItem(roomIndex, itemIndex)
+                                          }
+                                          className="inline-flex h-12 w-12 items-center justify-center rounded-3xl border border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
+                                        >
+                                          <Trash2 className="w-5 h-5" />
+                                        </button>
+                                      </div>
+                                      <div className="grid gap-3 sm:grid-cols-[1fr_1fr]">
+                                        <div className="rounded-3xl border border-black/10 bg-white px-4 py-3 text-sm font-bold text-zinc-800">
+                                          <label className="text-[10px] text-zinc-400 block mb-1">
+                                            {lang === "ar" ? "الكمية" : "Qty"}
+                                          </label>
+                                          <input
+                                            type="number"
+                                            min={1}
+                                            value={item.quantity}
+                                            onChange={(e) =>
+                                              setRoomItemField(
+                                                roomIndex,
+                                                itemIndex,
+                                                "quantity",
+                                                Number(e.target.value) || 1,
+                                              )
+                                            }
+                                            className="w-full bg-transparent outline-none text-right"
+                                          />
+                                        </div>
+                                        <div className="rounded-3xl border border-black/10 bg-white px-4 py-3 text-sm font-bold text-zinc-800">
+                                          <label className="text-[10px] text-zinc-400 block mb-1">
+                                            {lang === "ar" ? "السعر" : "Price"}
+                                          </label>
+                                          <input
+                                            type="number"
+                                            min={0}
+                                            value={item.price}
+                                            onChange={(e) =>
+                                              setRoomItemField(
+                                                roomIndex,
+                                                itemIndex,
+                                                "price",
+                                                Number(e.target.value) || 0,
+                                              )
+                                            }
+                                            className="w-full bg-transparent outline-none text-right"
+                                          />
                                         </div>
                                       </div>
-                                      <div className="text-sm font-bold text-zinc-900">
-                                        {quoteItemTotal(item).toLocaleString()}{" "}
-                                        جنيه
+                                      <textarea
+                                        value={item.notes}
+                                        onChange={(e) =>
+                                          setRoomItemField(
+                                            roomIndex,
+                                            itemIndex,
+                                            "notes",
+                                            e.target.value,
+                                          )
+                                        }
+                                        placeholder={
+                                          lang === "ar"
+                                            ? "ملاحظات (اختياري)"
+                                            : "Notes (optional)"
+                                        }
+                                        rows={2}
+                                        className="w-full rounded-3xl border border-black/10 bg-white px-4 py-3 text-sm text-zinc-800 outline-none"
+                                      />
+                                      <div className="flex flex-wrap gap-2 items-center">
+                                        <label className="inline-flex items-center gap-2 rounded-3xl border border-black/10 bg-white px-4 py-3 text-sm text-zinc-700">
+                                          <input
+                                            type="checkbox"
+                                            checked={item.aro_veneer_addon}
+                                            onChange={(e) =>
+                                              setRoomItemField(
+                                                roomIndex,
+                                                itemIndex,
+                                                "aro_veneer_addon",
+                                                e.target.checked,
+                                              )
+                                            }
+                                            className="accent-[#d4a373]"
+                                          />
+                                          {lang === "ar" ? "قشرة أرو" : "Aro veneer"}
+                                        </label>
+                                        {item.aro_veneer_addon && (
+                                          <div className="rounded-3xl border border-black/10 bg-white px-4 py-3 text-sm font-bold text-zinc-800">
+                                            <label className="text-[10px] text-zinc-400 block mb-1">
+                                              {lang === "ar"
+                                                ? "سعر القشرة"
+                                                : "Veneer surcharge"}
+                                            </label>
+                                            <input
+                                              type="number"
+                                              min={0}
+                                              value={item.aro_surcharge}
+                                              onChange={(e) =>
+                                                setRoomItemField(
+                                                  roomIndex,
+                                                  itemIndex,
+                                                  "aro_surcharge",
+                                                  Number(e.target.value) || 0,
+                                                )
+                                              }
+                                              className="w-full bg-transparent outline-none text-right"
+                                            />
+                                          </div>
+                                        )}
                                       </div>
                                     </div>
-                                    {(item.dimensions ||
-                                      item.notes ||
-                                      item.aro_veneer_addon) && (
-                                      <div className="mt-4 grid gap-2 text-xs text-zinc-500">
-                                        {item.dimensions && (
-                                          <div>
-                                            {lang === "ar"
-                                              ? "الأبعاد:"
-                                              : "Dimensions:"}{" "}
-                                            {item.dimensions}
-                                          </div>
-                                        )}
-                                        {item.notes && (
-                                          <div>
-                                            {lang === "ar"
-                                              ? "ملاحظات:"
-                                              : "Notes:"}{" "}
-                                            {item.notes}
-                                          </div>
-                                        )}
-                                        {item.aro_veneer_addon &&
-                                          item.aro_surcharge > 0 && (
-                                            <div className="rounded-full bg-[#f5f0e8] px-3 py-2 inline-flex items-center gap-2 text-zinc-700 font-semibold">
-                                              {lang === "ar"
-                                                ? "قشرة أرو"
-                                                : "Aro veneer"}{" "}
-                                              +
-                                              {item.aro_surcharge.toLocaleString()}{" "}
-                                              جنيه
-                                            </div>
-                                          )}
-                                      </div>
-                                    )}
                                   </div>
                                 ))
                               )}
