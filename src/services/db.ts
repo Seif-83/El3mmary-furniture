@@ -154,7 +154,7 @@ export interface LocalAppSetting {
 
 export interface SyncQueueItem {
   id?: number;
-  operation: "INSERT" | "UPDATE" | "DELETE";
+  operation: "INSERT" | "UPDATE" | "DELETE" | "DELETE_BY_PHONE";
   tableName: string;
   recordId: string;
   payload: any;

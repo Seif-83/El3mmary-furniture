@@ -2069,7 +2069,7 @@ export default function App() {
       source: string,
       status: CustomerStatus,
     ) => {
-      const k = (key || "").toString().trim();
+      const k = normalizePhone(key);
       if (!k) return;
       const existing = map.get(k);
       const obj: UnifiedCustomer = {
@@ -3058,6 +3058,64 @@ export default function App() {
     }
   };
 
+  const deleteAllRecordsByPhone = async (phone: string) => {
+    const normalizedPhone = normalizePhone(phone);
+    if (!normalizedPhone) return;
+
+    await SyncManager.queueDeleteByPhone("customers", normalizedPhone);
+    await SyncManager.queueDeleteByPhone("inspections", normalizedPhone);
+    await SyncManager.queueDeleteByPhone("contracted_customers", normalizedPhone);
+    await SyncManager.queueDeleteByPhone("non_contracted_customers", normalizedPhone);
+
+    const allCustomers = await CustomerService.getAll();
+    const inspections = await OrderService.getInspections();
+    const contracted = await OrderService.getContracted();
+    const nonContracted = await OrderService.getNonContracted();
+
+    for (const customer of allCustomers) {
+      if (normalizePhone(customer.phone) === normalizedPhone) {
+        await deleteRecordById("customers", customer.id);
+      }
+    }
+
+    for (const inspection of inspections) {
+      if (normalizePhone(inspection.phone) === normalizedPhone) {
+        await deleteRecordById("inspections", inspection.id);
+      }
+    }
+
+    for (const record of contracted) {
+      if (normalizePhone(record.phone) === normalizedPhone) {
+        await deleteRecordById("contracted_customers", record.id);
+      }
+    }
+
+    for (const record of nonContracted) {
+      if (normalizePhone(record.phone) === normalizedPhone) {
+        await deleteRecordById("non_contracted_customers", record.id);
+      }
+    }
+  };
+
+  const deleteCustomerAndRelatedRecords = async (
+    customerId: string,
+    fallbackPhone?: string,
+  ) => {
+    const allCustomers = await CustomerService.getAll();
+    const targetCustomer = allCustomers.find((c) => c.id === customerId);
+    const targetPhone = normalizePhone(targetCustomer?.phone || fallbackPhone || "");
+
+    if (targetPhone) {
+      await deleteAllRecordsByPhone(targetPhone);
+      return;
+    }
+
+    await deleteRecordById("customers", customerId);
+    await deleteRecordById("inspections", customerId);
+    await deleteRecordById("contracted_customers", customerId);
+    await deleteRecordById("non_contracted_customers", customerId);
+  };
+
   const sendWhatsAppMessage = (phone: string, message: string) => {
     const cleanPhone = phone.replace(/\D/g, "");
     const fullPhone = cleanPhone.startsWith("2")
@@ -3394,19 +3452,23 @@ export default function App() {
     setIsLoading(false);
   };
 
-  const handleDeleteCustomer = async (id: string, confirmed?: boolean) => {
+  const handleDeleteCustomer = async (
+    id: string,
+    phone?: string,
+    confirmed?: boolean,
+  ) => {
     if (!ensureAdminAccess()) return;
     if (!confirmed) {
       triggerConfirm(
         lang === "ar" ? "حذف العميل" : "Remove Customer",
         lang === "ar" ? "هل أنت متأكد؟" : "Are you sure?",
-        () => handleDeleteCustomer(id, true),
+        () => handleDeleteCustomer(id, phone, true),
       );
       return;
     }
     try {
       const rec = customerRecords.find((c) => c.id === id);
-      await deleteRecordById("customers", id);
+      await deleteCustomerAndRelatedRecords(id, phone);
       await refreshAllData();
       void playSound("delete");
       toast.success(lang === "ar" ? "تم حذف العميل" : "Customer removed");
@@ -5222,8 +5284,8 @@ export default function App() {
                               </div>
                               <div className="text-2xl font-semibold">
                                 {adminSubView === "customers"
-                                  ? unifiedCustomers.filter((r) =>
-                                      matchesFilters(r),
+                                  ? unifiedCustomers.filter(
+                                      (r) => r.status === "customers" && matchesFilters(r),
                                     ).length
                                   : adminSubView === "inspections"
                                     ? inspections.filter((r) =>
@@ -6232,30 +6294,10 @@ export default function App() {
                                               </button>
                                               <button
                                                 onClick={() => {
+                                                  const phone = r.phone || r.raw?.phone || "";
                                                   const id = r.id || r.raw?.id;
-                                                  if (!id) return;
-                                                  if (
-                                                    r.status === "customers" ||
-                                                    !r.status
-                                                  )
-                                                    handleDeleteCustomer(id);
-                                                  else if (
-                                                    r.status === "inspections"
-                                                  )
-                                                    void handleDeleteInspection(
-                                                      id,
-                                                    );
-                                                  else if (
-                                                    r.status === "contracted"
-                                                  )
-                                                    handleDeleteContracted(id);
-                                                  else if (
-                                                    r.status ===
-                                                    "not-contracted"
-                                                  )
-                                                    handleDeleteNonContracted(
-                                                      id,
-                                                    );
+                                                  if (!phone && !id) return;
+                                                  handleDeleteCustomer(id || "", phone);
                                                 }}
                                                 className="btn-3d btn-3d-danger flex items-center gap-2 bg-white-50 text-white-500 border border-white-100 px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-white-500 hover:text-white active:scale-95 transition-all duration-200 hover:shadow-lg hover:shadow-white-100"
                                               >
@@ -6371,16 +6413,10 @@ export default function App() {
                                     </button>
                                     <button
                                       onClick={() => {
-                                        const id = r.raw?.id;
-                                        if (!id) return;
-                                        if (r.status === "customers")
-                                          handleDeleteCustomer(id);
-                                        else if (r.status === "inspections")
-                                          void handleDeleteInspection(id);
-                                        else if (r.status === "contracted")
-                                          handleDeleteContracted(id);
-                                        else if (r.status === "not-contracted")
-                                          handleDeleteNonContracted(id);
+                                        const phone = r.phone || r.raw?.phone || "";
+                                        const id = r.raw?.id || "";
+                                        if (!phone && !id) return;
+                                        handleDeleteCustomer(id, phone);
                                       }}
                                       className="flex items-center justify-center gap-2 bg-red-50 text-red-500 border border-red-100 px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-red-500 hover:text-white active:scale-95 transition-all shadow-md"
                                     >

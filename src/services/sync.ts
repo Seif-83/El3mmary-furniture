@@ -1,6 +1,28 @@
 import { db, SyncQueueItem } from "./db";
 import { supabase, SUPABASE_CONFIGURED } from "../lib/supabase";
 
+const normalizePhone = (value: any): string => {
+  if (!value) return "";
+  const digits = String(value)
+    .replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d).toString())
+    .replace(/[۰-۹]/g, (d) => "۰۱۲۳۴۵۶۷۸۹".indexOf(d).toString())
+    .replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("2")) return digits.slice(1);
+  return digits;
+};
+
+const buildPhoneVariants = (phone: string) => {
+  const normalized = normalizePhone(phone);
+  const variants = new Set<string>();
+  if (!normalized) return [];
+  variants.add(normalized);
+  if (normalized.length === 10) variants.add(`2${normalized}`);
+  if (normalized.length === 11 && normalized.startsWith("2")) {
+    variants.add(normalized.slice(1));
+  }
+  return Array.from(variants);
+};
+
 // Tables that represent real customer-facing entities. A "test" record
 // landing in any of these should never surface in the UI - and instead of
 // just hiding it locally, we actively remove it from Supabase too, since
@@ -74,7 +96,7 @@ export class SyncManager {
   }
 
   static async queueOperation(
-    operation: "INSERT" | "UPDATE" | "DELETE",
+    operation: "INSERT" | "UPDATE" | "DELETE" | "DELETE_BY_PHONE",
     tableName: string,
     recordId: string,
     payload: any
@@ -180,13 +202,78 @@ export class SyncManager {
         .where("tableName").equals(tableName)
         .toArray();
       for (const tomb of tableTombstones) {
-        if (!remoteIds.has(tomb.recordId)) {
+        if (tomb.recordId.startsWith("phone:")) {
+          const phone = tomb.recordId.replace(/^phone:/, "");
+          const anyMatch = (data as any[]).some(
+            (remoteRecord: any) => normalizePhone(remoteRecord.phone) === phone,
+          );
+          if (!anyMatch) {
+            await db.tombstones.delete(tomb.id);
+          }
+        } else if (!remoteIds.has(tomb.recordId)) {
           await db.tombstones.delete(tomb.id);
         }
       }
     }
   }
+  static async deleteLocalRecordsByPhone(tableName: string, phone: string) {
+    const normalizedPhone = normalizePhone(phone);
+    if (!normalizedPhone) return;
 
+    const localRecords = await db.table(tableName).toArray();
+    for (const record of localRecords) {
+      const recordPhone = normalizePhone(record?.phone);
+      if (!recordPhone || recordPhone !== normalizedPhone) continue;
+
+      const pk = String(record?.id ?? record?.key ?? "").trim();
+      if (!pk) continue;
+
+      await this.addTombstone(tableName, pk);
+      await db.table(tableName).delete(pk);
+      await this.queueOperation("DELETE", tableName, pk, null);
+    }
+  }
+
+  static async queueDeleteByPhone(tableName: string, phone: string) {
+    const normalizedPhone = normalizePhone(phone);
+    if (!normalizedPhone) return;
+
+    await this.deleteLocalRecordsByPhone(tableName, normalizedPhone);
+
+    const queueItem: SyncQueueItem = {
+      operation: "DELETE_BY_PHONE",
+      tableName,
+      recordId: normalizedPhone,
+      payload: { phone: normalizedPhone },
+      createdAt: Date.now(),
+      retryCount: 0,
+      status: "pending",
+    };
+    await db.sync_queue.add(queueItem);
+    await this.addPhoneTombstone(tableName, normalizedPhone);
+    if (SUPABASE_CONFIGURED && navigator.onLine) {
+      this.triggerSync();
+    }
+  }
+
+  static async addPhoneTombstone(tableName: string, phone: string) {
+    const normalizedPhone = normalizePhone(phone);
+    if (!normalizedPhone) return;
+    const id = `${tableName}:phone:${normalizedPhone}`;
+    await db.tombstones.put({
+      id,
+      tableName,
+      recordId: `phone:${normalizedPhone}`,
+      deletedAt: Date.now(),
+    });
+  }
+
+  static async isPhoneTombstoned(tableName: string, phone: string) {
+    const normalizedPhone = normalizePhone(phone);
+    if (!normalizedPhone) return false;
+    const t = await db.tombstones.get(`${tableName}:phone:${normalizedPhone}`);
+    return !!t;
+  }
   private static async processQueue() {
     if (!SUPABASE_CONFIGURED) {
       console.warn("Process queue skipped: Supabase is not configured.");
@@ -264,6 +351,22 @@ export class SyncManager {
         if (error) throw error;
         break;
       }
+      case "DELETE_BY_PHONE": {
+        const phone = payload?.phone;
+        if (!phone) throw new Error("Missing phone for DELETE_BY_PHONE operation");
+        const phoneVariants = buildPhoneVariants(phone);
+        let query = supabase.from(tableName).delete();
+        if (phoneVariants.length === 1) {
+          query = query.eq("phone", phoneVariants[0]);
+        } else {
+          query = query.or(
+            phoneVariants.map((p) => `phone.eq.${p}`).join(","),
+          );
+        }
+        const { error } = await query;
+        if (error) throw error;
+        break;
+      }
     }
   }
 
@@ -277,10 +380,20 @@ export class SyncManager {
     // instead of silently hiding it, so it can't keep reappearing.
     if (CUSTOMER_FACING_TABLES.has(tableName) && isTestRecord(remoteRecord)) {
       await db.table(tableName).delete(pkValue).catch(() => {});
-      await this.addTombstone(tableName, pkValue);
+      const phone = normalizePhone(remoteRecord.phone);
+      if (phone) {
+        await this.addPhoneTombstone(tableName, phone);
+        const pendingPhoneDelete = await db.sync_queue
+          .where("tableName").equals(tableName)
+          .and((x) => x.operation === "DELETE_BY_PHONE" && x.recordId === phone)
+          .first();
+        if (!pendingPhoneDelete) {
+          await this.queueDeleteByPhone(tableName, phone);
+        }
+      }
       const pendingDelete = await db.sync_queue
         .where("tableName").equals(tableName)
-        .and(x => x.recordId === pkValue && x.operation === "DELETE")
+        .and((x) => x.recordId === pkValue && x.operation === "DELETE")
         .first();
       if (!pendingDelete) {
         await this.queueOperation("DELETE", tableName, pkValue, null);
@@ -288,19 +401,27 @@ export class SyncManager {
       return false;
     }
 
-    // 0. Record was deleted locally (tombstoned). Never let a stale/racing
-    // remote read (e.g. refreshAllData's direct Supabase fetch, which can run
-    // concurrently with the DELETE that's still syncing) resurrect it. If the
-    // remote still has this row, make sure a DELETE is (re)queued so it gets
-    // cleaned up on the server too, instead of silently skipping forever.
-    if (await this.isTombstoned(tableName, pkValue)) {
+    const phone = normalizePhone(remoteRecord.phone);
+    const tombstonedById = await this.isTombstoned(tableName, pkValue);
+    const tombstonedByPhone = phone && (await this.isPhoneTombstoned(tableName, phone));
+    if (tombstonedById || tombstonedByPhone) {
       const pendingDelete = await db.sync_queue
         .where("tableName").equals(tableName)
-        .and(x => x.recordId === pkValue && x.operation === "DELETE")
+        .and((x) => x.recordId === pkValue && x.operation === "DELETE")
         .first();
       if (!pendingDelete) {
         await this.queueOperation("DELETE", tableName, pkValue, null);
       }
+      if (phone) {
+        const pendingPhoneDelete = await db.sync_queue
+          .where("tableName").equals(tableName)
+          .and((x) => x.operation === "DELETE_BY_PHONE" && x.recordId === phone)
+          .first();
+        if (!pendingPhoneDelete) {
+          await this.queueDeleteByPhone(tableName, phone);
+        }
+      }
+      await db.table(tableName).delete(pkValue).catch(() => {});
       return false;
     }
 
