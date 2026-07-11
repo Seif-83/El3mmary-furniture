@@ -1,5 +1,5 @@
 import { db, SyncQueueItem } from "./db";
-import { supabase } from "../lib/supabase";
+import { supabase, SUPABASE_CONFIGURED } from "../lib/supabase";
 
 export class SyncManager {
   private static isSyncing = false;
@@ -40,10 +40,16 @@ export class SyncManager {
       status: "pending",
     };
     await db.sync_queue.add(queueItem);
-    this.triggerSync();
+    if (SUPABASE_CONFIGURED && navigator.onLine) {
+      this.triggerSync();
+    }
   }
 
   static async triggerSync() {
+    if (!SUPABASE_CONFIGURED) {
+      console.warn("Sync skipped: Supabase is not configured.");
+      return;
+    }
     if (this.isSyncing || !navigator.onLine) return;
     this.isSyncing = true;
 
@@ -56,6 +62,10 @@ export class SyncManager {
   }
 
   static async pullRemoteData() {
+    if (!SUPABASE_CONFIGURED) {
+      console.warn("Pull remote data skipped: Supabase is not configured.");
+      return;
+    }
     if (!navigator.onLine) return;
 
     const tablesToSync = [
@@ -87,27 +97,19 @@ export class SyncManager {
         await this.resolveConflict(tableName, remoteRecord);
       }
 
-      const localTable = db.table<any>(tableName);
-      const localRecords = await localTable.toArray();
-      for (const localRecord of localRecords) {
-        const localKey = String(localRecord?.[pkColumn] ?? "").trim();
-        if (!localKey) continue;
-        if (remoteIds.has(localKey)) continue;
-
-        const pending = await db.sync_queue
-          .where("tableName")
-          .equals(tableName)
-          .and((x) => x.recordId === localKey)
-          .first();
-
-        if (!pending) {
-          await localTable.delete(localKey);
-        }
-      }
+      // Do not automatically delete local records when a remote row is missing.
+      // Remote reads can be incomplete due to permissions, row-level security, or
+      // eventual sync latency, and deleting local rows here can remove newly
+      // created records before they are confirmed on the server.
     }
   }
 
   private static async processQueue() {
+    if (!SUPABASE_CONFIGURED) {
+      console.warn("Process queue skipped: Supabase is not configured.");
+      return;
+    }
+
     while (navigator.onLine) {
       const item = await db.sync_queue
         .orderBy("createdAt")

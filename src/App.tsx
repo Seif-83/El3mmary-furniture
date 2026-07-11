@@ -5945,11 +5945,11 @@ export default function App() {
                                 </tr>
                               </thead>
                               <tbody>
-                                {unifiedCustomers
+                                {customerRecords
                                   .filter((r) => matchesFilters(r))
                                   .map((r) => (
                                     <tr
-                                      key={r.phone || r.id}
+                                      key={r.id}
                                       className="group hover:bg-black/5 transition-colors"
                                     >
                                       <td className="px-4 py-6 font-bold text-zinc-900 text-center">
@@ -6059,27 +6059,16 @@ export default function App() {
                                               </button>
                                               <button
                                                 onClick={() => {
-                                                  const id = r.raw?.id;
+                                                  const id = r.id || r.raw?.id;
                                                   if (!id) return;
-                                                  if (r.status === "customers")
+                                                  if (r.status === "customers" || !r.status)
                                                     handleDeleteCustomer(id);
-                                                  else if (
-                                                    r.status === "inspections"
-                                                  )
-                                                    void handleDeleteInspection(
-                                                      id,
-                                                    );
-                                                  else if (
-                                                    r.status === "contracted"
-                                                  )
+                                                  else if (r.status === "inspections")
+                                                    void handleDeleteInspection(id);
+                                                  else if (r.status === "contracted")
                                                     handleDeleteContracted(id);
-                                                  else if (
-                                                    r.status ===
-                                                    "not-contracted"
-                                                  )
-                                                    handleDeleteNonContracted(
-                                                      id,
-                                                    );
+                                                  else if (r.status === "not-contracted")
+                                                    handleDeleteNonContracted(id);
                                                 }}
                                                 className="btn-3d btn-3d-danger flex items-center gap-2 bg-white-50 text-white-500 border border-white-100 px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-white-500 hover:text-white active:scale-95 transition-all duration-200 hover:shadow-lg hover:shadow-white-100"
                                               >
@@ -6111,7 +6100,7 @@ export default function App() {
                         </div>
 
                         <div className="grid grid-cols-1 gap-4 md:hidden">
-                          {unifiedCustomers
+                          {customerRecords
                             .filter((r) => matchesFilters(r))
                             .map((r) => (
                               <div
@@ -7318,7 +7307,6 @@ export default function App() {
                               setCustomPiecePrice("");
                               setCustomPieceRoomLabel("");
                               setCustomPieceRoomInstanceId(undefined);
-                              setCustomPieceRoomType(undefined);
                             }}
                             className="rounded-3xl bg-zinc-900 text-white px-4 py-3 text-sm font-bold hover:bg-zinc-800 transition-all"
                           >
