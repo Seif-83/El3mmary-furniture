@@ -145,6 +145,10 @@ export class SyncManager {
     }
     if (!navigator.onLine) return;
 
+    // Shared, server-side record of every deletion, so this device knows
+    // about deletions performed on OTHER devices too (see fetchRemoteTombstones).
+    const remoteTombstones = await this.fetchRemoteTombstones();
+
     const tablesToSync = [
       "inspections",
       "customers",
@@ -166,10 +170,38 @@ export class SyncManager {
       }
       if (!Array.isArray(data)) continue;
 
+      const tombIds = remoteTombstones.byId.get(tableName);
+      const tombPhones = remoteTombstones.byPhone.get(tableName);
+
       const remoteIds = new Set<string>();
       for (const remoteRecord of data) {
         const remoteKey = String(remoteRecord?.[pkColumn] ?? "").trim();
         if (!remoteKey) continue;
+
+        const recordPhone = normalizePhone((remoteRecord as any).phone);
+        const isRemotelyDeleted =
+          (tombIds && tombIds.has(remoteKey)) ||
+          Boolean(recordPhone && tombPhones && tombPhones.has(recordPhone));
+
+        if (isRemotelyDeleted) {
+          // This record was deleted on another device. The row may still
+          // physically exist on Supabase (e.g. its DELETE hasn't landed yet,
+          // or was blocked by permissions) - either way, no device should
+          // ever show it again. Clean it up locally, remember why locally
+          // too, and retry the DELETE so the server eventually catches up.
+          await db.table(tableName).delete(remoteKey).catch(() => {});
+          await this.addTombstone(tableName, remoteKey);
+          if (recordPhone) await this.addPhoneTombstone(tableName, recordPhone);
+          const pendingDelete = await db.sync_queue
+            .where("tableName").equals(tableName)
+            .and((x) => x.recordId === remoteKey && x.operation === "DELETE")
+            .first();
+          if (!pendingDelete) {
+            await this.queueOperation("DELETE", tableName, remoteKey, null);
+          }
+          continue;
+        }
+
         remoteIds.add(remoteKey);
         await this.resolveConflict(tableName, remoteRecord);
       }
@@ -188,13 +220,22 @@ export class SyncManager {
             .first();
 
           if (!pendingOp) {
+            const localPhone = normalizePhone((localRecord as any).phone);
+            const isKnownDeleted =
+              (await this.isTombstoned(tableName, localKey)) ||
+              (localPhone && (await this.isPhoneTombstoned(tableName, localPhone))) ||
+              Boolean(tombIds && tombIds.has(localKey)) ||
+              Boolean(localPhone && tombPhones && tombPhones.has(localPhone));
+
             // If the record was previously synced to Supabase and is now missing,
-            // it means it was deleted on another device.
-            if ((localRecord as any).synced) {
-              console.log(`Auto delete: local record ${localKey} in ${tableName} was deleted on remote. Deleting locally.`);
+            // or it's a known deletion (recorded locally or by another device),
+            // it means it was deleted - never push it back.
+            if ((localRecord as any).synced || isKnownDeleted) {
+              console.log(`Auto delete: local record ${localKey} in ${tableName} was deleted (locally or on another device). Deleting locally.`);
               await db.table(tableName).delete(localKey);
             } else {
-              // Unsynced local record. Queue an INSERT to push it to Supabase.
+              // Genuinely unsynced local record (created offline, never confirmed
+              // deleted anywhere). Queue an INSERT to push it to Supabase.
               console.log(`Healing sync: local record ${localKey} in ${tableName} is missing from Supabase. Queuing INSERT.`);
               await this.queueOperation("INSERT", tableName, localKey, localRecord);
             }
@@ -226,6 +267,16 @@ export class SyncManager {
           await db.tombstones.delete(tomb.id);
         }
       }
+    }
+
+    // Prune old shared tombstones so `deleted_records` doesn't grow forever.
+    // Best-effort and non-blocking: only admin write access can succeed here
+    // (see RLS policy), and a failure just means we try again next pull.
+    try {
+      const cutoff = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
+      await supabase.from("deleted_records").delete().lt("deleted_at", cutoff);
+    } catch (e) {
+      console.warn("Failed to prune old remote tombstones", e);
     }
   }
   static async deleteLocalRecordsByPhone(tableName: string, phone: string) {
@@ -286,6 +337,68 @@ export class SyncManager {
     const t = await db.tombstones.get(`${tableName}:phone:${normalizedPhone}`);
     return !!t;
   }
+
+  // Local tombstones (db.tombstones) only exist on the device that performed
+  // the delete - they live in that device's IndexedDB and are never shared.
+  // That means a second device with a stale/unsynced local copy of the same
+  // record has no way of knowing it was deleted elsewhere, and can end up
+  // pushing it right back to Supabase. `deleted_records` is a small shared
+  // table on Supabase that every device reads on every pull, so a deletion
+  // performed anywhere is visible everywhere - regardless of each device's
+  // local tombstone/sync state.
+  static async fetchRemoteTombstones(): Promise<{
+    byId: Map<string, Set<string>>;
+    byPhone: Map<string, Set<string>>;
+  }> {
+    const byId = new Map<string, Set<string>>();
+    const byPhone = new Map<string, Set<string>>();
+    if (!SUPABASE_CONFIGURED) return { byId, byPhone };
+
+    const { data, error } = await supabase.from("deleted_records").select("*");
+    if (error) {
+      console.warn("Failed to pull remote tombstones:", error.message || error);
+      return { byId, byPhone };
+    }
+    if (!Array.isArray(data)) return { byId, byPhone };
+
+    for (const row of data as any[]) {
+      const tableName = row?.table_name;
+      if (!tableName) continue;
+      const recordId = row?.record_id ? String(row.record_id).trim() : "";
+      if (recordId) {
+        if (!byId.has(tableName)) byId.set(tableName, new Set());
+        byId.get(tableName)!.add(recordId);
+      }
+      const phone = normalizePhone(row?.phone);
+      if (phone) {
+        if (!byPhone.has(tableName)) byPhone.set(tableName, new Set());
+        byPhone.get(tableName)!.add(phone);
+      }
+    }
+    return { byId, byPhone };
+  }
+
+  // Record a deletion on Supabase itself, so every other device can see it
+  // on its next pull, even if it never learns about the local tombstone.
+  // Best-effort: if this fails, the local tombstone + retrying DELETE still
+  // protect this device, and the next successful pull will retry the push.
+  static async pushRemoteTombstone(
+    tableName: string,
+    recordId: string | null,
+    phone: string | null,
+  ) {
+    if (!SUPABASE_CONFIGURED) return;
+    try {
+      await supabase.from("deleted_records").insert({
+        table_name: tableName,
+        record_id: recordId,
+        phone: phone ? normalizePhone(phone) : null,
+      });
+    } catch (e) {
+      console.warn("Failed to push remote tombstone", tableName, recordId, phone, e);
+    }
+  }
+
   private static async processQueue() {
     if (!SUPABASE_CONFIGURED) {
       console.warn("Process queue skipped: Supabase is not configured.");
@@ -373,6 +486,7 @@ export class SyncManager {
       case "DELETE": {
         const { error } = await supabase.from(tableName).delete().eq(pkColumn, recordId);
         if (error) throw error;
+        await this.pushRemoteTombstone(tableName, recordId, null);
         break;
       }
       case "DELETE_BY_PHONE": {
@@ -389,6 +503,7 @@ export class SyncManager {
         }
         const { error } = await query;
         if (error) throw error;
+        await this.pushRemoteTombstone(tableName, null, phone);
         break;
       }
     }
