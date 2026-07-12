@@ -3151,10 +3151,13 @@ export default function App() {
     const normalizedPhone = normalizePhone(phone);
     if (!normalizedPhone) return;
 
-    await SyncManager.queueDeleteByPhone("customers", normalizedPhone);
-    await SyncManager.queueDeleteByPhone("inspections", normalizedPhone);
-    await SyncManager.queueDeleteByPhone("contracted_customers", normalizedPhone);
-    await SyncManager.queueDeleteByPhone("non_contracted_customers", normalizedPhone);
+    // NOTE: we intentionally do NOT call SyncManager.queueDeleteByPhone here.
+    // That call used to permanently blacklist this phone number (via a
+    // phone-based tombstone stored in Supabase's `deleted_records` table for
+    // 180 days), silently auto-deleting any future customer/inspection that
+    // reused the same phone. Deleting each matching record below by its own
+    // id is enough to actually remove them; it does not block this phone
+    // number from being used again.
 
     const allCustomers = await CustomerService.getAll();
     const inspections = await OrderService.getInspections();
