@@ -56,7 +56,7 @@ export class CustomerService {
 
   static async update(id: string, updates: any) {
     const record = await db.customers.get(id);
-    const updated = { ...record, ...updates, last_modified: Date.now() };
+    const updated = { ...record, ...updates, id, last_modified: Date.now() };
     await db.customers.put(updated);
     await SyncManager.queueOperation("UPDATE", "customers", id, updates);
   }
@@ -98,7 +98,7 @@ export class OrderService {
 
   static async updateInspection(id: string, updates: any) {
     const record = await db.inspections.get(id);
-    const updatedRecord = { ...record, ...updates, last_modified: Date.now() };
+    const updatedRecord = { ...record, ...updates, id, last_modified: Date.now() };
     await db.inspections.put(updatedRecord);
     await SyncManager.queueOperation("UPDATE", "inspections", id, updates);
   }
@@ -134,7 +134,7 @@ export class OrderService {
 
   static async updateContracted(id: string, updates: any) {
     const record = await db.contracted_customers.get(id);
-    const updated = { ...record, ...updates, last_modified: Date.now() };
+    const updated = { ...record, ...updates, id, last_modified: Date.now() };
     await db.contracted_customers.put(updated);
     await SyncManager.queueOperation(
       "UPDATE",
@@ -169,7 +169,7 @@ export class OrderService {
 
   static async updateNonContracted(id: string, updates: any) {
     const record = await db.non_contracted_customers.get(id);
-    const updated = { ...record, ...updates, last_modified: Date.now() };
+    const updated = { ...record, ...updates, id, last_modified: Date.now() };
     await db.non_contracted_customers.put(updated);
     await SyncManager.queueOperation(
       "UPDATE",
@@ -198,7 +198,7 @@ export class ProductService {
 
   static async update(id: string, updates: any) {
     const record = await db.catalogs.get(id);
-    const updatedRecord = { ...record, ...updates, last_modified: Date.now() };
+    const updatedRecord = { ...record, ...updates, id, last_modified: Date.now() };
     await db.catalogs.put(updatedRecord);
     await SyncManager.queueOperation("UPDATE", "catalogs", id, updates);
   }

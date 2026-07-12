@@ -2156,6 +2156,14 @@ export default function App() {
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<any>(null);
   const [quoteDrafts, setQuoteDrafts] = useState<RoomDraft[]>([]);
+  // Auto-save: every time quoteDrafts changes because of user edits (adding a
+  // room/item, changing a price, deleting something...), we want to persist
+  // automatically after a short pause. But quoteDrafts also gets reset every
+  // time a record loads or reloads (opening a record, or right after
+  // handleSaveQuote's own refresh) - those resets must NOT trigger another
+  // save, or we'd loop. This ref marks "the next quoteDrafts change is just
+  // a reload, not a user edit" so the auto-save effect can skip it.
+  const skipNextAutosaveRef = useRef(true);
   const [customPieceName, setCustomPieceName] = useState("");
   const [customPieceQty, setCustomPieceQty] = useState(1);
   const [customPiecePrice, setCustomPiecePrice] = useState("");
@@ -2245,6 +2253,21 @@ export default function App() {
   };
   const quoteTotal = () =>
     quoteDrafts.reduce((sum, r) => sum + quoteRoomSubtotal(r), 0);
+  // Single source of truth for "what pieces are in this quote right now" -
+  // used by every section (grand total, room totals, pieces list) so they
+  // can never drift apart, even before the quote is saved.
+  const livePieces = quoteDrafts.flatMap((r) =>
+    r.items.map((it) => ({
+      name: it.item_name,
+      quantity: it.quantity,
+      price: it.price,
+      details: it.dimensions || it.notes || "",
+      room_type: r.room_type,
+      room_instance_id: r.id,
+      aro_veneer_addon: it.aro_veneer_addon,
+      aro_surcharge: it.aro_surcharge,
+    })),
+  );
 
   const normalizeRoomType = (roomType?: string) => {
     const value =
@@ -2408,6 +2431,10 @@ export default function App() {
   };
 
   useEffect(() => {
+    // This effect always LOADS drafts from a record (initial open, or the
+    // refresh after a save) - never a user edit - so skip the next auto-save.
+    skipNextAutosaveRef.current = true;
+
     if (!selectedRecord) {
       setQuoteDrafts([]);
       return;
@@ -2564,26 +2591,16 @@ export default function App() {
       ),
     );
 
-  const handleSaveQuote = async () => {
+  const handleSaveQuote = async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
     if (!selectedRecord) return;
     if (!isAdminUser) {
-      toast.error(t.noPermission || "Admin only");
+      if (!silent) toast.error(t.noPermission || "Admin only");
       return;
     }
     try {
       setIsLoading(true);
-      const pieces = quoteDrafts.flatMap((r) =>
-        r.items.map((it) => ({
-          name: it.item_name,
-          quantity: it.quantity,
-          price: it.price,
-          details: it.dimensions || it.notes || "",
-          room_type: r.room_type,
-          room_instance_id: r.id,
-          aro_veneer_addon: it.aro_veneer_addon,
-          aro_surcharge: it.aro_surcharge,
-        })),
-      );
+      const pieces = livePieces;
       const totalAmount = quoteTotal();
       const roomAroVeneer = parseRecordSource<boolean>(
         selectedRecord?.room_aro_veneer || selectedRecord?.roomAroVeneer,
@@ -2601,18 +2618,18 @@ export default function App() {
       };
       // Optimistic UI: update locally and queue sync
       await OrderService.updateInspection(selectedRecord.id, updates);
-      toast.success(lang === "ar" ? "تم حفظ العرض" : "Quote saved");
+      if (!silent) {
+        toast.success(lang === "ar" ? "تم حفظ العرض" : "Quote saved");
+      }
       await refreshAllData();
-      // refresh selectedRecord
-      const refreshed = (
-        await supabase
-          .from("inspections")
-          .select("*")
-          .eq("id", selectedRecord.id)
-          .single()
-      ).data;
+      // Refresh selectedRecord from the local store (not Supabase directly) so
+      // this works offline too - the local record was just updated above and
+      // will sync to Supabase in the background whenever the network is back.
+      const refreshedLocal = await db.inspections.get(selectedRecord.id);
       setSelectedRecord(
-        refreshed ? mapInspectionFromDB(refreshed) : selectedRecord,
+        refreshedLocal
+          ? mapInspectionFromDB(refreshedLocal)
+          : { ...selectedRecord, ...updates },
       );
     } catch (err: any) {
       console.error(err);
@@ -2623,6 +2640,27 @@ export default function App() {
     }
     setIsLoading(false);
   };
+
+  // Auto-save: persist quote edits automatically ~1.2s after the user stops
+  // making changes, so nothing is lost if the app closes, the network drops,
+  // or the tab is switched before pressing "Save quote" manually. Works
+  // offline too, since handleSaveQuote writes to the local store first and
+  // only syncs to Supabase in the background when a connection is available.
+  useEffect(() => {
+    if (skipNextAutosaveRef.current) {
+      skipNextAutosaveRef.current = false;
+      return;
+    }
+    if (!selectedRecord || !isAdminUser) return;
+
+    const timer = setTimeout(() => {
+      handleSaveQuote({ silent: true });
+    }, 1200);
+
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quoteDrafts]);
+
   const [searchQuery, setSearchQuery] = useState("");
 
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
@@ -8201,7 +8239,7 @@ export default function App() {
                       {lang === "ar" ? "منشئ العرض" : "Quote builder"}
                     </h3>
                     <button
-                      onClick={handleSaveQuote}
+                      onClick={() => handleSaveQuote()}
                       className="rounded-full bg-[#18181b] text-white px-4 py-2 text-sm"
                     >
                       {lang === "ar" ? "حفظ العرض" : "Save quote"}
@@ -8253,7 +8291,7 @@ export default function App() {
                         : "Press Save to persist any changes in the quote."}
                     </p>
                     <button
-                      onClick={handleSaveQuote}
+                      onClick={() => handleSaveQuote()}
                       className="rounded-full bg-[#18181b] text-white px-5 py-3 text-sm shadow-xl hover:bg-zinc-800 transition"
                     >
                       {lang === "ar" ? "حفظ العرض" : "Save quote"}
@@ -8480,13 +8518,13 @@ export default function App() {
                     )}
                   </div>
                 </div>
-                {selectedRecord.pieces && selectedRecord.pieces.length > 0 && (
+                {livePieces.length > 0 && (
                   <div className="space-y-4">
                     <label className="text-[10px] font-bold uppercase text-zinc-400 px-1">
                       {t.pieces}
                     </label>
                     <div className="grid grid-cols-1 gap-3">
-                      {selectedRecord.pieces.map((p: any, i: number) => (
+                      {livePieces.map((p: any, i: number) => (
                         <div
                           key={i}
                           className="group bg-white border border-zinc-100 hover:border-accent-tan/30 p-5 rounded-3xl transition-all hover:shadow-md"
