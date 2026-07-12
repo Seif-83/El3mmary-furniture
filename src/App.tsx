@@ -2719,6 +2719,29 @@ export default function App() {
     governorate: "",
   });
 
+  // Unsaved-entry protection for the "Add customer" form: persist every
+  // change to localStorage while the modal is open in "add" mode, so a
+  // crashed tab / accidental close doesn't force retyping everything. Never
+  // used for "edit" mode (would risk clobbering an existing record) and
+  // deliberately excludes username/password (never persist credentials).
+  const NEW_CUSTOMER_DRAFT_KEY = "el3mmary_draft_new_customer";
+  useEffect(() => {
+    if (!isModalOpen || modalMode !== "add") return;
+    try {
+      localStorage.setItem(
+        NEW_CUSTOMER_DRAFT_KEY,
+        JSON.stringify({
+          name: formData.name,
+          phone: formData.phone,
+          phones: formData.phones,
+          pickupDate: formData.pickupDate,
+          address: formData.address,
+          governorate: formData.governorate,
+        }),
+      );
+    } catch {}
+  }, [formData, isModalOpen, modalMode]);
+
   const normalizePhoneList = (rawPhone: string | undefined) => {
     const cleaned = String(rawPhone || "")
       .split(/[,;\n]+/)
@@ -4506,15 +4529,40 @@ export default function App() {
   };
 
   const handleOpenAddModal = () => {
+    // Recover any unsaved customer data left over from a previous session
+    // (e.g. the tab closed or crashed before pressing "Add") so the user
+    // never has to retype everything from scratch.
+    let draft: any = null;
+    try {
+      const raw = localStorage.getItem(NEW_CUSTOMER_DRAFT_KEY);
+      if (raw) draft = JSON.parse(raw);
+    } catch {}
+
+    const hasDraftContent =
+      !!draft &&
+      (((draft.name || "").trim() !== "") ||
+        (Array.isArray(draft.phones) &&
+          draft.phones.some((p: string) => (p || "").trim() !== "")) ||
+        (draft.address || "").trim() !== "" ||
+        (draft.pickupDate || "").trim() !== "" ||
+        (draft.governorate || "").trim() !== "");
+
     setFormData({
       ...formData,
-      name: "",
-      phone: "",
-      phones: [""],
-      pickupDate: "",
-      address: "",
-      governorate: "",
+      name: hasDraftContent ? draft.name || "" : "",
+      phone: hasDraftContent ? draft.phone || "" : "",
+      phones: hasDraftContent ? draft.phones || [""] : [""],
+      pickupDate: hasDraftContent ? draft.pickupDate || "" : "",
+      address: hasDraftContent ? draft.address || "" : "",
+      governorate: hasDraftContent ? draft.governorate || "" : "",
     });
+    if (hasDraftContent) {
+      toast.success(
+        lang === "ar"
+          ? "تم استرجاع بيانات لم تُحفظ من آخر مرة"
+          : "Restored unsaved data from last time",
+      );
+    }
     setModalMode("add");
     setEditingCollection(null);
     setIsModalOpen(true);
@@ -4689,6 +4737,9 @@ export default function App() {
         };
         // Optimistic UI: save locally & queue sync
         await CustomerService.insert(newCustomer);
+        try {
+          localStorage.removeItem(NEW_CUSTOMER_DRAFT_KEY);
+        } catch {}
         await refreshAllData();
         void playSound("success");
         toast.success("Added success");
