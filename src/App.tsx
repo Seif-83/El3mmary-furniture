@@ -3151,13 +3151,10 @@ export default function App() {
     const normalizedPhone = normalizePhone(phone);
     if (!normalizedPhone) return;
 
-    // NOTE: we intentionally do NOT call SyncManager.queueDeleteByPhone here.
-    // That call used to permanently blacklist this phone number (via a
-    // phone-based tombstone stored in Supabase's `deleted_records` table for
-    // 180 days), silently auto-deleting any future customer/inspection that
-    // reused the same phone. Deleting each matching record below by its own
-    // id is enough to actually remove them; it does not block this phone
-    // number from being used again.
+    await SyncManager.queueDeleteByPhone("customers", normalizedPhone);
+    await SyncManager.queueDeleteByPhone("inspections", normalizedPhone);
+    await SyncManager.queueDeleteByPhone("contracted_customers", normalizedPhone);
+    await SyncManager.queueDeleteByPhone("non_contracted_customers", normalizedPhone);
 
     const allCustomers = await CustomerService.getAll();
     const inspections = await OrderService.getInspections();
@@ -6375,6 +6372,36 @@ export default function App() {
                                                   setAdminSubView(
                                                     "inspections",
                                                   );
+                                                  // If a real inspection (or later stage) already
+                                                  // exists for this phone, open it for editing
+                                                  // instead of always starting a brand new blank
+                                                  // one - otherwise this button creates a duplicate
+                                                  // every time it's clicked for an existing record.
+                                                  if (
+                                                    r.status !== "customers" &&
+                                                    r.raw
+                                                  ) {
+                                                    setTimeout(() => {
+                                                      setInspectionFormData(
+                                                        r.raw,
+                                                      );
+                                                      setEditingCollection(
+                                                        r.status ===
+                                                          "contracted"
+                                                          ? "contracted_customers"
+                                                          : r.status ===
+                                                              "not-contracted"
+                                                            ? "non_contracted_customers"
+                                                            : null,
+                                                      );
+                                                      setEditingId(null);
+                                                      setInspectionStep(2);
+                                                      setIsInspectionModalOpen(
+                                                        true,
+                                                      );
+                                                    }, 120);
+                                                    return;
+                                                  }
                                                   const custRec =
                                                     customerRecords.find(
                                                       (c) =>
@@ -6518,6 +6545,28 @@ export default function App() {
                                     <button
                                       onClick={() => {
                                         setAdminSubView("inspections");
+                                        // Same fix as the desktop button: don't
+                                        // start a blank duplicate if a real
+                                        // inspection/contract already exists.
+                                        if (
+                                          r.status !== "customers" &&
+                                          r.raw
+                                        ) {
+                                          setTimeout(() => {
+                                            setInspectionFormData(r.raw);
+                                            setEditingCollection(
+                                              r.status === "contracted"
+                                                ? "contracted_customers"
+                                                : r.status === "not-contracted"
+                                                  ? "non_contracted_customers"
+                                                  : null,
+                                            );
+                                            setEditingId(null);
+                                            setInspectionStep(2);
+                                            setIsInspectionModalOpen(true);
+                                          }, 120);
+                                          return;
+                                        }
                                         const custRec = customerRecords.find(
                                           (c) => c.phone === r.phone,
                                         );
