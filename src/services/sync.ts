@@ -38,6 +38,10 @@ const CUSTOMER_FACING_TABLES = new Set([
   "non_contracted_customers",
 ]);
 
+// How long to trust a "synced" local record over an incomplete/stale remote
+// pull before treating its absence from the server as a real deletion.
+const RECONCILE_GRACE_MS = 60 * 1000;
+
 const isTestRecord = (record: any): boolean => {
   const name = String(record?.name || record?.customer_name || "")
     .toLowerCase()
@@ -227,12 +231,28 @@ export class SyncManager {
               Boolean(tombIds && tombIds.has(localKey)) ||
               Boolean(localPhone && tombPhones && tombPhones.has(localPhone));
 
-            // If the record was previously synced to Supabase and is now missing,
-            // or it's a known deletion (recorded locally or by another device),
-            // it means it was deleted - never push it back.
-            if ((localRecord as any).synced || isKnownDeleted) {
+            // A record we just synced a moment ago can still be absent from
+            // THIS pull's remote snapshot (read-replica/eventual-consistency lag
+            // right after the INSERT, or a pull that started before it committed).
+            // Give freshly-touched records a grace period before trusting
+            // "missing from remote" as "deleted elsewhere" - otherwise a
+            // customer/inspection can vanish locally seconds after creation
+            // even though it is really sitting on the server.
+            const recentlyModified =
+              ((localRecord as any).last_modified || 0) > Date.now() - RECONCILE_GRACE_MS;
+
+            if (isKnownDeleted) {
               console.log(`Auto delete: local record ${localKey} in ${tableName} was deleted (locally or on another device). Deleting locally.`);
               await db.table(tableName).delete(localKey);
+            } else if ((localRecord as any).synced) {
+              if (recentlyModified) {
+                // Likely a stale/incomplete remote read racing a just-finished
+                // sync, not a real deletion. Leave it alone; re-check next pull.
+                console.log(`Skipping reconciliation for recently-synced record ${localKey} in ${tableName}; will re-check next pull.`);
+              } else {
+                console.log(`Auto delete: local record ${localKey} in ${tableName} was deleted (locally or on another device). Deleting locally.`);
+                await db.table(tableName).delete(localKey);
+              }
             } else {
               // Genuinely unsynced local record (created offline, never confirmed
               // deleted anywhere). Queue an INSERT to push it to Supabase.
