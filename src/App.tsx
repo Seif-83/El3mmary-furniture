@@ -2185,6 +2185,37 @@ export default function App() {
   const CONTRACT_BUCKET =
     import.meta.env.VITE_SUPABASE_CONTRACTS_BUCKET?.trim() || "contracts";
 
+  // Unsaved-entry protection for a brand-new inspection (no `.id` yet):
+  // step 2 (rooms/pieces/pricing) lives only in React state until the final
+  // submit creates the "inspections" row, so an accidental tab close before
+  // that loses everything. We mirror the in-progress form to localStorage,
+  // keyed by phone so drafts for different customers never mix up, and
+  // restore it automatically next time "Start inspection" is opened for the
+  // same customer.
+  const getInspectionDraftKey = (phone?: string | null) =>
+    `el3mmary_draft_new_inspection_${(phone || "unknown").trim() || "unknown"}`;
+
+  const saveInspectionDraft = (phone?: string | null, data?: any) => {
+    try {
+      localStorage.setItem(getInspectionDraftKey(phone), JSON.stringify(data));
+    } catch {}
+  };
+
+  const loadInspectionDraft = (phone?: string | null) => {
+    try {
+      const raw = localStorage.getItem(getInspectionDraftKey(phone));
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const clearInspectionDraft = (phone?: string | null) => {
+    try {
+      localStorage.removeItem(getInspectionDraftKey(phone));
+    } catch {}
+  };
+
   // Check if inspection form has unsaved changes
   const inspectionFormHasChanges = () => {
     return (
@@ -2205,6 +2236,16 @@ export default function App() {
       (inspectionFormData.portfolio?.trim() || "") !== ""
     );
   };
+
+  // Persist the in-progress new-inspection form automatically. Only for
+  // genuinely new inspections (no `.id` yet) - editing an existing one is
+  // already saved for real via OrderService.updateInspection.
+  useEffect(() => {
+    if (!isInspectionModalOpen || inspectionFormData.id) return;
+    if (!inspectionFormHasChanges()) return;
+    saveInspectionDraft(inspectionFormData.phone, inspectionFormData);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inspectionFormData, isInspectionModalOpen]);
 
   // Safe close handler with unsaved changes warning
   const handleCloseInspectionModal = () => {
@@ -3841,6 +3882,7 @@ export default function App() {
         // Create new inspection and remove from customers
         const newId = await insertInspectionRecord(inspectionDbData);
         if (editingCollection === "customers" && newId) {
+          clearInspectionDraft(inspectionFormData.phone);
           setInspectionFormData((prev) => ({ ...prev, id: newId }));
           setEditingCollection(null);
           setEditingId(null);
@@ -3871,6 +3913,7 @@ export default function App() {
         "create_inspection",
         `${lang === "ar" ? "إنشاء معاينة لـ" : "Created inspection for"} ${inspectionFormData.customerName}`,
       );
+      clearInspectionDraft(inspectionFormData.phone);
       setIsInspectionModalOpen(false);
       setInspectionStep(1);
       setEditingId(null);
@@ -6478,24 +6521,56 @@ export default function App() {
                                         const actualId =
                                           custRec?.id || r.raw?.id;
                                         setTimeout(() => {
-                                          setInspectionFormData({
-                                            customerName: r.name,
-                                            phone: r.phone,
-                                            id: undefined,
-                                            address:
-                                              r.address || r.pickupDate || "",
-                                            deliveryAddress:
-                                              r.deliveryAddress || "",
-                                            pickupDate:
-                                              r.pickupDate || r.address || "",
-                                            visitDate: r.visitDate || "",
-                                            visitDateTo: r.visitDateTo || "",
-                                            notes: r.notes || "",
-                                            governorate: r.governorate || "",
-                                            rooms: 0,
-                                            pieces: [],
-                                            totalAmount: 0,
-                                          });
+                                          const draft = loadInspectionDraft(
+                                            r.phone,
+                                          );
+                                          const draftHasRealContent =
+                                            !!draft &&
+                                            !draft.id &&
+                                            (((draft.rooms || 0) > 0) ||
+                                              ((draft.pieces?.length || 0) >
+                                                0) ||
+                                              ((draft.totalAmount || 0) !==
+                                                0) ||
+                                              ((draft.notes || "").trim() !==
+                                                ""));
+
+                                          setInspectionFormData(
+                                            draftHasRealContent
+                                              ? { ...draft, phone: r.phone }
+                                              : {
+                                                  customerName: r.name,
+                                                  phone: r.phone,
+                                                  id: undefined,
+                                                  address:
+                                                    r.address ||
+                                                    r.pickupDate ||
+                                                    "",
+                                                  deliveryAddress:
+                                                    r.deliveryAddress || "",
+                                                  pickupDate:
+                                                    r.pickupDate ||
+                                                    r.address ||
+                                                    "",
+                                                  visitDate:
+                                                    r.visitDate || "",
+                                                  visitDateTo:
+                                                    r.visitDateTo || "",
+                                                  notes: r.notes || "",
+                                                  governorate:
+                                                    r.governorate || "",
+                                                  rooms: 0,
+                                                  pieces: [],
+                                                  totalAmount: 0,
+                                                },
+                                          );
+                                          if (draftHasRealContent) {
+                                            toast.success(
+                                              lang === "ar"
+                                                ? "تم استرجاع بيانات معاينة لم تُحفظ"
+                                                : "Restored unsaved inspection data",
+                                            );
+                                          }
                                           setEditingCollection("customers");
                                           setEditingId(actualId ?? null);
                                           setInspectionStep(1);
