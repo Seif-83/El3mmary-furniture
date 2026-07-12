@@ -24,6 +24,7 @@ export class CustomerService {
       last_modified: Date.now(),
     };
     await db.clients.put(record);
+    await SyncManager.clearTombstone("clients", client.id);
     await SyncManager.queueOperation("INSERT", "clients", client.id, {
       id: client.id,
       name: client.name,
