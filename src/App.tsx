@@ -431,6 +431,15 @@ const ProductionPage: React.FC<{
   onStageUpdate,
 }) => {
   const allProductionData = [...contractedCustomers];
+  const [searchQuery, setSearchQuery] = useState("");
+  const filteredProductionData = allProductionData.filter(
+    (order) =>
+      !searchQuery ||
+      (order.customerName || "")
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase()) ||
+      (order.phone || "").includes(searchQuery),
+  );
 
   return (
     <div className="space-y-6">
@@ -445,19 +454,39 @@ const ProductionPage: React.FC<{
               : "Track production stages for contracted orders"}
           </p>
         </div>
-        <div className="glass px-4 py-3 rounded-2xl min-w-[90px]">
-          <div className="text-[10px] uppercase font-bold text-zinc-400">
-            {lang === "ar" ? "إجمالي الطلبات" : "Total Orders"}
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <div className="relative group w-full sm:w-auto">
+            <Search className="absolute top-1/2 -translate-y-1/2 right-3 w-3.5 h-3.5 text-zinc-400 group-focus-within:text-zinc-700 transition-colors pointer-events-none z-10" />
+            <input
+              type="text"
+              placeholder={lang === "ar" ? "بحث..." : "Search..."}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="bg-white/70 backdrop-blur-md border border-white/80 shadow-sm pr-9 pl-8 py-3 rounded-2xl text-sm font-medium outline-none w-full sm:w-40 sm:focus:w-52 focus:shadow-md focus:border-zinc-300 transition-all duration-300 placeholder:text-zinc-400 text-zinc-800"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute top-1/2 -translate-y-1/2 left-2 w-4 h-4 flex items-center justify-center rounded-full bg-zinc-200 hover:bg-zinc-300 text-zinc-500 transition-all"
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            )}
           </div>
-          <div className="text-2xl font-semibold">
-            {allProductionData.length}
+          <div className="glass px-4 py-3 rounded-2xl min-w-[90px]">
+            <div className="text-[10px] uppercase font-bold text-zinc-400">
+              {lang === "ar" ? "إجمالي الطلبات" : "Total Orders"}
+            </div>
+            <div className="text-2xl font-semibold">
+              {filteredProductionData.length}
+            </div>
           </div>
         </div>
       </div>
 
-      {allProductionData.length > 0 ? (
+      {filteredProductionData.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {allProductionData.map((order) => {
+          {filteredProductionData.map((order) => {
             const orderPhone = order.phone;
             const matchingStage = orderPhone
               ? stages.find((s: any) => s.client?.phones?.includes(orderPhone))
@@ -617,6 +646,7 @@ const PaymentsPage: React.FC<{
   const [isSaving, setIsSaving] = useState(false);
   const [allPayments, setAllPayments] = useState<PaymentRecord[]>([]);
   const [loadingPayments, setLoadingPayments] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const stages = [
     "عند التعاقد",
@@ -690,6 +720,13 @@ const PaymentsPage: React.FC<{
     setIsModalOpen(true);
   };
 
+  const filteredContractedCustomers = contractedCustomers.filter(
+    (c) =>
+      !searchQuery ||
+      (c.customerName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (c.phone || "").includes(searchQuery),
+  );
+
   const handleAddPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCustomer || !paymentAmount) return;
@@ -750,7 +787,25 @@ const PaymentsPage: React.FC<{
               : "Track payment status for contracted customers"}
           </p>
         </div>
-        <div className="flex gap-4">
+        <div className="flex flex-wrap items-center gap-4 w-full sm:w-auto">
+          <div className="relative group w-full sm:w-auto">
+            <Search className="absolute top-1/2 -translate-y-1/2 right-3 w-3.5 h-3.5 text-zinc-400 group-focus-within:text-zinc-700 transition-colors pointer-events-none z-10" />
+            <input
+              type="text"
+              placeholder={lang === "ar" ? "بحث..." : "Search..."}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="bg-white/70 backdrop-blur-md border border-white/80 shadow-sm pr-9 pl-8 py-3 rounded-2xl text-sm font-medium outline-none w-full sm:w-40 sm:focus:w-52 focus:shadow-md focus:border-zinc-300 transition-all duration-300 placeholder:text-zinc-400 text-zinc-800"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute top-1/2 -translate-y-1/2 left-2 w-4 h-4 flex items-center justify-center rounded-full bg-zinc-200 hover:bg-zinc-300 text-zinc-500 transition-all"
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            )}
+          </div>
           <div className="glass px-4 py-3 rounded-2xl min-w-[120px]">
             <div className="text-[10px] uppercase font-bold text-zinc-400">
               {lang === "ar" ? "إجمالي العقود" : "Total Contracts"}
@@ -774,7 +829,7 @@ const PaymentsPage: React.FC<{
         <div className="glass rounded-[2rem] py-20 text-center text-zinc-400">
           {lang === "ar" ? "جاري التحميل..." : "Loading..."}
         </div>
-      ) : contractedCustomers.length > 0 ? (
+      ) : filteredContractedCustomers.length > 0 ? (
         <>
           {/* Desktop table */}
           <div className="hidden md:block glass rounded-[2.5rem] overflow-hidden p-6 md:p-10 shadow-xl border border-white/40">
@@ -803,7 +858,7 @@ const PaymentsPage: React.FC<{
                   </tr>
                 </thead>
                 <tbody>
-                  {contractedCustomers.map((customer) => {
+                  {filteredContractedCustomers.map((customer) => {
                     const total = customer.totalAmount || 0;
                     const paid = getCustomerPayments(customer.id).reduce(
                       (sum, p) => sum + (Number(p.amount) || 0),
@@ -903,7 +958,7 @@ const PaymentsPage: React.FC<{
 
           {/* Mobile cards */}
           <div className="grid grid-cols-1 gap-4 md:hidden">
-            {contractedCustomers.map((customer) => {
+            {filteredContractedCustomers.map((customer) => {
               const total = customer.totalAmount || 0;
               const paid = getCustomerPayments(customer.id).reduce(
                 (sum, p) => sum + (Number(p.amount) || 0),
@@ -5354,8 +5409,7 @@ export default function App() {
                                 )}
                             </div>
 
-                            {adminSubView !== "phonebook" && (
-                              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                                 <div className="relative group w-full sm:w-auto">
                                   <Search className="absolute top-1/2 -translate-y-1/2 right-3 w-3.5 h-3.5 text-zinc-400 group-focus-within:text-zinc-700 transition-colors pointer-events-none z-10" />
                                   <input
@@ -5378,7 +5432,8 @@ export default function App() {
                                     </button>
                                   )}
                                 </div>
-                                {adminSubView !== "inspections" && (
+                                {adminSubView !== "inspections" &&
+                                  adminSubView !== "phonebook" && (
                                   <div className="flex items-center gap-1.5 flex-wrap">
                                     <button
                                       onClick={() =>
@@ -5407,7 +5462,7 @@ export default function App() {
                                   </div>
                                 )}
                               </div>
-                            )}
+
 
                             <div className="glass px-4 py-3 rounded-2xl min-w-[90px]">
                               <div className="text-[10px] uppercase font-bold text-zinc-400">
@@ -6372,36 +6427,6 @@ export default function App() {
                                                   setAdminSubView(
                                                     "inspections",
                                                   );
-                                                  // If a real inspection (or later stage) already
-                                                  // exists for this phone, open it for editing
-                                                  // instead of always starting a brand new blank
-                                                  // one - otherwise this button creates a duplicate
-                                                  // every time it's clicked for an existing record.
-                                                  if (
-                                                    r.status !== "customers" &&
-                                                    r.raw
-                                                  ) {
-                                                    setTimeout(() => {
-                                                      setInspectionFormData(
-                                                        r.raw,
-                                                      );
-                                                      setEditingCollection(
-                                                        r.status ===
-                                                          "contracted"
-                                                          ? "contracted_customers"
-                                                          : r.status ===
-                                                              "not-contracted"
-                                                            ? "non_contracted_customers"
-                                                            : null,
-                                                      );
-                                                      setEditingId(null);
-                                                      setInspectionStep(2);
-                                                      setIsInspectionModalOpen(
-                                                        true,
-                                                      );
-                                                    }, 120);
-                                                    return;
-                                                  }
                                                   const custRec =
                                                     customerRecords.find(
                                                       (c) =>
@@ -6545,28 +6570,6 @@ export default function App() {
                                     <button
                                       onClick={() => {
                                         setAdminSubView("inspections");
-                                        // Same fix as the desktop button: don't
-                                        // start a blank duplicate if a real
-                                        // inspection/contract already exists.
-                                        if (
-                                          r.status !== "customers" &&
-                                          r.raw
-                                        ) {
-                                          setTimeout(() => {
-                                            setInspectionFormData(r.raw);
-                                            setEditingCollection(
-                                              r.status === "contracted"
-                                                ? "contracted_customers"
-                                                : r.status === "not-contracted"
-                                                  ? "non_contracted_customers"
-                                                  : null,
-                                            );
-                                            setEditingId(null);
-                                            setInspectionStep(2);
-                                            setIsInspectionModalOpen(true);
-                                          }, 120);
-                                          return;
-                                        }
                                         const custRec = customerRecords.find(
                                           (c) => c.phone === r.phone,
                                         );
