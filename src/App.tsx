@@ -4716,6 +4716,99 @@ export default function App() {
     return true;
   };
 
+  // Single source of truth for the phonebook list: groups every record by
+  // phone number, then applies BOTH the status tab (all/contracted/...) and
+  // the search box. The "Total Numbers" counter reuses this same list so it
+  // never disagrees with what's actually shown below it.
+  const phonebookEntries = useMemo(() => {
+    const allNumbers = [
+      ...customerRecords.map((r) => ({
+        name: r.name,
+        phone: r.phone,
+        source: "customers" as const,
+      })),
+      ...inspections.map((r) => ({
+        name: r.customerName,
+        phone: r.phone,
+        source: "inspections" as const,
+      })),
+      ...contractedCustomers.map((r) => ({
+        name: r.customerName,
+        phone: r.phone,
+        source: "contracted" as const,
+      })),
+      ...notContractedCustomers.map((r) => ({
+        name: r.customerName,
+        phone: r.phone,
+        source: "not-contracted" as const,
+      })),
+    ];
+    const phoneMap = new Map<
+      string,
+      { name: string; phones: string[]; sources: string[] }
+    >();
+    allNumbers.forEach((entry) => {
+      const key = entry.phone?.trim();
+      if (!key) return;
+      const existing = phoneMap.get(key);
+      if (existing) {
+        if (!existing.phones.includes(entry.phone))
+          existing.phones.push(entry.phone);
+        if (!existing.sources.includes(entry.source))
+          existing.sources.push(entry.source);
+      } else {
+        phoneMap.set(key, {
+          name: entry.name,
+          phones: [entry.phone],
+          sources: [entry.source],
+        });
+      }
+    });
+    const statusPriority: Record<string, number> = {
+      contracted: 1,
+      "not-contracted": 2,
+      customers: 3,
+      inspections: 4,
+    };
+    const query = searchQuery.trim().toLowerCase();
+    return Array.from(phoneMap.entries())
+      .filter(([phone, data]) => {
+        if (!isPhonebookEntryVisible(data.sources)) return false;
+        if (!query) return true;
+        return (
+          (data.name || "").toLowerCase().includes(query) ||
+          phone.toLowerCase().includes(query)
+        );
+      })
+      .sort((a, b) => {
+        const aStatus = a[1].sources.includes("contracted")
+          ? "contracted"
+          : a[1].sources.includes("not-contracted")
+            ? "not-contracted"
+            : a[1].sources.includes("customers")
+              ? "customers"
+              : "inspections";
+        const bStatus = b[1].sources.includes("contracted")
+          ? "contracted"
+          : b[1].sources.includes("not-contracted")
+            ? "not-contracted"
+            : b[1].sources.includes("customers")
+              ? "customers"
+              : "inspections";
+        const statusDiff = statusPriority[aStatus] - statusPriority[bStatus];
+        if (statusDiff !== 0) return statusDiff;
+        return a[1].name.localeCompare(b[1].name, "ar");
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    customerRecords,
+    inspections,
+    contractedCustomers,
+    notContractedCustomers,
+    phonebookStatusFilter,
+    searchQuery,
+  ]);
+
   const openEditFinalizedRecord = (
     record: Inspection,
     collection: "contracted_customers" | "non_contracted_customers",
@@ -5498,16 +5591,7 @@ export default function App() {
                                             matchesFilters(r),
                                           ).length
                                         : adminSubView === "phonebook"
-                                          ? new Set(
-                                              [
-                                                ...customerRecords,
-                                                ...inspections,
-                                                ...contractedCustomers,
-                                                ...notContractedCustomers,
-                                              ]
-                                                .map((r) => r.phone)
-                                                .filter(Boolean),
-                                            ).size
+                                          ? phonebookEntries.length
                                           : catalogs.length}
                               </div>
                             </div>
@@ -5573,88 +5657,7 @@ export default function App() {
                             </div>
                           </div>
                           {(() => {
-                            const allNumbers = [
-                              ...customerRecords.map((r) => ({
-                                name: r.name,
-                                phone: r.phone,
-                                source: "customers" as const,
-                              })),
-                              ...inspections.map((r) => ({
-                                name: r.customerName,
-                                phone: r.phone,
-                                source: "inspections" as const,
-                              })),
-                              ...contractedCustomers.map((r) => ({
-                                name: r.customerName,
-                                phone: r.phone,
-                                source: "contracted" as const,
-                              })),
-                              ...notContractedCustomers.map((r) => ({
-                                name: r.customerName,
-                                phone: r.phone,
-                                source: "not-contracted" as const,
-                              })),
-                            ];
-                            const phoneMap = new Map<
-                              string,
-                              {
-                                name: string;
-                                phones: string[];
-                                sources: string[];
-                              }
-                            >();
-                            allNumbers.forEach((entry) => {
-                              const key = entry.phone?.trim();
-                              if (!key) return;
-                              const existing = phoneMap.get(key);
-                              if (existing) {
-                                if (!existing.phones.includes(entry.phone))
-                                  existing.phones.push(entry.phone);
-                                if (!existing.sources.includes(entry.source))
-                                  existing.sources.push(entry.source);
-                              } else {
-                                phoneMap.set(key, {
-                                  name: entry.name,
-                                  phones: [entry.phone],
-                                  sources: [entry.source],
-                                });
-                              }
-                            });
-                            const statusPriority: Record<string, number> = {
-                              contracted: 1,
-                              "not-contracted": 2,
-                              customers: 3,
-                              inspections: 4,
-                            };
-                            const sortedEntries = Array.from(phoneMap.entries())
-                              .filter(([phone, data]) =>
-                                isPhonebookEntryVisible(data.sources),
-                              )
-                              .sort((a, b) => {
-                                const aStatus = a[1].sources.includes(
-                                  "contracted",
-                                )
-                                  ? "contracted"
-                                  : a[1].sources.includes("not-contracted")
-                                    ? "not-contracted"
-                                    : a[1].sources.includes("customers")
-                                      ? "customers"
-                                      : "inspections";
-                                const bStatus = b[1].sources.includes(
-                                  "contracted",
-                                )
-                                  ? "contracted"
-                                  : b[1].sources.includes("not-contracted")
-                                    ? "not-contracted"
-                                    : b[1].sources.includes("customers")
-                                      ? "customers"
-                                      : "inspections";
-                                const statusDiff =
-                                  statusPriority[aStatus] -
-                                  statusPriority[bStatus];
-                                if (statusDiff !== 0) return statusDiff;
-                                return a[1].name.localeCompare(b[1].name, "ar");
-                              });
+                            const sortedEntries = phonebookEntries;
                             return sortedEntries.length > 0 ? (
                               <div className="space-y-2">
                                 {sortedEntries.map(([phone, data]) => {
