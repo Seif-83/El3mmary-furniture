@@ -3025,18 +3025,33 @@ export default function App() {
     const combinedPhone = phones.join(", ");
     setIsLoading(true);
     try {
+      // Check if any of the new phones are already registered to another customer in the system
+      const exists = unifiedCustomers.some((c) => {
+        const existingId = c.id || c.raw?.id;
+        if (modalMode === "edit" && existingId === editingId) return false;
+
+        const rawPhone = c.raw?.phone || c.phone || "";
+        const existingPhones = rawPhone
+          .split(/[,;\s]+/)
+          .map((p: string) => normalizePhone(p))
+          .filter(Boolean);
+
+        return phones.some((inputPhone) =>
+          existingPhones.includes(normalizePhone(inputPhone))
+        );
+      });
+
+      if (exists) {
+        toast.error(
+          lang === "ar"
+            ? "هذا الرقم مسجل بالفعل في النظام لعميل آخر"
+            : "This phone number is already registered for another customer"
+        );
+        setIsLoading(false);
+        return;
+      }
+
       if (modalMode === "add") {
-        // Check local IndexedDB for existing record first
-        const localExisting = await db.customers
-          .filter((c) => c.phone === combinedPhone)
-          .first();
-
-        if (localExisting) {
-          toast.error("Already registered");
-          setIsLoading(false);
-          return;
-        }
-
         const newCustomer = {
           id: crypto.randomUUID(),
           name: formData.name.trim(),
