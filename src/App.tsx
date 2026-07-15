@@ -314,6 +314,19 @@ export default function App() {
   const CONTRACT_BUCKET =
     import.meta.env.VITE_SUPABASE_CONTRACTS_BUCKET?.trim() || "contracts";
 
+  const deleteContractFromStorage = async (contractUrl?: string | null) => {
+    if (!SUPABASE_CONFIGURED || !contractUrl) return;
+    try {
+      const parts = contractUrl.split("/");
+      const fileName = parts[parts.length - 1];
+      if (fileName) {
+        await supabase.storage.from(CONTRACT_BUCKET).remove([fileName]);
+      }
+    } catch (e) {
+      console.warn("Failed to delete contract from storage:", e);
+    }
+  };
+
   // Unsaved-entry protection for a brand-new inspection (no `.id` yet):
   // step 2 (rooms/pieces/pricing) lives only in React state until the final
   // submit creates the "inspections" row, so an accidental tab close before
@@ -1289,6 +1302,12 @@ export default function App() {
     const inspections = await OrderService.getInspections();
     const contracted = await OrderService.getContracted();
     const nonContracted = await OrderService.getNonContracted();
+
+    for (const record of contracted) {
+      if (normalizePhone(record.phone) === normalizedPhone && record.contract_url) {
+        await deleteContractFromStorage(record.contract_url);
+      }
+    }
 
     for (const customer of allCustomers) {
       if (normalizePhone(customer.phone) === normalizedPhone) {
@@ -2364,6 +2383,9 @@ export default function App() {
         try {
           const rec = contractedCustomers.find((c) => c.id === id);
           if (rec) {
+            if (rec.contractUrl) {
+              await deleteContractFromStorage(rec.contractUrl);
+            }
             const existingCustomer = await CustomerService.getAll();
             const hasCustomer = existingCustomer.some(
               (c) => c.phone === rec.phone || c.name === rec.customerName,
@@ -4627,7 +4649,11 @@ export default function App() {
                                                   const phone = r.phone || r.raw?.phone || "";
                                                   const id = r.id || r.raw?.id;
                                                   if (!phone && !id) return;
-                                                  handleDeleteCustomer(id || "", phone);
+                                                  if (r.status === "contracted") {
+                                                    handleDeleteContracted(id || "");
+                                                  } else {
+                                                    handleDeleteCustomer(id || "", phone);
+                                                  }
                                                 }}
                                                 className="btn-3d btn-3d-danger flex items-center gap-2 bg-white-50 text-white-500 border border-white-100 px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-white-500 hover:text-white active:scale-95 transition-all duration-200 hover:shadow-lg hover:shadow-white-100"
                                               >
@@ -4778,7 +4804,11 @@ export default function App() {
                                         const phone = r.phone || r.raw?.phone || "";
                                         const id = r.raw?.id || "";
                                         if (!phone && !id) return;
-                                        handleDeleteCustomer(id, phone);
+                                        if (r.status === "contracted") {
+                                          handleDeleteContracted(id);
+                                        } else {
+                                          handleDeleteCustomer(id, phone);
+                                        }
                                       }}
                                       className="flex items-center justify-center gap-2 bg-red-50 text-red-500 border border-red-100 px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-red-500 hover:text-white active:scale-95 transition-all shadow-md"
                                     >
