@@ -46,7 +46,7 @@ export class CustomerService {
   static async insert(customer: any) {
     const record = { ...customer, last_modified: Date.now() };
     await db.customers.put(record);
-    await SyncManager.clearTombstone("customers", customer.id);
+    await SyncManager.clearTombstone("customers", customer.id, customer.phone);
     await SyncManager.queueOperation(
       "INSERT",
       "customers",
@@ -88,7 +88,7 @@ export class OrderService {
   static async insertInspection(inspection: any) {
     const record = { ...inspection, last_modified: Date.now() };
     await db.inspections.put(record);
-    await SyncManager.clearTombstone("inspections", inspection.id);
+    await SyncManager.clearTombstone("inspections", inspection.id, inspection.phone);
     await SyncManager.queueOperation(
       "INSERT",
       "inspections",
@@ -113,7 +113,7 @@ export class OrderService {
   static async insertContracted(record: any) {
     const storedRecord = { ...record, last_modified: Date.now() };
     await db.contracted_customers.put(storedRecord);
-    await SyncManager.clearTombstone("contracted_customers", record.id);
+    await SyncManager.clearTombstone("contracted_customers", record.id, record.phone);
     await SyncManager.queueOperation(
       "INSERT",
       "contracted_customers",
@@ -148,7 +148,7 @@ export class OrderService {
   static async insertNonContracted(record: any) {
     const storedRecord = { ...record, last_modified: Date.now() };
     await db.non_contracted_customers.put(storedRecord);
-    await SyncManager.clearTombstone("non_contracted_customers", record.id);
+    await SyncManager.clearTombstone("non_contracted_customers", record.id, record.phone);
     await SyncManager.queueOperation(
       "INSERT",
       "non_contracted_customers",

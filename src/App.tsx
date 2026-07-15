@@ -1999,6 +1999,7 @@ export default function App() {
         pickup_date: inspectionFormData.pickupDate || null,
         portfolio_date: inspectionFormData.portfolioDate || null,
         contract_date: inspectionFormData.contractDate || null,
+        status: inspectionFormData.status || "pending",
       };
 
       if (inspectionFormData.id) {
@@ -2011,6 +2012,9 @@ export default function App() {
         // Create new inspection and remove from customers
         const newId = await insertInspectionRecord(inspectionDbData);
         if (editingCollection === "customers" && newId) {
+          if (editingId) {
+            await deleteRecordById("customers", editingId);
+          }
           clearInspectionDraft(inspectionFormData.phone);
           setInspectionFormData((prev) => ({ ...prev, id: newId }));
           setEditingCollection(null);
@@ -2570,7 +2574,7 @@ export default function App() {
       } else {
         pieces.push({
           name,
-          price: 0,
+          price: resolvedRoomType === "rokna" ? 2500 : 0,
           quantity: 1,
           room_type: resolvedRoomType,
           room_instance_id: resolvedInstanceId,
@@ -2763,6 +2767,9 @@ export default function App() {
   const [phonebookStatusFilter, setPhonebookStatusFilter] = useState<
     "all" | "contracted" | "not-contracted" | "customers" | "inspections"
   >("all");
+  const [customersStatusFilter, setCustomersStatusFilter] = useState<
+    "all" | "contracted" | "not-contracted" | "customers" | "inspections"
+  >("all");
 
   const matchesFilters = (r: any) => {
     const searchMatch =
@@ -2774,20 +2781,27 @@ export default function App() {
     const govMatch =
       governorateFilter === "all" ||
       (r.governorate || "") === governorateFilter;
-    return searchMatch && govMatch;
+    
+    let statusMatch = true;
+    if (adminSubView === "customers") {
+      statusMatch =
+        customersStatusFilter === "all" || r.status === customersStatusFilter;
+    }
+
+    return searchMatch && govMatch && statusMatch;
+  };
+
+  const resolveSourcesStatus = (sources: string[]): "contracted" | "not-contracted" | "inspections" | "customers" => {
+    if (sources.includes("contracted")) return "contracted";
+    if (sources.includes("not-contracted")) return "not-contracted";
+    if (sources.includes("inspections")) return "inspections";
+    return "customers";
   };
 
   const isPhonebookEntryVisible = (sources: string[]) => {
     if (phonebookStatusFilter === "all") return true;
-    if (phonebookStatusFilter === "contracted")
-      return sources.includes("contracted");
-    if (phonebookStatusFilter === "not-contracted")
-      return sources.includes("not-contracted");
-    if (phonebookStatusFilter === "customers")
-      return sources.includes("customers");
-    if (phonebookStatusFilter === "inspections")
-      return sources.includes("inspections");
-    return true;
+    const resolvedStatus = resolveSourcesStatus(sources);
+    return resolvedStatus === phonebookStatusFilter;
   };
 
   // Single source of truth for the phonebook list: groups every record by
@@ -2855,20 +2869,8 @@ export default function App() {
         );
       })
       .sort((a, b) => {
-        const aStatus = a[1].sources.includes("contracted")
-          ? "contracted"
-          : a[1].sources.includes("not-contracted")
-            ? "not-contracted"
-            : a[1].sources.includes("customers")
-              ? "customers"
-              : "inspections";
-        const bStatus = b[1].sources.includes("contracted")
-          ? "contracted"
-          : b[1].sources.includes("not-contracted")
-            ? "not-contracted"
-            : b[1].sources.includes("customers")
-              ? "customers"
-              : "inspections";
+        const aStatus = resolveSourcesStatus(a[1].sources);
+        const bStatus = resolveSourcesStatus(b[1].sources);
         const statusDiff = statusPriority[aStatus] - statusPriority[bStatus];
         if (statusDiff !== 0) return statusDiff;
         return a[1].name.localeCompare(b[1].name, "ar");
@@ -3736,23 +3738,23 @@ export default function App() {
                               <div className="space-y-2">
                                 {sortedEntries.map(([phone, data]) => {
                                   const waNumber = phone.replace(/^0+/, "20");
-                                  const sourceLabel = data.sources.includes(
-                                    "contracted",
-                                  )
-                                    ? lang === "ar"
-                                      ? "متعاقد"
-                                      : "Contracted"
-                                    : data.sources.includes("not-contracted")
+                                  const resolvedStatus = resolveSourcesStatus(data.sources);
+                                  const sourceLabel =
+                                    resolvedStatus === "contracted"
                                       ? lang === "ar"
-                                        ? "غير متعاقد"
-                                        : "Not Contracted"
-                                      : data.sources.includes("customers")
+                                        ? "متعاقد"
+                                        : "Contracted"
+                                      : resolvedStatus === "not-contracted"
                                         ? lang === "ar"
-                                          ? "عميل"
-                                          : "Customer"
-                                        : lang === "ar"
-                                          ? "معاينة"
-                                          : "Inspection";
+                                          ? "غير متعاقد"
+                                          : "Not Contracted"
+                                        : resolvedStatus === "inspections"
+                                          ? lang === "ar"
+                                            ? "معاينة"
+                                            : "Inspection"
+                                          : lang === "ar"
+                                            ? "عميل"
+                                            : "Customer";
                                   return (
                                     <div
                                       key={phone}
@@ -4234,6 +4236,7 @@ export default function App() {
                               bg: "bg-blue-100",
                               hover: "rgba(37,99,235,0.06)",
                               borderHover: "hover:border-blue-200/50",
+                              targetView: "customers" as const,
                             },
                             {
                               label:
@@ -4248,6 +4251,7 @@ export default function App() {
                               bg: "bg-amber-100",
                               hover: "rgba(217,119,6,0.06)",
                               borderHover: "hover:border-amber-200/50",
+                              targetView: "inspections" as const,
                             },
                             {
                               label:
@@ -4260,6 +4264,7 @@ export default function App() {
                               bg: "bg-emerald-100",
                               hover: "rgba(5,150,105,0.06)",
                               borderHover: "hover:border-emerald-200/50",
+                              targetView: "contracted" as const,
                             },
                             {
                               label:
@@ -4272,6 +4277,7 @@ export default function App() {
                               bg: "bg-rose-100",
                               hover: "rgba(225,29,72,0.06)",
                               borderHover: "hover:border-rose-200/50",
+                              targetView: "not-contracted" as const,
                             },
                             {
                               label:
@@ -4293,6 +4299,7 @@ export default function App() {
                               bg: "bg-violet-100",
                               hover: "rgba(124,58,237,0.06)",
                               borderHover: "hover:border-violet-200/50",
+                              targetView: "phonebook" as const,
                             },
                             {
                               label:
@@ -4305,11 +4312,13 @@ export default function App() {
                               bg: "bg-teal-100",
                               hover: "rgba(13,148,136,0.06)",
                               borderHover: "hover:border-teal-200/50",
+                              targetView: "catalogs" as const,
                             },
                           ].map((card) => (
                             <div
                               key={card.label}
-                              className={`group relative glass rounded-xl md:rounded-2xl lg:rounded-[2rem] p-4 md:p-6 lg:p-10 shadow-md md:shadow-lg lg:shadow-xl border border-white/40 ${card.borderHover} hover:shadow-lg md:hover:shadow-xl lg:hover:shadow-2xl hover:-translate-y-0.5 md:hover:-translate-y-1 transition-all duration-300 overflow-hidden`}
+                              onClick={() => setAdminSubView(card.targetView)}
+                              className={`group relative glass rounded-xl md:rounded-2xl lg:rounded-[2rem] p-4 md:p-6 lg:p-10 shadow-md md:shadow-lg lg:shadow-xl border border-white/40 ${card.borderHover} hover:shadow-lg md:hover:shadow-xl lg:hover:shadow-2xl hover:-translate-y-0.5 md:hover:-translate-y-1 transition-all duration-300 overflow-hidden cursor-pointer`}
                             >
                               <div
                                 className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl md:rounded-2xl lg:rounded-[2rem]"
@@ -4432,6 +4441,52 @@ export default function App() {
                       />
                     ) : adminSubView === "customers" ? (
                       <div className="space-y-8">
+                        <div className="flex flex-wrap gap-2">
+                          {(
+                            [
+                              {
+                                key: "all",
+                                label: lang === "ar" ? "الكل" : "All",
+                              },
+                              {
+                                key: "contracted",
+                                label:
+                                  lang === "ar" ? "متعاقد" : "Contracted",
+                              },
+                              {
+                                key: "not-contracted",
+                                label:
+                                  lang === "ar"
+                                    ? "غير متعاقد"
+                                    : "Not contracted",
+                              },
+                              {
+                                key: "customers",
+                                label: lang === "ar" ? "عميل" : "Customer",
+                              },
+                              {
+                                key: "inspections",
+                                label:
+                                  lang === "ar" ? "معاينات" : "Inspections",
+                              },
+                            ] as const
+                          ).map((filter) => (
+                            <button
+                              key={filter.key}
+                              type="button"
+                              onClick={() =>
+                                setCustomersStatusFilter(filter.key)
+                              }
+                              className={`px-4 py-2 rounded-2xl text-sm font-semibold transition-all ${
+                                customersStatusFilter === filter.key
+                                  ? "bg-zinc-900 text-white"
+                                  : "bg-white text-zinc-700 border border-zinc-200 hover:border-zinc-300"
+                              }`}
+                            >
+                              {filter.label}
+                            </button>
+                          ))}
+                        </div>
                         <div className="hidden md:block glass glass-table rounded-[2.5rem] overflow-hidden p-6 md:p-10 shadow-xl border border-white/40">
                           <div className="overflow-x-auto">
                             <table className="w-full text-left table-zebra">
@@ -5950,9 +6005,13 @@ export default function App() {
                                             <div className="grid gap-2 sm:grid-cols-[auto_auto] items-center">
                                               <div className="relative rounded-3xl bg-white px-4 py-3 text-sm font-bold text-zinc-800">
                                                 <span className="text-[10px] text-zinc-400 block mb-1">
-                                                  {lang === "ar"
-                                                    ? "العدد"
-                                                    : "Qty"}
+                                                  {roomKey === "rokna"
+                                                    ? lang === "ar"
+                                                      ? "الأمتار"
+                                                      : "Meters"
+                                                    : lang === "ar"
+                                                      ? "العدد"
+                                                      : "Qty"}
                                                 </span>
                                                 <input
                                                   type="number"

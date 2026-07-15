@@ -95,8 +95,14 @@ export class SyncManager {
     return !!t;
   }
 
-  static async clearTombstone(tableName: string, recordId: string) {
+  static async clearTombstone(tableName: string, recordId: string, phone?: string | null) {
     await db.tombstones.delete(`${tableName}:${recordId}`);
+    if (phone) {
+      const normalizedPhone = normalizePhone(phone);
+      if (normalizedPhone) {
+        await db.tombstones.delete(`${tableName}:phone:${normalizedPhone}`);
+      }
+    }
   }
 
   static async queueOperation(
@@ -496,11 +502,39 @@ export class SyncManager {
       case "INSERT": {
         const { error } = await supabase.from(tableName).insert(cleanedPayload);
         if (error && !error.message?.includes("duplicate key")) throw error;
+
+        // Clear remote tombstone on Supabase by ID and Phone if insertion succeeded
+        try {
+          const phone = normalizePhone(payload?.phone);
+          let query = supabase.from("deleted_records").delete().eq("table_name", tableName);
+          if (phone) {
+            query = query.or(`record_id.eq.${recordId},phone.eq.${phone}`);
+          } else {
+            query = query.eq("record_id", recordId);
+          }
+          await query;
+        } catch (e) {
+          console.warn("Failed to clear remote tombstone on INSERT:", e);
+        }
         break;
       }
       case "UPDATE": {
         const { error } = await supabase.from(tableName).update(cleanedPayload).eq(pkColumn, recordId);
         if (error) throw error;
+
+        // Clear remote tombstone on Supabase by ID and Phone if update succeeded
+        try {
+          const phone = normalizePhone(payload?.phone);
+          let query = supabase.from("deleted_records").delete().eq("table_name", tableName);
+          if (phone) {
+            query = query.or(`record_id.eq.${recordId},phone.eq.${phone}`);
+          } else {
+            query = query.eq("record_id", recordId);
+          }
+          await query;
+        } catch (e) {
+          console.warn("Failed to clear remote tombstone on UPDATE:", e);
+        }
         break;
       }
       case "DELETE": {
