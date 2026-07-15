@@ -175,6 +175,7 @@ export default function App() {
       source: string;
       status: CustomerStatus;
       raw: any;
+      createdAt?: any;
     };
 
     const map = new Map<string, UnifiedCustomer>();
@@ -204,6 +205,7 @@ export default function App() {
         source,
         status,
         raw: entry,
+        createdAt: entry?.createdAt,
       };
       const priority: Record<CustomerStatus, number> = {
         contracted: 4,
@@ -228,7 +230,11 @@ export default function App() {
       push(c.phone, c, "not-contracted", "not-contracted"),
     );
 
-    return Array.from(map.values());
+    return Array.from(map.values()).sort((a, b) => {
+      const timeA = a.createdAt?.toDate?.()?.getTime() || 0;
+      const timeB = b.createdAt?.toDate?.()?.getTime() || 0;
+      return timeB - timeA;
+    });
   }, [
     customerRecords,
     inspections,
@@ -2766,11 +2772,12 @@ export default function App() {
     setIsModalOpen(true);
   };
 
-  const handleOpenEditModal = (record: any) => {
+  const handleOpenEditModal = (unifiedRec: any) => {
+    const record = unifiedRec.raw || unifiedRec;
     const phones = normalizePhoneList(record.phone);
     setFormData({
       ...formData,
-      name: record.name,
+      name: record.name || record.customerName || "",
       phone: phones[0] || "",
       phones,
       pickupDate: record.pickupDate || "",
@@ -2778,7 +2785,22 @@ export default function App() {
       governorate: record.governorate || "",
     });
     setEditingId(record.id);
-    setEditingCollection("customers");
+    
+    let collection:
+      | "customers"
+      | "inspections"
+      | "contracted_customers"
+      | "non_contracted_customers"
+      | null = "customers";
+    if (unifiedRec.status === "inspections") {
+      collection = "inspections";
+    } else if (unifiedRec.status === "contracted") {
+      collection = "contracted_customers";
+    } else if (unifiedRec.status === "not-contracted") {
+      collection = "non_contracted_customers";
+    }
+    setEditingCollection(collection);
+    
     setModalMode("edit");
     setIsModalOpen(true);
   };
@@ -3033,15 +3055,43 @@ export default function App() {
         void playSound("success");
         toast.success("Added success");
       } else {
-        const updates = {
-          name: formData.name.trim(),
-          phone: combinedPhone,
-          address: formData.address || null,
-          pickup_date: formData.pickupDate || null,
-          governorate: formData.governorate || null,
-        };
-        // Optimistic UI: update locally & queue sync
-        await CustomerService.update(editingId!, updates);
+        if (editingCollection === "inspections") {
+          const updates = {
+            customer_name: formData.name.trim(),
+            phone: combinedPhone,
+            address: formData.address || null,
+            pickup_date: formData.pickupDate || null,
+            governorate: formData.governorate || null,
+          };
+          await OrderService.updateInspection(editingId!, updates);
+        } else if (editingCollection === "contracted_customers") {
+          const updates = {
+            customer_name: formData.name.trim(),
+            phone: combinedPhone,
+            address: formData.address || null,
+            pickup_date: formData.pickupDate || null,
+            governorate: formData.governorate || null,
+          };
+          await OrderService.updateContracted(editingId!, updates);
+        } else if (editingCollection === "non_contracted_customers") {
+          const updates = {
+            customer_name: formData.name.trim(),
+            phone: combinedPhone,
+            address: formData.address || null,
+            pickup_date: formData.pickupDate || null,
+            governorate: formData.governorate || null,
+          };
+          await OrderService.updateNonContracted(editingId!, updates);
+        } else {
+          const updates = {
+            name: formData.name.trim(),
+            phone: combinedPhone,
+            address: formData.address || null,
+            pickup_date: formData.pickupDate || null,
+            governorate: formData.governorate || null,
+          };
+          await CustomerService.update(editingId!, updates);
+        }
         await refreshAllData();
         void playSound("success");
         toast.success("Updated success");
@@ -4563,9 +4613,7 @@ export default function App() {
                                             <>
                                               <button
                                                 onClick={() =>
-                                                  handleOpenEditModal(
-                                                    r.raw || r,
-                                                  )
+                                                  handleOpenEditModal(r)
                                                 }
                                                 className="flex items-center gap-2 bg-zinc-800 text-white px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-zinc-700 active:scale-95 transition-all duration-200 shadow-md shadow-zinc-200 hover:shadow-lg"
                                               >
@@ -4716,7 +4764,7 @@ export default function App() {
                                   <div className="flex gap-2 pt-4 border-t border-zinc-100 flex-wrap">
                                     <button
                                       onClick={() =>
-                                        handleOpenEditModal(r.raw || r)
+                                        handleOpenEditModal(r)
                                       }
                                       className="flex-1 min-w-[80px] flex items-center justify-center gap-2 bg-zinc-900 text-white px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-zinc-700 active:scale-95 transition-all shadow-md"
                                     >
