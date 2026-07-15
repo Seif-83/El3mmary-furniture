@@ -1303,7 +1303,7 @@ export default function App() {
     const contracted = await OrderService.getContracted();
     const nonContracted = await OrderService.getNonContracted();
 
-    for (const record of contracted) {
+    for (const record of contracted) { 
       if (normalizePhone(record.phone) === normalizedPhone && record.contract_url) {
         await deleteContractFromStorage(record.contract_url);
       }
