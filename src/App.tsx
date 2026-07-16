@@ -94,6 +94,8 @@ import { ActivitiesPage } from "./components/ActivitiesPage";
 import { SettingsPage } from "./components/SettingsPage";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { LoginScreen } from "./components/LoginScreen";
+import { CustomerPortal } from "./components/CustomerPortal";
+import { UserManagement } from "./components/UserManagement";
 import toast, { Toaster } from "react-hot-toast";
 import { format } from "date-fns";
 
@@ -103,14 +105,21 @@ export default function App() {
   const t = translations[lang];
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [userProfile, setUserProfile] = useState<{ id: string; username: string; email: string; role: string; permissions: string[] } | null>(null);
+  const [customerSession, setCustomerSession] = useState<{ phone: string; name: string; record: any } | null>(null);
+  const [customerPhoneInput, setCustomerPhoneInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [showSplash, setShowSplash] = useState(false);
-  const allowedEmails = [ADMIN_EMAIL, VIEWER_EMAIL];
-  const isAdminUser = currentUser?.email === ADMIN_EMAIL;
-  const isAuthorizedUser =
-    currentUser !== null && allowedEmails.includes(currentUser.email ?? "");
+
+  const hasPermission = (permission: string) => {
+    if (userProfile?.role === "super_admin") return true;
+    return userProfile?.permissions?.includes(permission) || false;
+  };
+
+  const isAdminUser = hasPermission("production.edit");
+  const isAuthorizedUser = userProfile !== null;
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"add" | "edit">("add");
@@ -135,6 +144,7 @@ export default function App() {
     | "payments"
     | "activities"
     | "settings"
+    | "users"
   >("dashboard");
   const [catalogs, setCatalogs] = useState<CatalogSheet[]>([]);
   const [customerRecords, setCustomerRecords] = useState<CustomerRecord[]>([]);
@@ -146,13 +156,54 @@ export default function App() {
     Inspection[]
   >([]);
   const [selectedSheetId, setSelectedSheetId] = useState<string | null>(null);
+
+  const filteredCustomerRecords = useMemo(() => {
+    return customerRecords.filter((r) => {
+      const hasAlex = userProfile?.role === "super_admin" || userProfile?.permissions?.includes("production.alexandria");
+      const hasCairo = userProfile?.role === "super_admin" || userProfile?.permissions?.includes("production.cairo");
+      if (hasAlex && !hasCairo) return r.governorate === "الاسكندرية";
+      if (hasCairo && !hasAlex) return r.governorate === "القاهرة";
+      return true;
+    });
+  }, [customerRecords, userProfile]);
+
+  const filteredInspections = useMemo(() => {
+    return inspections.filter((r) => {
+      const hasAlex = userProfile?.role === "super_admin" || userProfile?.permissions?.includes("production.alexandria");
+      const hasCairo = userProfile?.role === "super_admin" || userProfile?.permissions?.includes("production.cairo");
+      if (hasAlex && !hasCairo) return r.governorate === "الاسكندرية";
+      if (hasCairo && !hasAlex) return r.governorate === "القاهرة";
+      return true;
+    });
+  }, [inspections, userProfile]);
+
+  const filteredContractedCustomers = useMemo(() => {
+    return contractedCustomers.filter((r) => {
+      const hasAlex = userProfile?.role === "super_admin" || userProfile?.permissions?.includes("production.alexandria");
+      const hasCairo = userProfile?.role === "super_admin" || userProfile?.permissions?.includes("production.cairo");
+      if (hasAlex && !hasCairo) return r.governorate === "الاسكندرية";
+      if (hasCairo && !hasAlex) return r.governorate === "القاهرة";
+      return true;
+    });
+  }, [contractedCustomers, userProfile]);
+
+  const filteredNotContractedCustomers = useMemo(() => {
+    return notContractedCustomers.filter((r) => {
+      const hasAlex = userProfile?.role === "super_admin" || userProfile?.permissions?.includes("production.alexandria");
+      const hasCairo = userProfile?.role === "super_admin" || userProfile?.permissions?.includes("production.cairo");
+      if (hasAlex && !hasCairo) return r.governorate === "الاسكندرية";
+      if (hasCairo && !hasAlex) return r.governorate === "القاهرة";
+      return true;
+    });
+  }, [notContractedCustomers, userProfile]);
+
   const isInspectionView = adminSubView === "inspections";
   const isContractedView = adminSubView === "contracted";
   const activeRecords = isInspectionView
-    ? inspections
+    ? filteredInspections
     : isContractedView
-      ? contractedCustomers
-      : notContractedCustomers;
+      ? filteredContractedCustomers
+      : filteredNotContractedCustomers;
 
   // Unified customers list across tables with status
   const unifiedCustomers = useMemo(() => {
@@ -217,16 +268,16 @@ export default function App() {
       else if (priority[status] > priority[existing.status]) map.set(k, obj);
     };
 
-    (customerRecords || []).forEach((c) =>
+    (filteredCustomerRecords || []).forEach((c) =>
       push(c.phone, c, "customers", "customers"),
     );
-    (inspections || []).forEach((i) =>
+    (filteredInspections || []).forEach((i) =>
       push(i.phone, i, "inspections", "inspections"),
     );
-    (contractedCustomers || []).forEach((c) =>
+    (filteredContractedCustomers || []).forEach((c) =>
       push(c.phone, c, "contracted", "contracted"),
     );
-    (notContractedCustomers || []).forEach((c) =>
+    (filteredNotContractedCustomers || []).forEach((c) =>
       push(c.phone, c, "not-contracted", "not-contracted"),
     );
 
@@ -236,10 +287,10 @@ export default function App() {
       return timeB - timeA;
     });
   }, [
-    customerRecords,
-    inspections,
-    contractedCustomers,
-    notContractedCustomers,
+    filteredCustomerRecords,
+    filteredInspections,
+    filteredContractedCustomers,
+    filteredNotContractedCustomers,
   ]);
 
   const getStatusBadge = (status: string) => {
@@ -362,6 +413,99 @@ export default function App() {
     try {
       localStorage.removeItem(getInspectionDraftKey(phone));
     } catch {}
+  };
+
+  const getInspectionActionForCustomer = (r: any) => {
+    const phone = r.phone || r.raw?.phone || "";
+    const normPhone = normalizePhone(phone);
+    const existing = inspections.find(
+      (insp) => normalizePhone(insp.phone) === normPhone
+    );
+
+    if (existing) {
+      return {
+        isResume: true,
+        label: lang === "ar" ? "استكمال معاينة" : "Resume Visit",
+        onClick: () => {
+          setAdminSubView("inspections");
+          const custRec = customerRecords.find((c) => c.phone === r.phone);
+          const actualId = custRec?.id || r.raw?.id;
+          setTimeout(() => {
+            setInspectionFormData(existing);
+            setEditingCollection("inspections");
+            setEditingId(existing.id);
+            setInspectionStep(existing.pieces?.length || existing.rooms ? 2 : 1);
+            setIsInspectionModalOpen(true);
+            const el = document.getElementById(`inspection-${existing.id ?? ""}`);
+            if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+          }, 120);
+        }
+      };
+    }
+
+    const draft = loadInspectionDraft(phone);
+    const draftHasRealContent =
+      !!draft &&
+      !draft.id &&
+      (((draft.rooms || 0) > 0) ||
+        ((draft.pieces?.length || 0) > 0) ||
+        ((draft.totalAmount || 0) !== 0) ||
+        ((draft.notes || "").trim() !== ""));
+
+    if (draftHasRealContent) {
+      return {
+        isResume: true,
+        label: lang === "ar" ? "استكمال معاينة" : "Resume Visit",
+        onClick: () => {
+          setAdminSubView("inspections");
+          const custRec = customerRecords.find((c) => c.phone === r.phone);
+          const actualId = custRec?.id || r.raw?.id;
+          setTimeout(() => {
+            setInspectionFormData({ ...draft, phone: r.phone });
+            toast.success(
+              lang === "ar"
+                ? "تم استرجاع بيانات معاينة لم تُحفظ"
+                : "Restored unsaved inspection data",
+            );
+            setEditingCollection("customers");
+            setEditingId(actualId ?? null);
+            setInspectionStep(draft.pieces?.length || draft.rooms ? 2 : 1);
+            setIsInspectionModalOpen(true);
+          }, 120);
+        }
+      };
+    }
+
+    return {
+      isResume: false,
+      label: lang === "ar" ? "بدء المعاينة" : "Start Visit",
+      onClick: () => {
+        setAdminSubView("inspections");
+        const custRec = customerRecords.find((c) => c.phone === r.phone);
+        const actualId = custRec?.id || r.raw?.id;
+        setTimeout(() => {
+          setInspectionFormData({
+            customerName: r.name,
+            phone: r.phone,
+            id: undefined,
+            address: r.address || r.pickupDate || "",
+            deliveryAddress: r.deliveryAddress || "",
+            pickupDate: r.pickupDate || r.address || "",
+            visitDate: r.visitDate || "",
+            visitDateTo: r.visitDateTo || "",
+            notes: r.notes || "",
+            governorate: r.governorate || "",
+            rooms: 0,
+            pieces: [],
+            totalAmount: 0,
+          });
+          setEditingCollection("customers");
+          setEditingId(actualId ?? null);
+          setInspectionStep(1);
+          setIsInspectionModalOpen(true);
+        }, 120);
+      }
+    };
   };
 
   // Check if inspection form has unsaved changes
@@ -896,6 +1040,11 @@ export default function App() {
   useEffect(() => {
     currentUserRef.current = currentUser;
   }, [currentUser]);
+
+  const userProfileRef = useRef(userProfile);
+  useEffect(() => {
+    userProfileRef.current = userProfile;
+  }, [userProfile]);
 
   const [formData, setFormData] = useState({
     username: "",
@@ -1463,14 +1612,37 @@ export default function App() {
 
     const syncAuthorizedUser = async (user: User | null) => {
       setCurrentUser(user);
-      setIsAuthChecking(false);
-
-      if (user && allowedEmails.includes(user.email ?? "")) {
+      if (user) {
         try {
-          if (navigator.onLine) {
-            await SyncManager.triggerSync();
+          const { data: profile, error } = await supabase
+            .from("user_profiles")
+            .select("*")
+            .eq("id", user.id)
+            .maybeSingle();
+
+          if (profile) {
+            setUserProfile(profile);
+
+            // Apply factory restrictions to governorateFilter
+            const hasAlex = profile.role === "super_admin" || profile.permissions?.includes("production.alexandria");
+            const hasCairo = profile.role === "super_admin" || profile.permissions?.includes("production.cairo");
+
+            if (hasAlex && !hasCairo) {
+              setGovernorateFilter("الاسكندرية");
+            } else if (hasCairo && !hasAlex) {
+              setGovernorateFilter("القاهرة");
+            } else {
+              setGovernorateFilter("all");
+            }
+
+            if (navigator.onLine) {
+              await SyncManager.triggerSync();
+            }
+            await refreshAllData();
+          } else {
+            setUserProfile(null);
+            clearDashboardData();
           }
-          await refreshAllData();
         } catch (error) {
           console.error("Failed to sync dashboard data", error);
           toast.error(
@@ -1478,8 +1650,10 @@ export default function App() {
           );
         }
       } else {
+        setUserProfile(null);
         clearDashboardData();
       }
+      setIsAuthChecking(false);
     };
 
     supabase.auth
@@ -1496,8 +1670,8 @@ export default function App() {
 
     // Start polling every 15s for reliability and trigger sync automatically in the background
     const pollingId = setInterval(async () => {
-      const u = currentUserRef.current;
-      if (u && allowedEmails.includes(u.email ?? "")) {
+      const u = userProfileRef.current;
+      if (u) {
         if (navigator.onLine) {
           try {
             await SyncManager.triggerSync();
@@ -1511,8 +1685,8 @@ export default function App() {
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        const u = currentUserRef.current;
-        if (u && allowedEmails.includes(u.email ?? "")) {
+        const u = userProfileRef.current;
+        if (u) {
           if (navigator.onLine) {
             SyncManager.triggerSync()
               .then(() => refreshAllData())
@@ -1671,27 +1845,64 @@ export default function App() {
   const handleAdminLogin = async (e: FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    const targetEmail = formData.username.toLowerCase().trim();
+    const targetUsername = formData.username.toLowerCase().trim();
     const targetPassword = formData.password;
 
-    if (!targetEmail || !targetPassword) {
+    if (!targetUsername || !targetPassword) {
       toast.error(
         lang === "ar"
-          ? "الرجاء إدخال البريد الإلكتروني وكلمة المرور"
-          : "Please enter email and password",
+          ? "الرجاء إدخال اسم المستخدم وكلمة المرور"
+          : "Please enter username and password",
       );
       setIsLoading(false);
       return;
     }
 
     try {
+      // 1. Query user_profiles table for username mapping
+      const { data: profileData, error: profileErr } = await supabase
+        .from("user_profiles")
+        .select("email")
+        .eq("username", targetUsername)
+        .maybeSingle();
+
+      if (profileErr) throw profileErr;
+      if (!profileData) {
+        throw new Error(lang === "ar" ? "بيانات الدخول غير صحيحة" : "Invalid credentials");
+      }
+
+      // 2. Sign in with the retrieved email and the provided password
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: targetEmail,
+        email: profileData.email,
         password: targetPassword,
       });
       if (error) throw error;
       const user = data.session?.user ?? null;
       setCurrentUser(user);
+
+      // Fetch full profile details
+      const { data: fullProfile } = await supabase
+        .from("user_profiles")
+        .select("*")
+        .eq("id", user?.id)
+        .maybeSingle();
+
+      if (fullProfile) {
+        setUserProfile(fullProfile);
+
+        // Apply factory restrictions to governorateFilter
+        const hasAlex = fullProfile.role === "super_admin" || fullProfile.permissions?.includes("production.alexandria");
+        const hasCairo = fullProfile.role === "super_admin" || fullProfile.permissions?.includes("production.cairo");
+
+        if (hasAlex && !hasCairo) {
+          setGovernorateFilter("الاسكندرية");
+        } else if (hasCairo && !hasAlex) {
+          setGovernorateFilter("القاهرة");
+        } else {
+          setGovernorateFilter("all");
+        }
+      }
+
       setIsAuthChecking(false);
       toast.success(
         lang === "ar" ? "تم تسجيل الدخول" : "Logged in successfully",
@@ -1699,24 +1910,133 @@ export default function App() {
       setFormData({ ...formData, username: "", password: "" });
       await logActivity(
         "login",
-        `${targetEmail} ${lang === "ar" ? "سجل دخول" : "logged in"}`,
+        `${targetUsername} ${lang === "ar" ? "سجل دخول" : "logged in"}`,
       );
     } catch (error: any) {
-      console.error("Supabase sign-in error:", error);
-      const rawMessage =
-        error?.message || error?.msg || error?.error_description || null;
-      const message =
-        typeof rawMessage === "string" &&
-        rawMessage.toLowerCase().includes("invalid api key")
-          ? lang === "ar"
-            ? "مفتاح Supabase في Vercel غير صحيح. افتح إعدادات Vercel وأضف VITE_SUPABASE_URL و VITE_SUPABASE_ANON_KEY بالقيم الصحيحة من Supabase بدون علامات تنصيص، ثم أعد النشر."
-            : "This Vercel deployment has an invalid Supabase key. In Vercel, set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to the exact values from Supabase without quotes, then redeploy."
-          : rawMessage;
+      console.error("Login error:", error);
       toast.error(
-        message || (lang === "ar" ? "بيانات غير صالحة" : "Invalid credentials"),
+        error.message || (lang === "ar" ? "بيانات غير صالحة" : "Invalid credentials"),
       );
     }
     setIsLoading(false);
+  };
+
+  const handleCustomerLogin = async (e: FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    const rawPhone = customerPhoneInput.trim();
+    const normalized = normalizePhone(rawPhone);
+
+    if (!normalized) {
+      toast.error(
+        lang === "ar"
+          ? "الرجاء إدخال رقم هاتف صحيح"
+          : "Please enter a valid phone number",
+      );
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      // 1. Try to find local match first
+      const contracted = await OrderService.getContracted();
+      let match: any = contracted.find(
+        (c) => normalizePhone(c.phone) === normalized
+      );
+
+      let fetchedPayments: any[] = [];
+      let fetchedStages: any[] = [];
+
+      if (match) {
+        // If matched locally, load payments and stages from local Dexie DB
+        fetchedPayments = await InvoiceService.getPayments();
+        fetchedStages = await StageService.getStages();
+      } else {
+        // 2. If no local match (e.g. clean browser), check Supabase directly using RPC
+        const { data: customerData, error: rpcError } = await supabase
+          .rpc("get_customer_by_phone", { phone_input: normalized });
+
+        if (rpcError) throw rpcError;
+        if (customerData) {
+          // Map snake_case keys from DB to camelCase keys expected by customerRecord/CustomerPortal
+          match = {
+            id: customerData.id,
+            customerName: customerData.customer_name,
+            phone: customerData.phone,
+            address: customerData.address,
+            deliveryAddress: customerData.delivery_address,
+            deliveryDate: customerData.delivery_date,
+            visitDate: customerData.visit_date,
+            notes: customerData.notes,
+            rooms: customerData.rooms,
+            pieces: customerData.pieces,
+            totalAmount: customerData.total_amount,
+            paidAmount: customerData.paid_amount,
+            remainingAmount: customerData.remaining_amount,
+            status: customerData.status,
+            governorate: customerData.governorate,
+            contractUrl: customerData.contract_url,
+          };
+
+          // Fetch their payments and stages from Supabase using RPCs
+          const { data: remotePayments } = await supabase
+            .rpc("get_customer_payments_by_id", { customer_id: match.id });
+          if (remotePayments) {
+            fetchedPayments = remotePayments;
+          }
+
+          const { data: remoteStages } = await supabase
+            .rpc("get_customer_stages_by_phone", { phone_input: normalized });
+          if (remoteStages) {
+            fetchedStages = remoteStages;
+          }
+        }
+      }
+
+      if (!match) {
+        throw new Error(
+          lang === "ar"
+            ? "عذراً، لم نجد أي تعاقد نشط مسجل برقم الهاتف هذا."
+            : "Sorry, no active contract found for this phone number."
+        );
+      }
+
+      // Update state
+      setAllPayments(fetchedPayments);
+      setStages(fetchedStages);
+
+      // Success! Log in as customer
+      setCustomerSession({
+        phone: match.phone,
+        name: match.customerName,
+        record: match,
+      });
+
+      toast.success(
+        lang === "ar"
+          ? `أهلاً بك، ${match.customerName}`
+          : `Welcome, ${match.customerName}`,
+      );
+      setCustomerPhoneInput("");
+    } catch (error: any) {
+      console.error("Customer login error:", error);
+      toast.error(error.message);
+    }
+    setIsLoading(false);
+  };
+
+  const handleLogout = async () => {
+    if (currentUser) {
+      await logActivity(
+        "logout",
+        `${userProfile?.username || currentUser.email || "Unknown"} ${lang === "ar" ? "سجل خروج" : "logged out"}`,
+      );
+      await supabase.auth.signOut();
+    }
+    setCurrentUser(null);
+    setUserProfile(null);
+    setCustomerSession(null);
+    toast.success(lang === "ar" ? "تم تسجيل الخروج" : "Logged out");
   };
 
   const handleDeleteCustomer = async (
@@ -1801,15 +2121,6 @@ export default function App() {
         }
       },
     );
-  };
-
-  const handleLogout = async () => {
-    await logActivity(
-      "logout",
-      `${currentUser?.email || "Unknown"} ${lang === "ar" ? "سجل خروج" : "logged out"}`,
-    );
-    await supabase.auth.signOut();
-    toast.success("Logged out");
   };
 
   const handleExportExcel = (data: any[], fileName: string) => {
@@ -2151,6 +2462,14 @@ export default function App() {
   };
 
   const handleContractUpload = async (file: File) => {
+    if (!hasPermission("contracts.upload")) {
+      toast.error(
+        lang === "ar"
+          ? "ليست لديك صلاحية رفع أو تعديل العقود"
+          : "You do not have permission to upload or edit contracts",
+      );
+      return;
+    }
     if (!pendingContractInspection) return;
     if (!file.type.startsWith("image/")) {
       toast.error(
@@ -2274,7 +2593,14 @@ export default function App() {
     directRecord?: Inspection,
     contractUrl?: string,
   ) => {
-    if (!ensureAdminAccess()) return;
+    if (!hasPermission("production.edit") && !hasPermission("contracts.upload")) {
+      toast.error(
+        lang === "ar"
+          ? "هذه العملية متاحة للمسؤول فقط أو لمسؤول التعاقدات"
+          : "This action is available to admins or contract managers only",
+      );
+      return;
+    }
 
     setIsLoading(true);
     try {
@@ -2854,22 +3180,22 @@ export default function App() {
   // never disagrees with what's actually shown below it.
   const phonebookEntries = useMemo(() => {
     const allNumbers = [
-      ...customerRecords.map((r) => ({
+      ...filteredCustomerRecords.map((r) => ({
         name: r.name,
         phone: r.phone,
         source: "customers" as const,
       })),
-      ...inspections.map((r) => ({
+      ...filteredInspections.map((r) => ({
         name: r.customerName,
         phone: r.phone,
         source: "inspections" as const,
       })),
-      ...contractedCustomers.map((r) => ({
+      ...filteredContractedCustomers.map((r) => ({
         name: r.customerName,
         phone: r.phone,
         source: "contracted" as const,
       })),
-      ...notContractedCustomers.map((r) => ({
+      ...filteredNotContractedCustomers.map((r) => ({
         name: r.customerName,
         phone: r.phone,
         source: "not-contracted" as const,
@@ -2921,10 +3247,10 @@ export default function App() {
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    customerRecords,
-    inspections,
-    contractedCustomers,
-    notContractedCustomers,
+    filteredCustomerRecords,
+    filteredInspections,
+    filteredContractedCustomers,
+    filteredNotContractedCustomers,
     phonebookStatusFilter,
     searchQuery,
   ]);
@@ -2943,6 +3269,14 @@ export default function App() {
   const handlePortfolioUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
   ) => {
+    if (!hasPermission("contracts.upload")) {
+      toast.error(
+        lang === "ar"
+          ? "ليست لديك صلاحية رفع أو تعديل العقود"
+          : "You do not have permission to upload or edit contracts",
+      );
+      return;
+    }
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.type !== "application/pdf") {
@@ -3305,6 +3639,14 @@ export default function App() {
               </motion.button>
             </div>
           </motion.div>
+        ) : customerSession ? (
+          <CustomerPortal
+            lang={lang}
+            customerRecord={customerSession.record}
+            payments={allPayments}
+            stages={stages}
+            onLogout={handleLogout}
+          />
         ) : (
           <motion.div
             key="app"
@@ -3377,89 +3719,110 @@ export default function App() {
                             <LayoutDashboard className="w-4 h-4" />{" "}
                             {t.dashboard}
                           </div>
-                          <div
-                            className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "customers" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                            onClick={() => {
-                              setAdminSubView("customers");
-                              setSidebarOpen(false);
-                            }}
-                          >
-                            <UserIcon className="w-4 h-4" /> {t.customers}
-                          </div>
-                          <div
-                            className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "inspections" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                            onClick={() => {
-                              setAdminSubView("inspections");
-                              setSidebarOpen(false);
-                            }}
-                          >
-                            <ClipboardList className="w-4 h-4" />{" "}
-                            {t.inspections}
-                          </div>
-                          <div
-                            className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "contracted" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                            onClick={() => {
-                              setAdminSubView("contracted");
-                              setSidebarOpen(false);
-                            }}
-                          >
-                            <CheckCircle2 className="w-4 h-4" /> {t.contracted}
-                          </div>
-                          <div
-                            className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "not-contracted" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                            onClick={() => {
-                              setAdminSubView("not-contracted");
-                              setSidebarOpen(false);
-                            }}
-                          >
-                            <X className="w-4 h-4" /> {t.notContracted}
-                          </div>
-                          <div
-                            className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "production" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                            onClick={() => {
-                              setAdminSubView("production");
-                              setSidebarOpen(false);
-                            }}
-                          >
-                            <Wrench className="w-4 h-4" /> {t.production}
-                          </div>
-                          <div
-                            className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "payments" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                            onClick={() => {
-                              setAdminSubView("payments");
-                              setSidebarOpen(false);
-                            }}
-                          >
-                            <CheckCircle2 className="w-4 h-4" /> {t.payments}
-                          </div>
-                          <div
-                            className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "activities" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                            onClick={() => {
-                              setAdminSubView("activities");
-                              setSidebarOpen(false);
-                            }}
-                          >
-                            <Activity className="w-4 h-4" /> {t.activities}
-                          </div>
-                          <div
-                            className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "catalogs" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                            onClick={() => {
-                              setAdminSubView("catalogs");
-                              setSidebarOpen(false);
-                            }}
-                          >
-                            <FileSpreadsheet className="w-4 h-4" />{" "}
-                            {t.publishedSheets}
-                          </div>
-                          <div
-                            className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "phonebook" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                            onClick={() => {
-                              setAdminSubView("phonebook");
-                              setSidebarOpen(false);
-                            }}
-                          >
-                            <PhoneCall className="w-4 h-4" /> {t.phonebook}
-                          </div>
+                          {hasPermission("production.view") && (
+                            <>
+                              <div
+                                className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "customers" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                                onClick={() => {
+                                  setAdminSubView("customers");
+                                  setSidebarOpen(false);
+                                }}
+                              >
+                                <UserIcon className="w-4 h-4" /> {t.customers}
+                              </div>
+                              <div
+                                className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "inspections" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                                onClick={() => {
+                                  setAdminSubView("inspections");
+                                  setSidebarOpen(false);
+                                }}
+                              >
+                                <ClipboardList className="w-4 h-4" />{" "}
+                                {t.inspections}
+                              </div>
+                              <div
+                                className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "contracted" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                                onClick={() => {
+                                  setAdminSubView("contracted");
+                                  setSidebarOpen(false);
+                                }}
+                              >
+                                <CheckCircle2 className="w-4 h-4" /> {t.contracted}
+                              </div>
+                              <div
+                                className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "not-contracted" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                                onClick={() => {
+                                  setAdminSubView("not-contracted");
+                                  setSidebarOpen(false);
+                                }}
+                              >
+                                <X className="w-4 h-4" /> {t.notContracted}
+                              </div>
+                              <div
+                                className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "production" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                                onClick={() => {
+                                  setAdminSubView("production");
+                                  setSidebarOpen(false);
+                                }}
+                              >
+                                <Wrench className="w-4 h-4" /> {t.production}
+                              </div>
+                              <div
+                                className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "phonebook" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                                onClick={() => {
+                                  setAdminSubView("phonebook");
+                                  setSidebarOpen(false);
+                                }}
+                              >
+                                <PhoneCall className="w-4 h-4" /> {t.phonebook}
+                              </div>
+                            </>
+                          )}
+                          {hasPermission("reports.view") && (
+                            <>
+                              <div
+                                className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "payments" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                                onClick={() => {
+                                  setAdminSubView("payments");
+                                  setSidebarOpen(false);
+                                }}
+                              >
+                                <CheckCircle2 className="w-4 h-4" /> {t.payments}
+                              </div>
+                              <div
+                                className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "catalogs" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                                onClick={() => {
+                                  setAdminSubView("catalogs");
+                                  setSidebarOpen(false);
+                                }}
+                              >
+                                <FileSpreadsheet className="w-4 h-4" />{" "}
+                                {t.publishedSheets}
+                              </div>
+                            </>
+                          )}
+                          {hasPermission("users.manage") && (
+                            <>
+                              <div
+                                className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "activities" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                                onClick={() => {
+                                  setAdminSubView("activities");
+                                  setSidebarOpen(false);
+                                }}
+                              >
+                                <Activity className="w-4 h-4" /> {t.activities}
+                              </div>
+                              <div
+                                className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "users" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                                onClick={() => {
+                                  setAdminSubView("users");
+                                  setSidebarOpen(false);
+                                }}
+                              >
+                                <Users className="w-4 h-4" /> {lang === "ar" ? "المستخدمين" : "Users"}
+                              </div>
+                            </>
+                          )}
                           <div
                             className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "settings" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
                             onClick={() => {
@@ -3504,61 +3867,79 @@ export default function App() {
                     >
                       <LayoutDashboard className="w-4 h-4" /> {t.dashboard}
                     </div>
-                    <div
-                      className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "customers" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                      onClick={() => setAdminSubView("customers")}
-                    >
-                      <UserIcon className="w-4 h-4" /> {t.customers}
-                    </div>
-                    <div
-                      className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "inspections" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                      onClick={() => setAdminSubView("inspections")}
-                    >
-                      <ClipboardList className="w-4 h-4" /> {t.inspections}
-                    </div>
-                    <div
-                      className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "contracted" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                      onClick={() => setAdminSubView("contracted")}
-                    >
-                      <CheckCircle2 className="w-4 h-4" /> {t.contracted}
-                    </div>
-                    <div
-                      className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "not-contracted" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                      onClick={() => setAdminSubView("not-contracted")}
-                    >
-                      <X className="w-4 h-4" /> {t.notContracted}
-                    </div>
-                    <div
-                      className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "production" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                      onClick={() => setAdminSubView("production")}
-                    >
-                      <Wrench className="w-4 h-4" /> {t.production}
-                    </div>
-                    <div
-                      className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "payments" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                      onClick={() => setAdminSubView("payments")}
-                    >
-                      <CheckCircle2 className="w-4 h-4" /> {t.payments}
-                    </div>
-                    <div
-                      className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "activities" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                      onClick={() => setAdminSubView("activities")}
-                    >
-                      <Activity className="w-4 h-4" /> {t.activities}
-                    </div>
-                    <div
-                      className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "catalogs" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                      onClick={() => setAdminSubView("catalogs")}
-                    >
-                      <FileSpreadsheet className="w-4 h-4" />{" "}
-                      {t.publishedSheets}
-                    </div>
-                    <div
-                      className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "phonebook" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                      onClick={() => setAdminSubView("phonebook")}
-                    >
-                      <PhoneCall className="w-4 h-4" /> {t.phonebook}
-                    </div>
+                    {hasPermission("production.view") && (
+                      <>
+                        <div
+                          className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "customers" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                          onClick={() => setAdminSubView("customers")}
+                        >
+                          <UserIcon className="w-4 h-4" /> {t.customers}
+                        </div>
+                        <div
+                          className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "inspections" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                          onClick={() => setAdminSubView("inspections")}
+                        >
+                          <ClipboardList className="w-4 h-4" /> {t.inspections}
+                        </div>
+                        <div
+                          className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "contracted" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                          onClick={() => setAdminSubView("contracted")}
+                        >
+                          <CheckCircle2 className="w-4 h-4" /> {t.contracted}
+                        </div>
+                        <div
+                          className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "not-contracted" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                          onClick={() => setAdminSubView("not-contracted")}
+                        >
+                          <X className="w-4 h-4" /> {t.notContracted}
+                        </div>
+                        <div
+                          className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "production" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                          onClick={() => setAdminSubView("production")}
+                        >
+                          <Wrench className="w-4 h-4" /> {t.production}
+                        </div>
+                        <div
+                          className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "phonebook" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                          onClick={() => setAdminSubView("phonebook")}
+                        >
+                          <PhoneCall className="w-4 h-4" /> {t.phonebook}
+                        </div>
+                      </>
+                    )}
+                    {hasPermission("reports.view") && (
+                      <>
+                        <div
+                          className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "payments" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                          onClick={() => setAdminSubView("payments")}
+                        >
+                          <CheckCircle2 className="w-4 h-4" /> {t.payments}
+                        </div>
+                        <div
+                          className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "catalogs" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                          onClick={() => setAdminSubView("catalogs")}
+                        >
+                          <FileSpreadsheet className="w-4 h-4" />{" "}
+                          {t.publishedSheets}
+                        </div>
+                      </>
+                    )}
+                    {hasPermission("users.manage") && (
+                      <>
+                        <div
+                          className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "activities" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                          onClick={() => setAdminSubView("activities")}
+                        >
+                          <Activity className="w-4 h-4" /> {t.activities}
+                        </div>
+                        <div
+                          className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "users" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                          onClick={() => setAdminSubView("users")}
+                        >
+                          <Users className="w-4 h-4" /> {lang === "ar" ? "المستخدمين" : "Users"}
+                        </div>
+                      </>
+                    )}
                     <div
                       className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "settings" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
                       onClick={() => setAdminSubView("settings")}
@@ -3691,30 +4072,38 @@ export default function App() {
                                 {adminSubView !== "inspections" &&
                                   adminSubView !== "phonebook" && (
                                   <div className="flex items-center gap-1.5 flex-wrap">
-                                    <button
-                                      onClick={() =>
-                                        setGovernorateFilter("all")
-                                      }
-                                      className={`filter-chip ${governorateFilter === "all" ? "filter-chip-active" : "filter-chip-inactive"}`}
-                                    >
-                                      الكل
-                                    </button>
-                                    <button
-                                      onClick={() =>
-                                        setGovernorateFilter("القاهرة")
-                                      }
-                                      className={`filter-chip ${governorateFilter === "القاهرة" ? "filter-chip-active" : "filter-chip-inactive"}`}
-                                    >
-                                      القاهرة
-                                    </button>
-                                    <button
-                                      onClick={() =>
-                                        setGovernorateFilter("الاسكندرية")
-                                      }
-                                      className={`filter-chip ${governorateFilter === "الاسكندرية" ? "filter-chip-active" : "filter-chip-inactive"}`}
-                                    >
-                                      الاسكندرية
-                                    </button>
+                                    {(userProfile?.role === "super_admin" || (hasPermission("production.alexandria") && hasPermission("production.cairo"))) ? (
+                                      <>
+                                        <button
+                                          onClick={() =>
+                                            setGovernorateFilter("all")
+                                          }
+                                          className={`filter-chip ${governorateFilter === "all" ? "filter-chip-active" : "filter-chip-inactive"}`}
+                                        >
+                                          الكل
+                                        </button>
+                                        <button
+                                          onClick={() =>
+                                            setGovernorateFilter("القاهرة")
+                                          }
+                                          className={`filter-chip ${governorateFilter === "القاهرة" ? "filter-chip-active" : "filter-chip-inactive"}`}
+                                        >
+                                          القاهرة
+                                        </button>
+                                        <button
+                                          onClick={() =>
+                                            setGovernorateFilter("الاسكندرية")
+                                          }
+                                          className={`filter-chip ${governorateFilter === "الاسكندرية" ? "filter-chip-active" : "filter-chip-inactive"}`}
+                                        >
+                                          الاسكندرية
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <span className="text-xs font-bold text-zinc-400 bg-white/40 px-3 py-1.5 rounded-full border border-white/60">
+                                        {governorateFilter === "الاسكندرية" ? "فرع الاسكندرية" : "فرع القاهرة"}
+                                      </span>
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -4492,8 +4881,8 @@ export default function App() {
                       </div>
                     ) : adminSubView === "production" ? (
                       <ProductionPage
-                        contractedCustomers={contractedCustomers}
-                        inspections={inspections}
+                        contractedCustomers={filteredContractedCustomers}
+                        inspections={filteredInspections}
                         lang={lang}
                         isAdmin={isAdminUser}
                         t={t}
@@ -4502,7 +4891,7 @@ export default function App() {
                       />
                     ) : adminSubView === "payments" ? (
                       <PaymentsPage
-                        contractedCustomers={contractedCustomers}
+                        contractedCustomers={filteredContractedCustomers}
                         lang={lang}
                         isAdmin={isAdminUser}
                         t={t}
@@ -4516,6 +4905,11 @@ export default function App() {
                         settings={settings}
                         isAdmin={isAdminUser}
                       />
+                    ) : adminSubView === "users" ? (
+                      <UserManagement
+                        lang={lang}
+                        currentUserProfile={userProfile!}
+                      />
                     ) : adminSubView === "settings" ? (
                       <SettingsPage
                         lang={lang}
@@ -4525,6 +4919,7 @@ export default function App() {
                         settings={settings}
                         currentUserEmail={currentUser?.email}
                         onSyncTrigger={refreshAllData}
+                        userProfile={userProfile}
                       />
                     ) : adminSubView === "customers" ? (
                       <div className="space-y-8">
@@ -4640,71 +5035,12 @@ export default function App() {
                                                 </span>
                                               </button>
                                               <button
-                                                onClick={() => {
-                                                  setAdminSubView(
-                                                    "inspections",
-                                                  );
-                                                  const custRec =
-                                                    customerRecords.find(
-                                                      (c) =>
-                                                        c.phone === r.phone,
-                                                    );
-                                                  const actualId =
-                                                    custRec?.id || r.raw?.id;
-                                                  setTimeout(() => {
-                                                    setInspectionFormData({
-                                                      customerName: r.name,
-                                                      phone: r.phone,
-                                                      id: undefined,
-                                                      address:
-                                                        r.address ||
-                                                        r.pickupDate ||
-                                                        "",
-                                                      deliveryAddress:
-                                                        r.deliveryAddress || "",
-                                                      pickupDate:
-                                                        r.pickupDate ||
-                                                        r.address ||
-                                                        "",
-                                                      visitDate:
-                                                        r.visitDate || "",
-                                                      visitDateTo:
-                                                        r.visitDateTo || "",
-                                                      notes: r.notes || "",
-                                                      governorate:
-                                                        r.governorate || "",
-                                                      rooms: 0,
-                                                      pieces: [],
-                                                      totalAmount: 0,
-                                                    });
-                                                    setEditingCollection(
-                                                      "customers",
-                                                    );
-                                                    setEditingId(
-                                                      actualId ?? null,
-                                                    );
-                                                    setInspectionStep(1);
-                                                    setIsInspectionModalOpen(
-                                                      true,
-                                                    );
-                                                    const el =
-                                                      document.getElementById(
-                                                        `inspection-${r.id ?? ""}`,
-                                                      );
-                                                    if (el)
-                                                      el.scrollIntoView({
-                                                        behavior: "smooth",
-                                                        block: "center",
-                                                      });
-                                                  }, 120);
-                                                }}
+                                                onClick={getInspectionActionForCustomer(r).onClick}
                                                 className="ml-2 flex items-center gap-2 bg-accent-tan text-white px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-accent-tan/90 active:scale-95 transition-all duration-200 shadow-md"
                                               >
                                                 <Eye className="w-4 h-4" />
                                                 <span>
-                                                  {lang === "ar"
-                                                    ? "بدء المعاينة"
-                                                    : "Start Visit"}
+                                                  {getInspectionActionForCustomer(r).label}
                                                 </span>
                                               </button>
                                               <button
@@ -4789,77 +5125,12 @@ export default function App() {
                                       </span>
                                     </button>
                                     <button
-                                      onClick={() => {
-                                        setAdminSubView("inspections");
-                                        const custRec = customerRecords.find(
-                                          (c) => c.phone === r.phone,
-                                        );
-                                        const actualId =
-                                          custRec?.id || r.raw?.id;
-                                        setTimeout(() => {
-                                          const draft = loadInspectionDraft(
-                                            r.phone,
-                                          );
-                                          const draftHasRealContent =
-                                            !!draft &&
-                                            !draft.id &&
-                                            (((draft.rooms || 0) > 0) ||
-                                              ((draft.pieces?.length || 0) >
-                                                0) ||
-                                              ((draft.totalAmount || 0) !==
-                                                0) ||
-                                              ((draft.notes || "").trim() !==
-                                                ""));
-
-                                          setInspectionFormData(
-                                            draftHasRealContent
-                                              ? { ...draft, phone: r.phone }
-                                              : {
-                                                  customerName: r.name,
-                                                  phone: r.phone,
-                                                  id: undefined,
-                                                  address:
-                                                    r.address ||
-                                                    r.pickupDate ||
-                                                    "",
-                                                  deliveryAddress:
-                                                    r.deliveryAddress || "",
-                                                  pickupDate:
-                                                    r.pickupDate ||
-                                                    r.address ||
-                                                    "",
-                                                  visitDate:
-                                                    r.visitDate || "",
-                                                  visitDateTo:
-                                                    r.visitDateTo || "",
-                                                  notes: r.notes || "",
-                                                  governorate:
-                                                    r.governorate || "",
-                                                  rooms: 0,
-                                                  pieces: [],
-                                                  totalAmount: 0,
-                                                },
-                                          );
-                                          if (draftHasRealContent) {
-                                            toast.success(
-                                              lang === "ar"
-                                                ? "تم استرجاع بيانات معاينة لم تُحفظ"
-                                                : "Restored unsaved inspection data",
-                                            );
-                                          }
-                                          setEditingCollection("customers");
-                                          setEditingId(actualId ?? null);
-                                          setInspectionStep(1);
-                                          setIsInspectionModalOpen(true);
-                                        }, 120);
-                                      }}
+                                      onClick={getInspectionActionForCustomer(r).onClick}
                                       className="flex-1 min-w-[100px] flex items-center justify-center gap-2 bg-accent-tan text-white px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-accent-tan/90 active:scale-95 transition-all shadow-md"
                                     >
                                       <Eye className="w-4 h-4" />
                                       <span>
-                                        {lang === "ar"
-                                          ? "بدء المعاينة"
-                                          : "Start Visit"}
+                                        {getInspectionActionForCustomer(r).label}
                                       </span>
                                     </button>
                                     <button
@@ -5214,6 +5485,9 @@ export default function App() {
                     isLoading={isLoading}
                     onSubmit={handleAdminLogin}
                     onLogout={handleLogout}
+                    customerPhone={customerPhoneInput}
+                    onCustomerPhoneChange={setCustomerPhoneInput}
+                    onCustomerSubmit={handleCustomerLogin}
                   />
                 ) : (
                   <LoginScreen
@@ -5235,6 +5509,9 @@ export default function App() {
                     isLoading={isLoading}
                     onSubmit={handleAdminLogin}
                     onLogout={handleLogout}
+                    customerPhone={customerPhoneInput}
+                    onCustomerPhoneChange={setCustomerPhoneInput}
+                    onCustomerSubmit={handleCustomerLogin}
                   />
                 )}
               </AnimatePresence>

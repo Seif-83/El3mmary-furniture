@@ -14,6 +14,7 @@ export const SettingsPage: React.FC<{
   settings: Record<string, string>;
   currentUserEmail?: string;
   onSyncTrigger?: () => Promise<void>;
+  userProfile?: { username: string; role: string; email: string } | null;
 }> = ({
   lang,
   setLang,
@@ -22,6 +23,7 @@ export const SettingsPage: React.FC<{
   settings,
   currentUserEmail,
   onSyncTrigger,
+  userProfile,
 }) => {
   const [saving, setSaving] = useState(false);
   const [queueCount, setQueueCount] = useState<number>(0);
@@ -138,27 +140,33 @@ export const SettingsPage: React.FC<{
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-white/60 p-6 rounded-2xl border border-white/60">
               <div className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2">
-                {lang === "ar" ? "البريد الإلكتروني" : "Email"}
+                {lang === "ar" ? "اسم المستخدم" : "Username"}
               </div>
               <div className="text-lg font-bold text-zinc-900 truncate">
-                {currentUserEmail ||
+                {userProfile?.username || currentUserEmail ||
                   (lang === "ar" ? "غير مسجل" : "Not signed in")}
               </div>
             </div>
             <div className="bg-white/60 p-6 rounded-2xl border border-white/60">
               <div className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2">
-                {lang === "ar" ? "نوع الحساب" : "Role"}
+                {lang === "ar" ? "نوع الحساب / الدور" : "Role"}
               </div>
               <div
-                className={`text-lg font-bold ${isAdmin ? "text-amber-600" : "text-zinc-900"}`}
+                className={`text-lg font-bold ${isAdmin || userProfile?.role === "super_admin" ? "text-amber-600" : "text-zinc-900"}`}
               >
-                {isAdmin
-                  ? lang === "ar"
-                    ? "مسؤول"
-                    : "Admin"
-                  : lang === "ar"
-                    ? "مشاهد"
-                    : "Viewer"}
+                {userProfile ? (
+                  userProfile.role === "super_admin"
+                    ? (lang === "ar" ? "مسؤول خارق" : "Super Admin")
+                    : userProfile.role === "contract_admin"
+                    ? (lang === "ar" ? "مسؤول تعاقدات" : "Contract Admin")
+                    : userProfile.role === "production_alexandria"
+                    ? (lang === "ar" ? "إنتاج الإسكندرية" : "Alex Alexandria")
+                    : userProfile.role === "production_cairo"
+                    ? (lang === "ar" ? "إنتاج القاهرة" : "Cairo Production")
+                    : (lang === "ar" ? "مشاهد عام" : "General Moderator")
+                ) : isAdmin
+                  ? (lang === "ar" ? "مسؤول" : "Admin")
+                  : (lang === "ar" ? "مشاهد" : "Viewer")}
               </div>
             </div>
             <div className="bg-white/60 p-6 rounded-2xl border border-white/60">
