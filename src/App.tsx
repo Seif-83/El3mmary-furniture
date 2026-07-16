@@ -2345,12 +2345,10 @@ export default function App() {
           inspectionDbData,
         );
       } else {
-        // Create new inspection and remove from customers
+        // Create new inspection and keep in customers master list
         const newId = await insertInspectionRecord(inspectionDbData);
         if (editingCollection === "customers" && newId) {
-          if (editingId) {
-            await deleteRecordById("customers", editingId);
-          }
+          // Keep customer in customers table so they aren't deleted if the inspection is canceled/removed
           clearInspectionDraft(inspectionFormData.phone);
           setInspectionFormData((prev) => ({ ...prev, id: newId }));
           setEditingCollection(null);
@@ -4000,7 +3998,7 @@ export default function App() {
                               {(adminSubView === "customers" ||
                                 adminSubView === "contracted" ||
                                 adminSubView === "not-contracted") &&
-                                currentUser?.email === ADMIN_EMAIL && (
+                                isAdminUser && (
                                   <button
                                     onClick={handleOpenAddModal}
                                     className="btn-3d btn-3d-glass px-5 py-3.5 rounded-2xl flex items-center gap-2 font-bold text-xs uppercase"
@@ -4033,7 +4031,7 @@ export default function App() {
                                 </button>
                               )}
                               {adminSubView === "catalogs" &&
-                                currentUser?.email === ADMIN_EMAIL && (
+                                isAdminUser && (
                                   <label className="btn-3d btn-3d-glass px-5 py-3.5 rounded-2xl flex items-center gap-2 font-bold text-xs uppercase cursor-pointer">
                                     <Upload className="w-4 h-4" /> {t.uploadNew}{" "}
                                     <input
@@ -4493,7 +4491,7 @@ export default function App() {
                             <p className="text-zinc-400 font-semibold mb-2">
                               {t.noSheets}
                             </p>
-                            {currentUser?.email === ADMIN_EMAIL && (
+                            {isAdminUser && (
                               <label className="btn-3d btn-3d-glass px-6 py-3 rounded-2xl text-xs font-bold uppercase cursor-pointer inline-flex items-center gap-2">
                                 <Upload className="w-4 h-4" /> {t.uploadNew}{" "}
                                 <input
@@ -5230,8 +5228,7 @@ export default function App() {
                                       )}
                                       <td className="px-4 py-6 text-center flex gap-3 justify-center">
                                         {isInspectionView &&
-                                          currentUser?.email ===
-                                            ADMIN_EMAIL && (
+                                          isAdminUser && (
                                             <button
                                               onClick={() => {
                                                 setInspectionFormData(r);
@@ -5243,7 +5240,7 @@ export default function App() {
                                               {t.step2}
                                             </button>
                                           )}
-                                        {currentUser?.email === ADMIN_EMAIL &&
+                                        {isAdminUser &&
                                           !isInspectionView && (
                                             <button
                                               onClick={() =>
@@ -5259,7 +5256,7 @@ export default function App() {
                                               <Edit2 className="w-4 h-4" />
                                             </button>
                                           )}
-                                        {currentUser?.email === ADMIN_EMAIL &&
+                                        {isAdminUser &&
                                           adminSubView === "not-contracted" && (
                                             <button
                                               onClick={() =>
@@ -5286,7 +5283,7 @@ export default function App() {
                                         >
                                           <Eye className="w-4 h-4" />
                                         </button>
-                                        {currentUser?.email === ADMIN_EMAIL && (
+                                        {isAdminUser && (
                                           <button
                                             onClick={() => {
                                               if (isContractedView)
@@ -5382,7 +5379,7 @@ export default function App() {
                                 </div>
                                 <div className="flex gap-2 pt-4 border-t border-zinc-100 justify-end flex-wrap">
                                   {isInspectionView &&
-                                    currentUser?.email === ADMIN_EMAIL && (
+                                    isAdminUser && (
                                       <button
                                         onClick={() => {
                                           setInspectionFormData(r);
@@ -5394,7 +5391,7 @@ export default function App() {
                                         {t.step2}
                                       </button>
                                     )}
-                                  {currentUser?.email === ADMIN_EMAIL &&
+                                  {isAdminUser &&
                                     !isInspectionView && (
                                       <button
                                         onClick={() =>
@@ -5411,7 +5408,7 @@ export default function App() {
                                         {lang === "ar" ? "تعديل" : "Edit"}
                                       </button>
                                     )}
-                                  {currentUser?.email === ADMIN_EMAIL &&
+                                  {isAdminUser &&
                                     adminSubView === "not-contracted" && (
                                       <button
                                         onClick={() =>
@@ -5433,7 +5430,7 @@ export default function App() {
                                     <Eye className="w-4 h-4" />{" "}
                                     {lang === "ar" ? "عرض" : "View"}
                                   </button>
-                                  {currentUser?.email === ADMIN_EMAIL && (
+                                  {isAdminUser && (
                                     <button
                                       onClick={() => {
                                         if (isContractedView)
