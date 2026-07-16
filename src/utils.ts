@@ -127,10 +127,12 @@ export const mapInspectionFromDB = (dbInsp: any): Inspection =>
 
 export const sortContractedRecordsByContractDate = (records: Inspection[]) => {
   return [...records].sort((a, b) => {
-    const contractDateDiff =
-      toSortableDateValue(a.contractDate) - toSortableDateValue(b.contractDate);
-    if (contractDateDiff !== 0) return contractDateDiff;
-    return (a.customerName || "").localeCompare(b.customerName || "", "ar");
+    // Sort by finalizedAt first (most recent finalized/contracted first), fallback to createdAt
+    const getTime = (r: Inspection) => {
+      const ts = (r as any).finalizedAt || r.createdAt;
+      return ts?.toDate?.()?.getTime?.() ?? (typeof ts === "number" ? ts : 0);
+    };
+    return getTime(b) - getTime(a);
   });
 };
 

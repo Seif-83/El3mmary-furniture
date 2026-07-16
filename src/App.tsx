@@ -1141,7 +1141,11 @@ export default function App() {
     );
 
     const localNonContracted = await OrderService.getNonContracted();
-    setNotContractedCustomers(localNonContracted.map(mapInspectionFromDB));
+    setNotContractedCustomers(
+      sortContractedRecordsByContractDate(
+        localNonContracted.map(mapInspectionFromDB),
+      ),
+    );
 
     const localStages = await StageService.getStages();
     setStages(localStages);
@@ -1306,7 +1310,11 @@ export default function App() {
         );
 
         const syncedNonContracted = await OrderService.getNonContracted();
-        setNotContractedCustomers(syncedNonContracted.map(mapInspectionFromDB));
+        setNotContractedCustomers(
+          sortContractedRecordsByContractDate(
+            syncedNonContracted.map(mapInspectionFromDB),
+          ),
+        );
 
         const syncedStages = await StageService.getStages();
         setStages(syncedStages);
