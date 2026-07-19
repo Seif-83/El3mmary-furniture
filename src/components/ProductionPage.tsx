@@ -12,6 +12,7 @@ export const ProductionPage: React.FC<{
   t: Record<string, string>;
   stages: any[];
   onStageUpdate: (stageId: string, status: string) => void;
+  userProfile?: { role: string; permissions: string[] } | null;
 }> = ({
   contractedCustomers,
   inspections,
@@ -20,17 +21,30 @@ export const ProductionPage: React.FC<{
   t,
   stages,
   onStageUpdate,
+  userProfile,
 }) => {
+  const [govFilter, setGovFilter] = useState<"all" | "القاهرة" | "الاسكندرية">("all");
   const allProductionData = [...contractedCustomers];
   const [searchQuery, setSearchQuery] = useState("");
-  const filteredProductionData = allProductionData.filter(
-    (order) =>
+
+  const hasAlex = userProfile?.role === "super_admin" || userProfile?.permissions?.includes("production.alexandria");
+  const hasCairo = userProfile?.role === "super_admin" || userProfile?.permissions?.includes("production.cairo");
+  const showCityFilter = hasAlex && hasCairo;
+
+  const filteredProductionData = allProductionData.filter((order) => {
+    // 1. Governorate filter
+    if (govFilter !== "all" && order.governorate !== govFilter) {
+      return false;
+    }
+    // 2. Search query filter
+    return (
       !searchQuery ||
       (order.customerName || "")
         .toLowerCase()
         .includes(searchQuery.toLowerCase()) ||
-      (order.phone || "").includes(searchQuery),
-  );
+      (order.phone || "").includes(searchQuery)
+    );
+  });
 
   return (
     <div className="space-y-6">
@@ -62,6 +76,34 @@ export const ProductionPage: React.FC<{
               >
                 <X className="w-2.5 h-2.5" />
               </button>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {showCityFilter ? (
+              <>
+                <button
+                  onClick={() => setGovFilter("all")}
+                  className={`filter-chip ${govFilter === "all" ? "filter-chip-active" : "filter-chip-inactive"}`}
+                >
+                  {lang === "ar" ? "الكل" : "All"}
+                </button>
+                <button
+                  onClick={() => setGovFilter("القاهرة")}
+                  className={`filter-chip ${govFilter === "القاهرة" ? "filter-chip-active" : "filter-chip-inactive"}`}
+                >
+                  {lang === "ar" ? "القاهرة" : "Cairo"}
+                </button>
+                <button
+                  onClick={() => setGovFilter("الاسكندرية")}
+                  className={`filter-chip ${govFilter === "الاسكندرية" ? "filter-chip-active" : "filter-chip-inactive"}`}
+                >
+                  {lang === "ar" ? "الاسكندرية" : "الاسكندرية"}
+                </button>
+              </>
+            ) : (
+              <span className="text-xs font-bold text-zinc-400 bg-white/40 px-3 py-1.5 rounded-full border border-white/60">
+                {hasAlex ? (lang === "ar" ? "فرع الاسكندرية" : "Alexandria Branch") : (lang === "ar" ? "فرع القاهرة" : "Cairo Branch")}
+              </span>
             )}
           </div>
           <div className="glass px-4 py-3 rounded-2xl min-w-[90px]">

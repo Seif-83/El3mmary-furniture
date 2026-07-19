@@ -2070,7 +2070,11 @@ export default function App() {
       return;
     }
     try {
-      const rec = customerRecords.find((c) => c.id === id);
+      const rec = unifiedCustomers.find(
+        (c) =>
+          c.id === id ||
+          (phone && normalizePhone(c.phone) === normalizePhone(phone)),
+      );
       await deleteCustomerAndRelatedRecords(id, phone);
       await refreshAllData();
       void playSound("delete");
@@ -3826,15 +3830,6 @@ export default function App() {
                               >
                                 <Activity className="w-4 h-4" /> {t.activities}
                               </div>
-                              <div
-                                className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "users" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                                onClick={() => {
-                                  setAdminSubView("users");
-                                  setSidebarOpen(false);
-                                }}
-                              >
-                                <Users className="w-4 h-4" /> {lang === "ar" ? "المستخدمين" : "Users"}
-                              </div>
                             </>
                           )}
                           <div
@@ -3945,12 +3940,6 @@ export default function App() {
                           onClick={() => setAdminSubView("activities")}
                         >
                           <Activity className="w-4 h-4" /> {t.activities}
-                        </div>
-                        <div
-                          className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "users" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                          onClick={() => setAdminSubView("users")}
-                        >
-                          <Users className="w-4 h-4" /> {lang === "ar" ? "المستخدمين" : "Users"}
                         </div>
                       </>
                     )}
@@ -4902,6 +4891,7 @@ export default function App() {
                         t={t}
                         stages={stages}
                         onStageUpdate={handleStageUpdate}
+                        userProfile={userProfile}
                       />
                     ) : adminSubView === "payments" ? (
                       <PaymentsPage

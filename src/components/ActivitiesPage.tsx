@@ -101,7 +101,7 @@ export const ActivitiesPage: React.FC<{
     fetchActivities();
   }, []);
 
-  const [notifyPhone, setNotifyPhone] = useState("01221915144");
+  const [notifyPhone, setNotifyPhone] = useState("01287086020");
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
