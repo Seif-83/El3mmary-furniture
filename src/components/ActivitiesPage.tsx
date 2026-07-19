@@ -61,12 +61,15 @@ const getArabicActivityMessage = (message: string | null | undefined) => {
       /^Moved non-contracted to contracted\s+/i,
       "نقل غير متعاقد للمتعاقدين ",
     )
-    .replace(/^Moved\s+(.+)\s+to inspections$/i, "نقل $1 إلى المعاينات")
+    .replace(/^Moved\s+(.+)\s+to inspections(?:\s+by\s+(\S+))?$/i, (_, name, user) => {
+      return `نقل ${name} إلى المعاينات` + (user ? ` بواسطة ${user}` : "");
+    })
     .replace(/^Created inspection for\s+/i, "إنشاء معاينة لـ ")
     .replace(/^Deleted contracted\s+/i, "حذف متعاقد ")
     .replace(/^Deleted non-contracted\s+/i, "حذف غير متعاقد ")
     .replace(/\slogged in$/i, " سجل دخول")
     .replace(/\slogged out$/i, " سجل خروج")
+    .replace(/\s+by\s+(\S+)/gi, " بواسطة $1")
     .replace(/\bUnknown\b/g, "غير معروف")
     .replace(/\bstatus_change\b/g, "تغيير حالة");
 };

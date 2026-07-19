@@ -1836,11 +1836,19 @@ export default function App() {
     details?: Record<string, any>,
   ) => {
     try {
+      let messageWithUser = message;
+      if (userProfile?.username && type !== "login" && type !== "logout") {
+        const suffix = lang === "ar"
+          ? ` بواسطة ${userProfile.username}`
+          : ` by ${userProfile.username}`;
+        messageWithUser = `${message}${suffix}`;
+      }
+
       // Offline-first: store locally and queue for sync
       await ActivityLogService.insert({
         id: crypto.randomUUID(),
         type,
-        message,
+        message: messageWithUser,
         success: true,
         details: details || null,
         created_at: new Date().toISOString(),
