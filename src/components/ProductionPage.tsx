@@ -13,6 +13,8 @@ export const ProductionPage: React.FC<{
   stages: any[];
   onStageUpdate: (stageId: string, status: string) => void;
   userProfile?: { role: string; permissions: string[] } | null;
+  productionFilter: "all" | "completed";
+  onProductionFilterChange: (filter: "all" | "completed") => void;
 }> = ({
   contractedCustomers,
   inspections,
@@ -22,6 +24,8 @@ export const ProductionPage: React.FC<{
   stages,
   onStageUpdate,
   userProfile,
+  productionFilter,
+  onProductionFilterChange,
 }) => {
   const [govFilter, setGovFilter] = useState<"all" | "القاهرة" | "الاسكندرية">("all");
   const allProductionData = contractedCustomers.filter((order) => {
@@ -44,6 +48,22 @@ export const ProductionPage: React.FC<{
   const hasCairo = userProfile?.role === "super_admin" || userProfile?.permissions?.includes("production.cairo");
   const showCityFilter = hasAlex && hasCairo;
 
+  const isOrderCompleted = (order: Inspection) => {
+    const orderPhone = order.phone;
+    const matchingStage = orderPhone
+      ? stages.find((s: any) => s.client?.phones?.includes(orderPhone))
+      : null;
+    const orderClientId = matchingStage?.client_id || null;
+    const orderStages = orderClientId
+      ? stages.filter((s: any) => s.client_id === orderClientId)
+      : [];
+
+    return STAGE_ORDER.every((stageDef) => {
+      const stageRecord = orderStages.find((s: any) => s.stage === stageDef.key);
+      return stageRecord?.status === "done";
+    });
+  };
+
   // CS accounts (production.view without production.edit) should NOT see prices
   const perms = userProfile?.permissions || [];
   const showPrice =
@@ -56,7 +76,11 @@ export const ProductionPage: React.FC<{
     if (govFilter !== "all" && order.governorate !== govFilter) {
       return false;
     }
-    // 2. Search query filter
+    // 2. Completion filter
+    if (productionFilter === "completed" && !isOrderCompleted(order)) {
+      return false;
+    }
+    // 3. Search query filter
     return (
       !searchQuery ||
       (order.customerName || "")
@@ -99,6 +123,20 @@ export const ProductionPage: React.FC<{
             )}
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                onClick={() => onProductionFilterChange("all")}
+                className={`filter-chip ${productionFilter === "all" ? "filter-chip-active" : "filter-chip-inactive"}`}
+              >
+                {lang === "ar" ? "الكل" : "All"}
+              </button>
+              <button
+                onClick={() => onProductionFilterChange("completed")}
+                className={`filter-chip ${productionFilter === "completed" ? "filter-chip-active" : "filter-chip-inactive"}`}
+              >
+                {lang === "ar" ? "الطلبات الجاهزة والمكتملة" : "Ready & Completed Orders"}
+              </button>
+            </div>
             {showCityFilter ? (
               <>
                 <button

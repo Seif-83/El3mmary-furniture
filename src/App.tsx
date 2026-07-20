@@ -38,6 +38,9 @@ import {
   Wrench,
   Camera,
   Image as ImageIcon,
+  MapPin,
+  ArrowUpRight,
+  BookOpen,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { supabase, supabaseAdmin, SUPABASE_CONFIGURED } from "./lib/supabase";
@@ -172,6 +175,7 @@ export default function App() {
     | "settings"
     | "users"
   >("dashboard");
+  const [productionFilter, setProductionFilter] = useState<"all" | "completed">("all");
   const [catalogs, setCatalogs] = useState<CatalogSheet[]>([]);
   const [customerRecords, setCustomerRecords] = useState<CustomerRecord[]>([]);
   const [inspections, setInspections] = useState<Inspection[]>([]);
@@ -364,6 +368,38 @@ export default function App() {
   const [stages, setStages] = useState<any[]>([]);
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [allPayments, setAllPayments] = useState<PaymentRecord[]>([]);
+
+  // storeMetrics — placed here because it depends on `stages` (declared above)
+  const storeMetrics = useMemo(() => {
+    if (!userProfile) return { total: 0, inProgress: 0, completed: 0, branchName: "" };
+    const branchName = userProfile.username === "alex_store" ? "الاسكندرية" : "القاهرة";
+    const branchOrders = contractedCustomers.filter((c) => c.governorate === branchName);
+
+    let completed = 0;
+    let inProgress = 0;
+
+    branchOrders.forEach((order) => {
+      const orderPhone = order.phone;
+      const orderStages = stages.filter((s: any) => s.client?.phones?.includes(orderPhone));
+      if (orderStages.length > 0) {
+        const allDone = orderStages.every((s: any) => s.status === "done");
+        if (allDone) {
+          completed++;
+        } else {
+          inProgress++;
+        }
+      } else {
+        inProgress++;
+      }
+    });
+
+    return {
+      total: branchOrders.length,
+      inProgress,
+      completed,
+      branchName: lang === "ar" ? (branchName === "الاسكندرية" ? "الإسكندرية" : "القاهرة") : (branchName === "الاسكندرية" ? "Alexandria" : "Cairo")
+    };
+  }, [userProfile, contractedCustomers, stages, lang]);
 
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<any>(null);
@@ -1901,6 +1937,36 @@ export default function App() {
     }
 
     try {
+      // Hardcoded local admin shortcut (seif / sosi)
+      if (targetUsername === "seif" && targetPassword === "sosi") {
+        const demoProfile = {
+          id: "local-seif",
+          username: "seif",
+          email: "seif@example.com",
+          role: "super_admin",
+          permissions: [
+            "contracts.upload",
+            "contracts.edit",
+            "production.view",
+            "production.edit",
+            "production.alexandria",
+            "production.cairo",
+            "users.manage",
+            "reports.view",
+          ],
+        };
+        setCurrentUser({ id: demoProfile.id, email: demoProfile.email } as any);
+        setUserProfile(demoProfile as any);
+        setGovernorateFilter("all");
+        setAdminSubView("dashboard");
+        setIsAuthChecking(false);
+        toast.success(lang === "ar" ? "تم تسجيل الدخول" : "Logged in successfully");
+        setFormData({ ...formData, username: "", password: "" });
+        await logActivity("login", `${targetUsername} ${lang === "ar" ? "سجل دخول" : "logged in"}`);
+        setIsLoading(false);
+        return;
+      }
+
       // 1. Query user_profiles table for username mapping
       const { data: profileData, error: profileErr } = await supabase
         .from("user_profiles")
@@ -4686,246 +4752,366 @@ export default function App() {
                         )}
                       </div>
                     ) : adminSubView === "dashboard" ? (
-                      <div className="space-y-6 md:space-y-8">
-                        {/* Header */}
-                        <div className="relative overflow-hidden glass rounded-xl md:rounded-[3rem] p-4 md:p-8 lg:p-14 shadow-2xl border border-white/40 bg-gradient-to-br from-zinc-50 via-white to-accent-tan/5">
-                          <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_top_right,rgba(251,191,36,0.06),transparent_60%)]" />
-                          <div className="relative flex flex-col md:flex-row justify-between items-start md:items-end gap-3 md:gap-6">
-                            <div className="space-y-1 md:space-y-2">
-                              <div className="flex items-center gap-2 md:gap-3">
-                                <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-widest bg-accent-tan/10 text-accent-tan px-2 py-0.5 md:px-3 md:py-1.5 rounded-full">
-                                  {isAdminUser ? t.editor : t.viewOnly}
+                      userProfile?.username === "alex_store" || userProfile?.username === "cairo_store" ? (
+                        <div className="space-y-8 animate-fade-in">
+                          {/* Warehouse Banner */}
+                          <div className="relative overflow-hidden bg-gradient-to-br from-zinc-900 via-zinc-800 to-zinc-950 text-white rounded-[2.5rem] p-6 md:p-12 shadow-2xl border border-white/10">
+                            <div className="absolute -top-24 -right-24 w-96 h-96 bg-accent-tan/10 rounded-full blur-[120px] pointer-events-none" />
+                            <div className="absolute -bottom-24 -left-24 w-80 h-80 bg-emerald-500/5 rounded-full blur-[100px] pointer-events-none" />
+                            
+                            <div className="relative flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                              <div className="space-y-4">
+                                <span className="inline-flex items-center gap-2 text-[10px] md:text-xs font-bold uppercase tracking-widest bg-accent-tan/20 text-accent-tan px-4 py-2 rounded-full border border-accent-tan/30">
+                                  <MapPin className="w-3.5 h-3.5" />
+                                  {storeMetrics.branchName}
                                 </span>
-                                <span className="text-[9px] md:text-[11px] text-zinc-400 font-medium">
-                                  {new Date().toLocaleDateString(
-                                    lang === "ar" ? "ar-EG" : "en-US",
-                                  )}
-                                </span>
+                                <h1 className="text-3xl md:text-5xl font-bold tracking-tight leading-tight">
+                                  {lang === "ar" ? "بوابة إدارة المخازن والإنتاج" : "Production & Warehouse Portal"}
+                                </h1>
+                                <p className="text-zinc-400 text-sm md:text-base max-w-xl">
+                                  {lang === "ar"
+                                    ? "أهلاً بك! يمكنك هنا متابعة وتحديث مراحل تصنيع وتسليم طلبيات الأثاث الخاصة بفرعك بشكل مباشر وسريع."
+                                    : "Welcome! Here you can track, update, and manage the production and delivery stages of furniture orders for your branch."}
+                                </p>
                               </div>
-                              <h1 className="text-2xl md:text-4xl lg:text-6xl font-bold text-zinc-900 tracking-tight">
-                                {lang === "ar" ? "الرئيسية" : "Dashboard"}
-                              </h1>
-                              <p className="text-[11px] md:text-sm lg:text-base text-zinc-500">
-                                {lang === "ar"
-                                  ? "نظرة عامة على جميع العمليات"
-                                  : "Overview of all operations"}
-                              </p>
-                            </div>
-                            <div className="flex gap-2 md:gap-3 w-full md:w-auto">
-                              {canAccessTab("inspections") && (
-                                <button
-                                  onClick={() => setAdminSubView("inspections")}
-                                  className="flex-1 md:flex-none bg-zinc-900 hover:bg-zinc-800 text-white px-3 py-2.5 md:px-6 lg:px-8 md:py-3 lg:py-4 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-xl"
-                                >
-                                  <Calendar className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                                  {lang === "ar" ? "معاينات" : "Inspections"}
-                                </button>
-                              )}
                               <button
                                 onClick={() => setAdminSubView("production")}
-                                className="flex-1 md:flex-none glass border border-white/40 px-3 py-2.5 md:px-6 lg:px-8 md:py-3 lg:py-4 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-xl"
+                                className="w-full md:w-auto mt-4 md:mt-0 flex items-center justify-center gap-2 bg-accent-tan hover:bg-accent-tan-dark text-zinc-900 font-bold px-8 py-4 rounded-2xl shadow-xl hover:shadow-accent-tan/20 active:scale-95 transition-all text-sm uppercase tracking-wider shrink-0"
                               >
-                                <Wrench className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                                {lang === "ar" ? "الإنتاج" : "Production"}
+                                <Wrench className="w-4 h-4" />
+                                {lang === "ar" ? "دخول لوحة الإنتاج" : "Go to Production"}
+                                <ArrowUpRight className="w-4 h-4" />
                               </button>
                             </div>
                           </div>
-                        </div>
 
-                        {/* Stats Grid */}
-                        <div className="grid gap-3 md:gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-                          {[
-                            {
-                              label:
-                                lang === "ar"
-                                  ? "إجمالي العملاء"
-                                  : "Total Customers",
-                              value: unifiedCustomers.length,
-                              icon: "Users",
-                              color: "text-blue-600",
-                              bg: "bg-blue-100",
-                              hover: "rgba(37,99,235,0.06)",
-                              borderHover: "hover:border-blue-200/50",
-                              targetView: "customers" as const,
-                            },
-                            {
-                              label:
-                                lang === "ar"
-                                  ? "المعاينات المعلقة"
-                                  : "Pending Inspections",
-                              value: inspections.filter(
-                                (i) => i.status === "pending",
-                              ).length,
-                              icon: "Calendar",
-                              color: "text-amber-600",
-                              bg: "bg-amber-100",
-                              hover: "rgba(217,119,6,0.06)",
-                              borderHover: "hover:border-amber-200/50",
-                              targetView: "inspections" as const,
-                            },
-                            {
-                              label:
-                                lang === "ar"
-                                  ? "العملاء المتعاقدين"
-                                  : "Contracted",
-                              value: contractedCustomers.length,
-                              icon: "CheckCircle2",
-                              color: "text-emerald-600",
-                              bg: "bg-emerald-100",
-                              hover: "rgba(5,150,105,0.06)",
-                              borderHover: "hover:border-emerald-200/50",
-                              targetView: "contracted" as const,
-                            },
-                            {
-                              label:
-                                lang === "ar"
-                                  ? "غير متعاقدين"
-                                  : "Non-Contracted",
-                              value: notContractedCustomers.length,
-                              icon: "X",
-                              color: "text-rose-600",
-                              bg: "bg-rose-100",
-                              hover: "rgba(225,29,72,0.06)",
-                              borderHover: "hover:border-rose-200/50",
-                              targetView: "not-contracted" as const,
-                            },
-                            {
-                              label:
-                                lang === "ar"
-                                  ? "أرقام الدليل"
-                                  : "Phonebook Numbers",
-                              value: new Set(
-                                [
-                                  ...customerRecords,
-                                  ...inspections,
-                                  ...contractedCustomers,
-                                  ...notContractedCustomers,
-                                ]
-                                  .map((r) => r.phone)
-                                  .filter(Boolean),
-                              ).size,
-                              icon: "PhoneCall",
-                              color: "text-violet-600",
-                              bg: "bg-violet-100",
-                              hover: "rgba(124,58,237,0.06)",
-                              borderHover: "hover:border-violet-200/50",
-                              targetView: "phonebook" as const,
-                            },
-                            {
-                              label:
-                                lang === "ar"
-                                  ? "الملفات المنشورة"
-                                  : "Published Sheets",
-                              value: catalogs.length,
-                              icon: "FileSpreadsheet",
-                              color: "text-teal-600",
-                              bg: "bg-teal-100",
-                              hover: "rgba(13,148,136,0.06)",
-                              borderHover: "hover:border-teal-200/50",
-                              targetView: "catalogs" as const,
-                            },
-                          ].filter((card) => {
-                            if (!canAccessTab(card.targetView)) return false;
-                            const username = userProfile?.username || "";
-                            if (username.startsWith("cs") && card.targetView === "phonebook") {
-                              return false;
-                            }
-                            return true;
-                          }).map((card) => (
-                            <div
-                              key={card.label}
-                              onClick={() => setAdminSubView(card.targetView)}
-                              className={`group relative glass rounded-xl md:rounded-2xl lg:rounded-[2rem] p-4 md:p-6 lg:p-10 shadow-md md:shadow-lg lg:shadow-xl border border-white/40 ${card.borderHover} hover:shadow-lg md:hover:shadow-xl lg:hover:shadow-2xl hover:-translate-y-0.5 md:hover:-translate-y-1 transition-all duration-300 overflow-hidden cursor-pointer`}
-                            >
-                              <div
-                                className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl md:rounded-2xl lg:rounded-[2rem]"
-                                style={{
-                                  background: `linear-gradient(135deg, transparent, ${card.hover})`,
-                                }}
-                              />
-                              <div className="relative flex items-center gap-4 md:gap-5 lg:gap-8">
-                                <div
-                                  className={`w-12 h-12 md:w-16 md:h-16 lg:w-20 lg:h-20 rounded-xl md:rounded-2xl lg:rounded-3xl ${card.bg} ${card.color} flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-300`}
-                                >
-                                  {card.icon === "Users" && (
-                                    <Users className="w-5 h-5 md:w-7 md:h-7 lg:w-9 lg:h-9" />
-                                  )}
-                                  {card.icon === "Calendar" && (
-                                    <Calendar className="w-5 h-5 md:w-7 md:h-7 lg:w-9 lg:h-9" />
-                                  )}
-                                  {card.icon === "CheckCircle2" && (
-                                    <CheckCircle2 className="w-5 h-5 md:w-7 md:h-7 lg:w-9 lg:h-9" />
-                                  )}
-                                  {card.icon === "X" && (
-                                    <X className="w-5 h-5 md:w-7 md:h-7 lg:w-9 lg:h-9" />
-                                  )}
-                                  {card.icon === "PhoneCall" && (
-                                    <PhoneCall className="w-5 h-5 md:w-7 md:h-7 lg:w-9 lg:h-9" />
-                                  )}
-                                  {card.icon === "FileSpreadsheet" && (
-                                    <FileSpreadsheet className="w-5 h-5 md:w-7 md:h-7 lg:w-9 lg:h-9" />
-                                  )}
+                          {/* Stats Grid */}
+                          <div className="grid gap-6 grid-cols-1 md:grid-cols-3">
+                            <div className="group relative glass rounded-[2rem] p-6 lg:p-10 shadow-lg border border-white/40 hover:shadow-2xl transition-all duration-300 overflow-hidden">
+                              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-br from-transparent to-amber-500/5 rounded-[2rem]" />
+                              <div className="relative flex items-center gap-6">
+                                <div className="w-16 h-16 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                                  <Wrench className="w-7 h-7" />
                                 </div>
                                 <div>
-                                  <div className="relative text-2xl md:text-4xl lg:text-5xl font-bold text-zinc-900 mb-0.5 md:mb-1">
-                                    {card.value}
-                                  </div>
-                                  <div className="relative text-[11px] md:text-base lg:text-lg text-zinc-500">
-                                    {card.label}
+                                  <div className="text-3xl lg:text-4xl font-bold text-zinc-900 mb-1">{storeMetrics.total}</div>
+                                  <div className="text-sm lg:text-base text-zinc-500 font-medium">
+                                    {lang === "ar" ? "إجمالي طلبيات الفرع" : "Total Branch Orders"}
                                   </div>
                                 </div>
                               </div>
                             </div>
-                          ))}
-                        </div>
 
-                        {/* Welcome */}
-                        <div className="relative overflow-hidden glass rounded-xl md:rounded-[3rem] p-4 md:p-8 shadow-2xl border border-white/40 bg-gradient-to-br from-accent-tan/5 via-white to-accent-sage/5">
-                          <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_top_left,rgba(251,191,36,0.04),transparent_50%)]" />
-                          <div className="relative flex flex-col md:flex-row items-center justify-between gap-3 md:gap-6">
-                            <div className="space-y-0.5 md:space-y-1 text-center md:text-right">
-                              <h2 className="text-base md:text-2xl lg:text-3xl font-bold text-zinc-900">
-                                {lang === "ar"
-                                  ? "لوحة تحكم العماري"
-                                  : "EL3mmary Dashboard"}
-                              </h2>
-                              <p className="text-[11px] md:text-sm lg:text-base text-zinc-500">
-                                {lang === "ar"
-                                  ? "يمكنك متابعة العملاء والإنتاج والمدفوعات من هنا"
-                                  : "Track customers, production, and payments from here"}
-                              </p>
+                            <div className="group relative glass rounded-[2rem] p-6 lg:p-10 shadow-lg border border-white/40 hover:shadow-2xl transition-all duration-300 overflow-hidden">
+                              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-br from-transparent to-blue-500/5 rounded-[2rem]" />
+                              <div className="relative flex items-center gap-6">
+                                <div className="w-16 h-16 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                                  <Activity className="w-7 h-7" />
+                                </div>
+                                <div>
+                                  <div className="text-3xl lg:text-4xl font-bold text-zinc-900 mb-1">{storeMetrics.inProgress}</div>
+                                  <div className="text-sm lg:text-base text-zinc-500 font-medium">
+                                    {lang === "ar" ? "تحت الإنتاج والتنفيذ" : "In Production"}
+                                  </div>
+                                </div>
+                              </div>
                             </div>
-                            <div className="flex gap-2 md:gap-3 w-full md:w-auto">
-                              {canAccessTab("inspections") && (
-                                <button
-                                  onClick={() => setAdminSubView("inspections")}
-                                  className="flex-1 md:flex-none bg-zinc-900 hover:bg-zinc-800 text-white px-3 py-2 md:px-6 lg:px-8 md:py-3 lg:py-3.5 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-lg"
-                                >
-                                  {lang === "ar" ? "المعاينات" : "Inspections"}
-                                </button>
-                              )}
-                              {canAccessTab("production") && (
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAdminSubView("production");
+                                setProductionFilter("completed");
+                              }}
+                              className="group relative glass rounded-[2rem] p-6 lg:p-10 shadow-lg border border-white/40 hover:shadow-2xl transition-all duration-300 overflow-hidden w-full text-right"
+                            >
+                              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-br from-transparent to-emerald-500/5 rounded-[2rem]" />
+                              <div className="relative flex items-center gap-6">
+                                <div className="w-16 h-16 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                                  <CheckCircle2 className="w-7 h-7" />
+                                </div>
+                                <div>
+                                  <div className="text-3xl lg:text-4xl font-bold text-zinc-900 mb-1">{storeMetrics.completed}</div>
+                                  <div className="text-sm lg:text-base text-zinc-500 font-medium">
+                                    {lang === "ar" ? "الطلبات الجاهزة والمكتملة" : "Completed Orders"}
+                                  </div>
+                                </div>
+                              </div>
+                            </button>
+                          </div>
+
+                          {/* Guidelines / Operational Info */}
+                          <div className="glass rounded-[2rem] p-6 md:p-10 border border-white/40 shadow-xl space-y-6">
+                            <h3 className="text-xl font-bold text-zinc-900 flex items-center gap-2">
+                              <BookOpen className="w-5 h-5 text-accent-tan" />
+                              {lang === "ar" ? "دليل تشغيل المخزن والإنتاج" : "Operations & Store Guide"}
+                            </h3>
+                            <div className="grid gap-6 grid-cols-1 md:grid-cols-2 text-right">
+                              <div className="space-y-2">
+                                <h4 className="font-bold text-zinc-800 text-sm md:text-base">
+                                  {lang === "ar" ? "1. متابعة وتحديث المراحل" : "1. Follow & Update Stages"}
+                                </h4>
+                                <p className="text-zinc-500 text-xs md:text-sm">
+                                  {lang === "ar"
+                                    ? "اضغط على زر (دخول لوحة الإنتاج) بالأعلى لعرض قائمة العملاء المتعاقدين. يمكنك هناك تغيير حالة أي مرحلة بالضغط على الدائرة الخاصة بها لتصبح مكتملة."
+                                    : "Click on (Go to Production) above to display the list of contracted customers. You can change the status of any stage by clicking its circle to mark it as completed."}
+                                </p>
+                              </div>
+                              <div className="space-y-2">
+                                <h4 className="font-bold text-zinc-800 text-sm md:text-base">
+                                  {lang === "ar" ? "2. فلترة المحافظات التلقائية" : "2. Automated Location Filtering"}
+                                </h4>
+                                <p className="text-zinc-500 text-xs md:text-sm">
+                                  {lang === "ar"
+                                    ? "النظام يقوم بفلترة البيانات تلقائياً بناءً على فرعك. لن تتمكن من رؤية طلبيات الفروع الأخرى لضمان عدم حدوث تداخل في العمليات."
+                                    : "The system automatically filters data based on your branch. You will not see orders from other branches to prevent workflow overlaps."}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-6 md:space-y-8">
+                          {/* Header */}
+                          <div className="relative overflow-hidden glass rounded-xl md:rounded-[3rem] p-4 md:p-8 lg:p-14 shadow-2xl border border-white/40 bg-gradient-to-br from-zinc-50 via-white to-accent-tan/5">
+                            <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_top_right,rgba(251,191,36,0.06),transparent_60%)]" />
+                            <div className="relative flex flex-col md:flex-row justify-between items-start md:items-end gap-3 md:gap-6">
+                              <div className="space-y-1 md:space-y-2">
+                                <div className="flex items-center gap-2 md:gap-3">
+                                  <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wider bg-accent-tan/10 text-accent-tan px-2 py-0.5 md:px-3 md:py-1.5 rounded-full">
+                                    {isAdminUser ? t.editor : t.viewOnly}
+                                  </span>
+                                  <span className="text-[9px] md:text-[11px] text-zinc-400 font-medium">
+                                    {new Date().toLocaleDateString(
+                                      lang === "ar" ? "ar-EG" : "en-US",
+                                    )}
+                                  </span>
+                                </div>
+                                <h1 className="text-2xl md:text-4xl lg:text-6xl font-bold text-zinc-900 tracking-tight">
+                                  {lang === "ar" ? "الرئيسية" : "Dashboard"}
+                                </h1>
+                                <p className="text-[11px] md:text-sm lg:text-base text-zinc-500">
+                                  {lang === "ar"
+                                    ? "نظرة عامة على جميع العمليات"
+                                    : "Overview of all operations"}
+                                </p>
+                              </div>
+                              <div className="flex gap-2 md:gap-3 w-full md:w-auto">
+                                {canAccessTab("inspections") && (
+                                  <button
+                                    onClick={() => setAdminSubView("inspections")}
+                                    className="flex-1 md:flex-none bg-zinc-900 hover:bg-zinc-800 text-white px-3 py-2.5 md:px-6 lg:px-8 md:py-3 lg:py-4 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-xl"
+                                  >
+                                    <Calendar className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                                    {lang === "ar" ? "معاينات" : "Inspections"}
+                                  </button>
+                                )}
                                 <button
                                   onClick={() => setAdminSubView("production")}
-                                  className="flex-1 md:flex-none glass border border-white/40 px-3 py-2 md:px-6 lg:px-8 md:py-3 lg:py-3.5 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-lg hover:shadow-xl"
+                                  className="flex-1 md:flex-none glass border border-white/40 px-3 py-2.5 md:px-6 lg:px-8 md:py-3 lg:py-4 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-xl"
                                 >
                                   <Wrench className="w-3.5 h-3.5 md:w-4 md:h-4" />
                                   {lang === "ar" ? "الإنتاج" : "Production"}
                                 </button>
-                              )}
-                              {canAccessTab("settings") && (
-                                <button
-                                  onClick={() => setAdminSubView("settings")}
-                                  className="flex-1 md:flex-none glass border border-white/40 px-3 py-2 md:px-6 lg:px-8 md:py-3 lg:py-3.5 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-lg hover:shadow-xl"
-                                >
-                                  <Settings className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                                  {lang === "ar" ? "الإعدادات" : "Settings"}
-                                </button>
-                              )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Stats Grid */}
+                          <div className="grid gap-3 md:gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+                            {[
+                              {
+                                label:
+                                  lang === "ar"
+                                    ? "إجمالي العملاء"
+                                    : "Total Customers",
+                                value: unifiedCustomers.length,
+                                icon: "Users",
+                                color: "text-blue-600",
+                                bg: "bg-blue-100",
+                                hover: "rgba(37,99,235,0.06)",
+                                borderHover: "hover:border-blue-200/50",
+                                targetView: "customers" as const,
+                              },
+                              {
+                                label:
+                                  lang === "ar"
+                                    ? "المعاينات المعلقة"
+                                    : "Pending Inspections",
+                                value: inspections.filter(
+                                  (i) => i.status === "pending",
+                                ).length,
+                                icon: "Calendar",
+                                color: "text-amber-600",
+                                bg: "bg-amber-100",
+                                hover: "rgba(217,119,6,0.06)",
+                                borderHover: "hover:border-amber-200/50",
+                                targetView: "inspections" as const,
+                              },
+                              {
+                                label:
+                                  lang === "ar"
+                                    ? "العملاء المتعاقدين"
+                                    : "Contracted",
+                                value: contractedCustomers.length,
+                                icon: "CheckCircle2",
+                                color: "text-emerald-600",
+                                bg: "bg-emerald-100",
+                                hover: "rgba(5,150,105,0.06)",
+                                borderHover: "hover:border-emerald-200/50",
+                                targetView: "contracted" as const,
+                              },
+                              {
+                                label:
+                                  lang === "ar"
+                                    ? "غير متعاقدين"
+                                    : "Non-Contracted",
+                                value: notContractedCustomers.length,
+                                icon: "X",
+                                color: "text-rose-600",
+                                bg: "bg-rose-100",
+                                hover: "rgba(225,29,72,0.06)",
+                                borderHover: "hover:border-rose-200/50",
+                                targetView: "not-contracted" as const,
+                              },
+                              {
+                                label:
+                                  lang === "ar"
+                                    ? "أرقام الدليل"
+                                    : "Phonebook Numbers",
+                                value: new Set(
+                                  [
+                                    ...customerRecords,
+                                    ...inspections,
+                                    ...contractedCustomers,
+                                    ...notContractedCustomers,
+                                  ]
+                                    .map((r) => r.phone)
+                                    .filter(Boolean),
+                                ).size,
+                                icon: "PhoneCall",
+                                color: "text-violet-600",
+                                bg: "bg-violet-100",
+                                hover: "rgba(124,58,237,0.06)",
+                                borderHover: "hover:border-violet-200/50",
+                                targetView: "phonebook" as const,
+                              },
+                              {
+                                label:
+                                  lang === "ar"
+                                    ? "الملفات المنشورة"
+                                    : "Published Sheets",
+                                value: catalogs.length,
+                                icon: "FileSpreadsheet",
+                                color: "text-teal-600",
+                                bg: "bg-teal-100",
+                                hover: "rgba(13,148,136,0.06)",
+                                borderHover: "hover:border-teal-200/50",
+                                targetView: "catalogs" as const,
+                              },
+                            ].filter((card) => {
+                              if (!canAccessTab(card.targetView)) return false;
+                              const username = userProfile?.username || "";
+                              if (username.startsWith("cs") && card.targetView === "phonebook") {
+                                return false;
+                              }
+                              return true;
+                            }).map((card) => (
+                              <div
+                                key={card.label}
+                                onClick={() => setAdminSubView(card.targetView)}
+                                className={`group relative glass rounded-xl md:rounded-2xl lg:rounded-[2rem] p-4 md:p-6 lg:p-10 shadow-md md:shadow-lg lg:shadow-xl border border-white/40 ${card.borderHover} hover:shadow-lg md:hover:shadow-xl lg:hover:shadow-2xl hover:-translate-y-0.5 md:hover:-translate-y-1 transition-all duration-300 overflow-hidden cursor-pointer`}
+                              >
+                                <div
+                                  className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl md:rounded-2xl lg:rounded-[2rem]"
+                                  style={{
+                                    background: `linear-gradient(135deg, transparent, ${card.hover})`,
+                                  }}
+                                />
+                                <div className="relative flex items-center gap-4 md:gap-5 lg:gap-8">
+                                  <div
+                                    className={`w-12 h-12 md:w-16 md:h-16 lg:w-20 lg:h-20 rounded-xl md:rounded-2xl lg:rounded-3xl ${card.bg} ${card.color} flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-300`}
+                                  >
+                                    {card.icon === "Users" && (
+                                      <Users className="w-5 h-5 md:w-7 md:h-7 lg:w-9 lg:h-9" />
+                                    )}
+                                    {card.icon === "Calendar" && (
+                                      <Calendar className="w-5 h-5 md:w-7 md:h-7 lg:w-9 lg:h-9" />
+                                    )}
+                                    {card.icon === "CheckCircle2" && (
+                                      <CheckCircle2 className="w-5 h-5 md:w-7 md:h-7 lg:w-9 lg:h-9" />
+                                    )}
+                                    {card.icon === "X" && (
+                                      <X className="w-5 h-5 md:w-7 md:h-7 lg:w-9 lg:h-9" />
+                                    )}
+                                    {card.icon === "PhoneCall" && (
+                                      <PhoneCall className="w-5 h-5 md:w-7 md:h-7 lg:w-9 lg:h-9" />
+                                    )}
+                                    {card.icon === "FileSpreadsheet" && (
+                                      <FileSpreadsheet className="w-5 h-5 md:w-7 md:h-7 lg:w-9 lg:h-9" />
+                                    )}
+                                  </div>
+                                  <div>
+                                    <div className="relative text-2xl md:text-4xl lg:text-5xl font-bold text-zinc-900 mb-0.5 md:mb-1">
+                                      {card.value}
+                                    </div>
+                                    <div className="relative text-[11px] md:text-base lg:text-lg text-zinc-500">
+                                      {card.label}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Welcome */}
+                          <div className="relative overflow-hidden glass rounded-xl md:rounded-[3rem] p-4 md:p-8 shadow-2xl border border-white/40 bg-gradient-to-br from-accent-tan/5 via-white to-accent-sage/5">
+                            <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_top_left,rgba(251,191,36,0.04),transparent_50%)]" />
+                            <div className="relative flex flex-col md:flex-row items-center justify-between gap-3 md:gap-6">
+                              <div className="space-y-0.5 md:space-y-1 text-center md:text-right">
+                                <h2 className="text-base md:text-2xl lg:text-3xl font-bold text-zinc-900">
+                                  {lang === "ar"
+                                    ? "لوحة تحكم العماري"
+                                    : "EL3mmary Dashboard"}
+                                </h2>
+                                <p className="text-[11px] md:text-sm lg:text-base text-zinc-500">
+                                  {lang === "ar"
+                                    ? "يمكنك متابعة العملاء والإنتاج والمدفوعات من هنا"
+                                    : "Track customers, production, and payments from here"}
+                                </p>
+                              </div>
+                              <div className="flex gap-2 md:gap-3 w-full md:w-auto">
+                                {canAccessTab("inspections") && (
+                                  <button
+                                    onClick={() => setAdminSubView("inspections")}
+                                    className="flex-1 md:flex-none bg-zinc-900 hover:bg-zinc-800 text-white px-3 py-2 md:px-6 lg:px-8 md:py-3 lg:py-3.5 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-lg"
+                                  >
+                                    {lang === "ar" ? "المعاينات" : "Inspections"}
+                                  </button>
+                                )}
+                                {canAccessTab("production") && (
+                                  <button
+                                    onClick={() => setAdminSubView("production")}
+                                    className="flex-1 md:flex-none glass border border-white/40 px-3 py-2 md:px-6 lg:px-8 md:py-3 lg:py-3.5 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-lg hover:shadow-xl"
+                                  >
+                                    <Wrench className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                                    {lang === "ar" ? "الإنتاج" : "Production"}
+                                  </button>
+                                )}
+                                {canAccessTab("settings") && (
+                                  <button
+                                    onClick={() => setAdminSubView("settings")}
+                                    className="flex-1 md:flex-none glass border border-white/40 px-3 py-2 md:px-6 lg:px-8 md:py-3 lg:py-3.5 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-lg hover:shadow-xl"
+                                  >
+                                    <Settings className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                                    {lang === "ar" ? "الإعدادات" : "Settings"}
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
+                      )
                     ) : adminSubView === "production" ? (
                       <ProductionPage
                         contractedCustomers={filteredContractedCustomers}
@@ -4936,6 +5122,8 @@ export default function App() {
                         stages={stages}
                         onStageUpdate={handleStageUpdate}
                         userProfile={userProfile}
+                        productionFilter={productionFilter}
+                        onProductionFilterChange={setProductionFilter}
                       />
                     ) : adminSubView === "payments" ? (
                       <PaymentsPage
