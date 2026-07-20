@@ -24,12 +24,32 @@ export const ProductionPage: React.FC<{
   userProfile,
 }) => {
   const [govFilter, setGovFilter] = useState<"all" | "القاهرة" | "الاسكندرية">("all");
-  const allProductionData = [...contractedCustomers];
+  const allProductionData = contractedCustomers.filter((order) => {
+    if (userProfile?.role === "super_admin") return true;
+    const permissions = userProfile?.permissions || [];
+    const hasAlexBranch = permissions.includes("production.alexandria");
+    const hasCairoBranch = permissions.includes("production.cairo");
+
+    if (hasAlexBranch && !hasCairoBranch) {
+      return order.governorate === "الاسكندرية";
+    }
+    if (hasCairoBranch && !hasAlexBranch) {
+      return order.governorate === "القاهرة";
+    }
+    return true;
+  });
   const [searchQuery, setSearchQuery] = useState("");
 
   const hasAlex = userProfile?.role === "super_admin" || userProfile?.permissions?.includes("production.alexandria");
   const hasCairo = userProfile?.role === "super_admin" || userProfile?.permissions?.includes("production.cairo");
   const showCityFilter = hasAlex && hasCairo;
+
+  // CS accounts (production.view without production.edit) should NOT see prices
+  const perms = userProfile?.permissions || [];
+  const showPrice =
+    userProfile?.role === "super_admin" ||
+    perms.includes("production.edit") ||
+    perms.includes("reports.view");
 
   const filteredProductionData = allProductionData.filter((order) => {
     // 1. Governorate filter
@@ -158,6 +178,7 @@ export const ProductionPage: React.FC<{
                     </span>
                     <span className="font-bold">{order.rooms || 0}</span>
                   </div>
+                  {showPrice && (
                   <div className="flex justify-between text-sm">
                     <span className="text-zinc-500">
                       {lang === "ar" ? "القيمة" : "Value"}
@@ -166,6 +187,7 @@ export const ProductionPage: React.FC<{
                       {order.totalAmount?.toLocaleString() || 0} EGP
                     </span>
                   </div>
+                  )}
                   <div className="flex justify-between text-sm">
                     <span className="text-zinc-500">
                       {lang === "ar" ? "تاريخ التسليم" : "Delivery Date"}

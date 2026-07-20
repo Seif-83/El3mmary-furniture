@@ -118,6 +118,32 @@ export default function App() {
     return userProfile?.permissions?.includes(permission) || false;
   };
 
+  const canAccessTab = (tab: string) => {
+    if (!userProfile) return false;
+    const username = userProfile.username;
+
+    // Super admin gets everything
+    if (userProfile.role === "super_admin") return true;
+
+    // Store accounts: only production and dashboard
+    if (username === "alex_store" || username === "cairo_store") {
+      return tab === "production" || tab === "dashboard";
+    }
+
+    // CS accounts: only customers, production, phonebook, dashboard
+    if (username.startsWith("cs")) {
+      return ["customers", "production", "phonebook", "dashboard"].includes(tab);
+    }
+
+    // Standard permission-based checks
+    if (["customers", "inspections", "contracted", "not-contracted", "production", "phonebook"].includes(tab)) {
+      return hasPermission("production.view");
+    }
+    if (tab === "payments" || tab === "catalogs") return hasPermission("reports.view");
+    if (tab === "activities") return hasPermission("users.manage");
+    return true;
+  };
+
   const isAdminUser = hasPermission("production.edit");
   const isAuthorizedUser = userProfile !== null;
 
@@ -1917,6 +1943,16 @@ export default function App() {
         } else {
           setGovernorateFilter("all");
         }
+        // Store-only accounts (production.alexandria / production.cairo without full access)
+        // are sent directly to the production page after login
+        if (
+          (hasAlex || hasCairo) &&
+          !fullProfile.permissions?.includes("production.edit") &&
+          !fullProfile.permissions?.includes("production.view") &&
+          !fullProfile.permissions?.includes("reports.view")
+        ) {
+          setAdminSubView("production");
+        }
       }
 
       setIsAuthChecking(false);
@@ -2616,6 +2652,15 @@ export default function App() {
         lang === "ar"
           ? "هذه العملية متاحة للمسؤول فقط أو لمسؤول التعاقدات"
           : "This action is available to admins or contract managers only",
+      );
+      return;
+    }
+    // "ahmed" admin cannot contract or refuse inspections
+    if (userProfile?.username === "ahmed") {
+      toast.error(
+        lang === "ar"
+          ? "ليس لديك صلاحية تغيير حالة المعاينات"
+          : "You do not have permission to change inspection status",
       );
       return;
     }
@@ -3737,110 +3782,86 @@ export default function App() {
                             <LayoutDashboard className="w-4 h-4" />{" "}
                             {t.dashboard}
                           </div>
-                          {hasPermission("production.view") && (
-                            <>
-                              <div
-                                className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "customers" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                                onClick={() => {
-                                  setAdminSubView("customers");
-                                  setSidebarOpen(false);
-                                }}
-                              >
-                                <UserIcon className="w-4 h-4" /> {t.customers}
-                              </div>
-                              <div
-                                className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "inspections" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                                onClick={() => {
-                                  setAdminSubView("inspections");
-                                  setSidebarOpen(false);
-                                }}
-                              >
-                                <ClipboardList className="w-4 h-4" />{" "}
-                                {t.inspections}
-                              </div>
-                              <div
-                                className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "contracted" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                                onClick={() => {
-                                  setAdminSubView("contracted");
-                                  setSidebarOpen(false);
-                                }}
-                              >
-                                <CheckCircle2 className="w-4 h-4" /> {t.contracted}
-                              </div>
-                              <div
-                                className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "not-contracted" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                                onClick={() => {
-                                  setAdminSubView("not-contracted");
-                                  setSidebarOpen(false);
-                                }}
-                              >
-                                <X className="w-4 h-4" /> {t.notContracted}
-                              </div>
-                              <div
-                                className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "production" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                                onClick={() => {
-                                  setAdminSubView("production");
-                                  setSidebarOpen(false);
-                                }}
-                              >
-                                <Wrench className="w-4 h-4" /> {t.production}
-                              </div>
-                              <div
-                                className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "phonebook" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                                onClick={() => {
-                                  setAdminSubView("phonebook");
-                                  setSidebarOpen(false);
-                                }}
-                              >
-                                <PhoneCall className="w-4 h-4" /> {t.phonebook}
-                              </div>
-                            </>
+                          {canAccessTab("customers") && (
+                            <div
+                              className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "customers" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                              onClick={() => { setAdminSubView("customers"); setSidebarOpen(false); }}
+                            >
+                              <UserIcon className="w-4 h-4" /> {t.customers}
+                            </div>
                           )}
-                          {hasPermission("reports.view") && (
-                            <>
-                              <div
-                                className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "payments" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                                onClick={() => {
-                                  setAdminSubView("payments");
-                                  setSidebarOpen(false);
-                                }}
-                              >
-                                <CheckCircle2 className="w-4 h-4" /> {t.payments}
-                              </div>
-                              <div
-                                className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "catalogs" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                                onClick={() => {
-                                  setAdminSubView("catalogs");
-                                  setSidebarOpen(false);
-                                }}
-                              >
-                                <FileSpreadsheet className="w-4 h-4" />{" "}
-                                {t.publishedSheets}
-                              </div>
-                            </>
+                          {canAccessTab("inspections") && (
+                            <div
+                              className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "inspections" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                              onClick={() => { setAdminSubView("inspections"); setSidebarOpen(false); }}
+                            >
+                              <ClipboardList className="w-4 h-4" />{" "}{t.inspections}
+                            </div>
                           )}
-                          {hasPermission("users.manage") && (
-                            <>
-                              <div
-                                className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "activities" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                                onClick={() => {
-                                  setAdminSubView("activities");
-                                  setSidebarOpen(false);
-                                }}
-                              >
-                                <Activity className="w-4 h-4" /> {t.activities}
-                              </div>
-                            </>
+                          {canAccessTab("contracted") && (
+                            <div
+                              className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "contracted" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                              onClick={() => { setAdminSubView("contracted"); setSidebarOpen(false); }}
+                            >
+                              <CheckCircle2 className="w-4 h-4" /> {t.contracted}
+                            </div>
                           )}
-                          <div
-                            className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "settings" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                            onClick={() => {
-                              setAdminSubView("settings");
-                              setSidebarOpen(false);
-                            }}
-                          >
-                            <Settings className="w-4 h-4" /> {t.settings}
-                          </div>
+                          {canAccessTab("not-contracted") && (
+                            <div
+                              className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "not-contracted" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                              onClick={() => { setAdminSubView("not-contracted"); setSidebarOpen(false); }}
+                            >
+                              <X className="w-4 h-4" /> {t.notContracted}
+                            </div>
+                          )}
+                          {canAccessTab("production") && (
+                            <div
+                              className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "production" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                              onClick={() => { setAdminSubView("production"); setSidebarOpen(false); }}
+                            >
+                              <Wrench className="w-4 h-4" /> {t.production}
+                            </div>
+                          )}
+                          {canAccessTab("phonebook") && (
+                            <div
+                              className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "phonebook" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                              onClick={() => { setAdminSubView("phonebook"); setSidebarOpen(false); }}
+                            >
+                              <PhoneCall className="w-4 h-4" /> {t.phonebook}
+                            </div>
+                          )}
+                          {canAccessTab("payments") && (
+                            <div
+                              className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "payments" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                              onClick={() => { setAdminSubView("payments"); setSidebarOpen(false); }}
+                            >
+                              <CheckCircle2 className="w-4 h-4" /> {t.payments}
+                            </div>
+                          )}
+                          {canAccessTab("catalogs") && (
+                            <div
+                              className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "catalogs" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                              onClick={() => { setAdminSubView("catalogs"); setSidebarOpen(false); }}
+                            >
+                              <FileSpreadsheet className="w-4 h-4" />{" "}{t.publishedSheets}
+                            </div>
+                          )}
+                          {canAccessTab("activities") && (
+                            <div
+                              className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "activities" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                              onClick={() => { setAdminSubView("activities"); setSidebarOpen(false); }}
+                            >
+                              <Activity className="w-4 h-4" /> {t.activities}
+                            </div>
+                          )}
+                          {canAccessTab("settings") && (
+                            <div
+                              className={`px-4 py-3.5 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 transition-all ${adminSubView === "settings" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                              onClick={() => { setAdminSubView("settings"); setSidebarOpen(false); }}
+                            >
+                              <Settings className="w-4 h-4" /> {t.settings}
+                            </div>
+                          )}
                         </>
                       ) : null}
                       {currentUser && (
@@ -3876,79 +3897,87 @@ export default function App() {
                     >
                       <LayoutDashboard className="w-4 h-4" /> {t.dashboard}
                     </div>
-                    {hasPermission("production.view") && (
-                      <>
-                        <div
-                          className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "customers" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                          onClick={() => setAdminSubView("customers")}
-                        >
-                          <UserIcon className="w-4 h-4" /> {t.customers}
-                        </div>
-                        <div
-                          className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "inspections" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                          onClick={() => setAdminSubView("inspections")}
-                        >
-                          <ClipboardList className="w-4 h-4" /> {t.inspections}
-                        </div>
-                        <div
-                          className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "contracted" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                          onClick={() => setAdminSubView("contracted")}
-                        >
-                          <CheckCircle2 className="w-4 h-4" /> {t.contracted}
-                        </div>
-                        <div
-                          className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "not-contracted" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                          onClick={() => setAdminSubView("not-contracted")}
-                        >
-                          <X className="w-4 h-4" /> {t.notContracted}
-                        </div>
-                        <div
-                          className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "production" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                          onClick={() => setAdminSubView("production")}
-                        >
-                          <Wrench className="w-4 h-4" /> {t.production}
-                        </div>
-                        <div
-                          className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "phonebook" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                          onClick={() => setAdminSubView("phonebook")}
-                        >
-                          <PhoneCall className="w-4 h-4" /> {t.phonebook}
-                        </div>
-                      </>
+                    {canAccessTab("customers") && (
+                      <div
+                        className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "customers" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                        onClick={() => setAdminSubView("customers")}
+                      >
+                        <UserIcon className="w-4 h-4" /> {t.customers}
+                      </div>
                     )}
-                    {hasPermission("reports.view") && (
-                      <>
-                        <div
-                          className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "payments" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                          onClick={() => setAdminSubView("payments")}
-                        >
-                          <CheckCircle2 className="w-4 h-4" /> {t.payments}
-                        </div>
-                        <div
-                          className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "catalogs" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                          onClick={() => setAdminSubView("catalogs")}
-                        >
-                          <FileSpreadsheet className="w-4 h-4" />{" "}
-                          {t.publishedSheets}
-                        </div>
-                      </>
+                    {canAccessTab("inspections") && (
+                      <div
+                        className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "inspections" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                        onClick={() => setAdminSubView("inspections")}
+                      >
+                        <ClipboardList className="w-4 h-4" /> {t.inspections}
+                      </div>
                     )}
-                    {hasPermission("users.manage") && (
-                      <>
-                        <div
-                          className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "activities" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                          onClick={() => setAdminSubView("activities")}
-                        >
-                          <Activity className="w-4 h-4" /> {t.activities}
-                        </div>
-                      </>
+                    {canAccessTab("contracted") && (
+                      <div
+                        className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "contracted" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                        onClick={() => setAdminSubView("contracted")}
+                      >
+                        <CheckCircle2 className="w-4 h-4" /> {t.contracted}
+                      </div>
                     )}
-                    <div
-                      className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "settings" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
-                      onClick={() => setAdminSubView("settings")}
-                    >
-                      <Settings className="w-4 h-4" /> {t.settings}
-                    </div>
+                    {canAccessTab("not-contracted") && (
+                      <div
+                        className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "not-contracted" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                        onClick={() => setAdminSubView("not-contracted")}
+                      >
+                        <X className="w-4 h-4" /> {t.notContracted}
+                      </div>
+                    )}
+                    {canAccessTab("production") && (
+                      <div
+                        className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "production" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                        onClick={() => setAdminSubView("production")}
+                      >
+                        <Wrench className="w-4 h-4" /> {t.production}
+                      </div>
+                    )}
+                    {canAccessTab("phonebook") && (
+                      <div
+                        className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "phonebook" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                        onClick={() => setAdminSubView("phonebook")}
+                      >
+                        <PhoneCall className="w-4 h-4" /> {t.phonebook}
+                      </div>
+                    )}
+                    {canAccessTab("payments") && (
+                      <div
+                        className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "payments" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                        onClick={() => setAdminSubView("payments")}
+                      >
+                        <CheckCircle2 className="w-4 h-4" /> {t.payments}
+                      </div>
+                    )}
+                    {canAccessTab("catalogs") && (
+                      <div
+                        className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "catalogs" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                        onClick={() => setAdminSubView("catalogs")}
+                      >
+                        <FileSpreadsheet className="w-4 h-4" />{" "}
+                        {t.publishedSheets}
+                      </div>
+                    )}
+                    {canAccessTab("activities") && (
+                      <div
+                        className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "activities" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                        onClick={() => setAdminSubView("activities")}
+                      >
+                        <Activity className="w-4 h-4" /> {t.activities}
+                      </div>
+                    )}
+                    {canAccessTab("settings") && (
+                      <div
+                        className={`px-4 py-3 rounded-xl text-sm font-semibold cursor-pointer flex items-center gap-3 ${adminSubView === "settings" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:bg-white/30"}`}
+                        onClick={() => setAdminSubView("settings")}
+                      >
+                        <Settings className="w-4 h-4" /> {t.settings}
+                      </div>
+                    )}
                   </>
                 ) : null}
                 {currentUser && (
@@ -4572,7 +4601,7 @@ export default function App() {
                                       </div>
                                     </div>
 
-                                    {isAdminUser && (
+                                    {isAdminUser && userProfile?.username !== "ahmed" && (
                                       <div className="grid grid-cols-2 gap-3 relative z-10">
                                         <button
                                           onClick={() => {
@@ -4683,13 +4712,15 @@ export default function App() {
                               </p>
                             </div>
                             <div className="flex gap-2 md:gap-3 w-full md:w-auto">
-                              <button
-                                onClick={() => setAdminSubView("inspections")}
-                                className="flex-1 md:flex-none bg-zinc-900 hover:bg-zinc-800 text-white px-3 py-2.5 md:px-6 lg:px-8 md:py-3 lg:py-4 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-xl"
-                              >
-                                <Calendar className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                                {lang === "ar" ? "معاينات" : "Inspections"}
-                              </button>
+                              {canAccessTab("inspections") && (
+                                <button
+                                  onClick={() => setAdminSubView("inspections")}
+                                  className="flex-1 md:flex-none bg-zinc-900 hover:bg-zinc-800 text-white px-3 py-2.5 md:px-6 lg:px-8 md:py-3 lg:py-4 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-xl"
+                                >
+                                  <Calendar className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                                  {lang === "ar" ? "معاينات" : "Inspections"}
+                                </button>
+                              )}
                               <button
                                 onClick={() => setAdminSubView("production")}
                                 className="flex-1 md:flex-none glass border border-white/40 px-3 py-2.5 md:px-6 lg:px-8 md:py-3 lg:py-4 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-xl"
@@ -4793,7 +4824,14 @@ export default function App() {
                               borderHover: "hover:border-teal-200/50",
                               targetView: "catalogs" as const,
                             },
-                          ].map((card) => (
+                          ].filter((card) => {
+                            if (!canAccessTab(card.targetView)) return false;
+                            const username = userProfile?.username || "";
+                            if (username.startsWith("cs") && card.targetView === "phonebook") {
+                              return false;
+                            }
+                            return true;
+                          }).map((card) => (
                             <div
                               key={card.label}
                               onClick={() => setAdminSubView(card.targetView)}
@@ -4858,26 +4896,32 @@ export default function App() {
                               </p>
                             </div>
                             <div className="flex gap-2 md:gap-3 w-full md:w-auto">
-                              <button
-                                onClick={() => setAdminSubView("inspections")}
-                                className="flex-1 md:flex-none bg-zinc-900 hover:bg-zinc-800 text-white px-3 py-2 md:px-6 lg:px-8 md:py-3 lg:py-3.5 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-lg"
-                              >
-                                {lang === "ar" ? "المعاينات" : "Inspections"}
-                              </button>
-                              <button
-                                onClick={() => setAdminSubView("production")}
-                                className="flex-1 md:flex-none glass border border-white/40 px-3 py-2 md:px-6 lg:px-8 md:py-3 lg:py-3.5 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-lg hover:shadow-xl"
-                              >
-                                <Wrench className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                                {lang === "ar" ? "الإنتاج" : "Production"}
-                              </button>
-                              <button
-                                onClick={() => setAdminSubView("settings")}
-                                className="flex-1 md:flex-none glass border border-white/40 px-3 py-2 md:px-6 lg:px-8 md:py-3 lg:py-3.5 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-lg hover:shadow-xl"
-                              >
-                                <Settings className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                                {lang === "ar" ? "الإعدادات" : "Settings"}
-                              </button>
+                              {canAccessTab("inspections") && (
+                                <button
+                                  onClick={() => setAdminSubView("inspections")}
+                                  className="flex-1 md:flex-none bg-zinc-900 hover:bg-zinc-800 text-white px-3 py-2 md:px-6 lg:px-8 md:py-3 lg:py-3.5 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-lg"
+                                >
+                                  {lang === "ar" ? "المعاينات" : "Inspections"}
+                                </button>
+                              )}
+                              {canAccessTab("production") && (
+                                <button
+                                  onClick={() => setAdminSubView("production")}
+                                  className="flex-1 md:flex-none glass border border-white/40 px-3 py-2 md:px-6 lg:px-8 md:py-3 lg:py-3.5 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-lg hover:shadow-xl"
+                                >
+                                  <Wrench className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                                  {lang === "ar" ? "الإنتاج" : "Production"}
+                                </button>
+                              )}
+                              {canAccessTab("settings") && (
+                                <button
+                                  onClick={() => setAdminSubView("settings")}
+                                  className="flex-1 md:flex-none glass border border-white/40 px-3 py-2 md:px-6 lg:px-8 md:py-3 lg:py-3.5 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-lg hover:shadow-xl"
+                                >
+                                  <Settings className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                                  {lang === "ar" ? "الإعدادات" : "Settings"}
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>
