@@ -4840,6 +4840,258 @@ export default function App() {
                             </div>
                           </div>
                         </div>
+                      ) : userProfile?.username?.startsWith("cs") ? (
+                        <div className="space-y-6 md:space-y-8 animate-fade-in">
+                          {/* CS Hero Banner */}
+                          <div className="relative overflow-hidden bg-gradient-to-br from-zinc-900 via-zinc-800 to-amber-950/80 text-white rounded-2xl md:rounded-[2.5rem] p-6 md:p-12 shadow-2xl border border-white/10">
+                            <div className="absolute -top-24 -right-24 w-96 h-96 bg-amber-500/10 rounded-full blur-[120px] pointer-events-none" />
+                            <div className="absolute -bottom-24 -left-24 w-80 h-80 bg-blue-500/10 rounded-full blur-[100px] pointer-events-none" />
+                            
+                            <div className="relative flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                              <div className="space-y-3 md:space-y-4">
+                                <div className="flex items-center gap-2">
+                                  <span className="inline-flex items-center gap-2 text-[10px] md:text-xs font-bold uppercase tracking-widest bg-amber-500/20 text-amber-300 px-4 py-2 rounded-full border border-amber-500/30">
+                                    <MessageCircle className="w-3.5 h-3.5" />
+                                    {lang === "ar" ? "بوابة خدمة العملاء" : "CS Portal"}
+                                  </span>
+                                  <span className="text-xs text-zinc-400 font-medium hidden sm:inline">
+                                    {new Date().toLocaleDateString(lang === "ar" ? "ar-EG" : "en-US", { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                                  </span>
+                                </div>
+                                <h1 className="text-2xl sm:text-3xl md:text-5xl font-bold tracking-tight leading-tight">
+                                  {lang === "ar" ? "مركز خدمة العملاء والمتابعة" : "Customer Service Hub"}
+                                </h1>
+                                <p className="text-zinc-300 text-xs sm:text-sm md:text-base max-w-2xl leading-relaxed">
+                                  {lang === "ar"
+                                    ? "مرحباً بك! من هنا يمكنك الوصول السريع لقائمة العملاء، متابعة مراحل الإنتاج، والبحث الفوري في دليل الأرقام."
+                                    : "Welcome! Here you can quickly access customer lists, track production stages, and search phone directories."}
+                                </p>
+                              </div>
+
+                              <div className="flex flex-wrap md:flex-col lg:flex-row gap-3 w-full md:w-auto shrink-0">
+                                <button
+                                  onClick={() => setAdminSubView("customers")}
+                                  className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white font-bold px-5 py-3.5 rounded-2xl border border-white/20 shadow-lg active:scale-95 transition-all text-xs md:text-sm"
+                                >
+                                  <Users className="w-4 h-4 text-blue-400" />
+                                  {lang === "ar" ? "العملاء" : "Customers"}
+                                </button>
+                                <button
+                                  onClick={() => setAdminSubView("production")}
+                                  className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold px-6 py-3.5 rounded-2xl shadow-xl hover:shadow-amber-500/20 active:scale-95 transition-all text-xs md:text-sm"
+                                >
+                                  <Wrench className="w-4 h-4" />
+                                  {lang === "ar" ? "الإنتاج" : "Production"}
+                                  <ArrowUpRight className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* CS Stats Cards */}
+                          <div className="grid gap-4 md:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+                            {/* Total Customers */}
+                            <div
+                              onClick={() => setAdminSubView("customers")}
+                              className="group relative glass rounded-2xl md:rounded-[2rem] p-6 lg:p-8 shadow-lg border border-white/40 hover:shadow-2xl hover:border-blue-300/50 hover:-translate-y-1 transition-all duration-300 overflow-hidden cursor-pointer"
+                            >
+                              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-br from-transparent to-blue-500/10 rounded-[2rem]" />
+                              <div className="relative flex items-center justify-between">
+                                <div className="space-y-2">
+                                  <span className="text-xs font-bold text-blue-600 uppercase tracking-wider bg-blue-50 px-3 py-1 rounded-full">
+                                    {lang === "ar" ? "سجلات العملاء" : "Records"}
+                                  </span>
+                                  <div className="text-3xl md:text-4xl lg:text-5xl font-bold text-zinc-900">
+                                    {unifiedCustomers.length}
+                                  </div>
+                                  <div className="text-xs md:text-sm text-zinc-500 font-medium">
+                                    {lang === "ar" ? "إجمالي العملاء في النظام" : "Total Registered Customers"}
+                                  </div>
+                                </div>
+                                <div className="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-300">
+                                  <Users className="w-7 h-7" />
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Production Orders */}
+                            <div
+                              onClick={() => setAdminSubView("production")}
+                              className="group relative glass rounded-2xl md:rounded-[2rem] p-6 lg:p-8 shadow-lg border border-white/40 hover:shadow-2xl hover:border-amber-300/50 hover:-translate-y-1 transition-all duration-300 overflow-hidden cursor-pointer"
+                            >
+                              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-br from-transparent to-amber-500/10 rounded-[2rem]" />
+                              <div className="relative flex items-center justify-between">
+                                <div className="space-y-2">
+                                  <span className="text-xs font-bold text-amber-600 uppercase tracking-wider bg-amber-50 px-3 py-1 rounded-full">
+                                    {lang === "ar" ? "خطوط الإنتاج" : "Production"}
+                                  </span>
+                                  <div className="text-3xl md:text-4xl lg:text-5xl font-bold text-zinc-900">
+                                    {contractedCustomers.length}
+                                  </div>
+                                  <div className="text-xs md:text-sm text-zinc-500 font-medium">
+                                    {lang === "ar" ? "طلبيات الأثاث المتعاقدة" : "Contracted Orders"}
+                                  </div>
+                                </div>
+                                <div className="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-300">
+                                  <Wrench className="w-7 h-7" />
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Phonebook Contact Numbers */}
+                            <div
+                              onClick={() => setAdminSubView("phonebook")}
+                              className="group relative glass rounded-2xl md:rounded-[2rem] p-6 lg:p-8 shadow-lg border border-white/40 hover:shadow-2xl hover:border-violet-300/50 hover:-translate-y-1 transition-all duration-300 overflow-hidden cursor-pointer sm:col-span-2 lg:col-span-1"
+                            >
+                              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-br from-transparent to-violet-500/10 rounded-[2rem]" />
+                              <div className="relative flex items-center justify-between">
+                                <div className="space-y-2">
+                                  <span className="text-xs font-bold text-violet-600 uppercase tracking-wider bg-violet-50 px-3 py-1 rounded-full">
+                                    {lang === "ar" ? "دليل الأرقام" : "Phonebook"}
+                                  </span>
+                                  <div className="text-3xl md:text-4xl lg:text-5xl font-bold text-zinc-900">
+                                    {new Set([
+                                      ...customerRecords,
+                                      ...inspections,
+                                      ...contractedCustomers,
+                                      ...notContractedCustomers
+                                    ].map(r => r.phone).filter(Boolean)).size}
+                                  </div>
+                                  <div className="text-xs md:text-sm text-zinc-500 font-medium">
+                                    {lang === "ar" ? "أرقام التواصل المسجلة" : "Registered Contact Numbers"}
+                                  </div>
+                                </div>
+                                <div className="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-violet-100 text-violet-600 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-300">
+                                  <PhoneCall className="w-7 h-7" />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Quick Shortcuts Cards Grid */}
+                          <div className="grid gap-4 md:gap-6 grid-cols-1 md:grid-cols-3">
+                            {/* Customers Card */}
+                            <div
+                              onClick={() => setAdminSubView("customers")}
+                              className="glass rounded-2xl md:rounded-[2rem] p-6 border border-white/40 shadow-xl hover:shadow-2xl hover:border-blue-200 transition-all duration-300 group cursor-pointer flex flex-col justify-between"
+                            >
+                              <div className="space-y-4">
+                                <div className="w-12 h-12 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                  <Users className="w-6 h-6" />
+                                </div>
+                                <div>
+                                  <h3 className="text-lg font-bold text-zinc-900 mb-1">
+                                    {lang === "ar" ? "إدارة سجلات العملاء" : "Customer Management"}
+                                  </h3>
+                                  <p className="text-zinc-500 text-xs md:text-sm leading-relaxed">
+                                    {lang === "ar"
+                                      ? "عرض بيانات العملاء ومتابعة تفاصيل الطلبات وسجلات المحافظات."
+                                      : "View customer profiles, request details, and governorate logs."}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="mt-6 flex items-center text-xs font-bold text-blue-600 group-hover:translate-x-1 rtl:group-hover:-translate-x-1 transition-transform gap-1">
+                                <span>{lang === "ar" ? "انتقال إلى العملاء" : "Open Customers"}</span>
+                                <ArrowUpRight className="w-4 h-4" />
+                              </div>
+                            </div>
+
+                            {/* Production Card */}
+                            <div
+                              onClick={() => setAdminSubView("production")}
+                              className="glass rounded-2xl md:rounded-[2rem] p-6 border border-white/40 shadow-xl hover:shadow-2xl hover:border-amber-200 transition-all duration-300 group cursor-pointer flex flex-col justify-between"
+                            >
+                              <div className="space-y-4">
+                                <div className="w-12 h-12 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                  <Wrench className="w-6 h-6" />
+                                </div>
+                                <div>
+                                  <h3 className="text-lg font-bold text-zinc-900 mb-1">
+                                    {lang === "ar" ? "متابعة مراحل الإنتاج" : "Production Tracking"}
+                                  </h3>
+                                  <p className="text-zinc-500 text-xs md:text-sm leading-relaxed">
+                                    {lang === "ar"
+                                      ? "متابعة تقدم تصنيع غرف الأثاث ومراحل التجهيز لكل عميل."
+                                      : "Track furniture production progress and stage completion."}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="mt-6 flex items-center text-xs font-bold text-amber-600 group-hover:translate-x-1 rtl:group-hover:-translate-x-1 transition-transform gap-1">
+                                <span>{lang === "ar" ? "انتقال إلى الإنتاج" : "Open Production"}</span>
+                                <ArrowUpRight className="w-4 h-4" />
+                              </div>
+                            </div>
+
+                            {/* Phonebook Card */}
+                            <div
+                              onClick={() => setAdminSubView("phonebook")}
+                              className="glass rounded-2xl md:rounded-[2rem] p-6 border border-white/40 shadow-xl hover:shadow-2xl hover:border-violet-200 transition-all duration-300 group cursor-pointer flex flex-col justify-between"
+                            >
+                              <div className="space-y-4">
+                                <div className="w-12 h-12 rounded-xl bg-violet-100 text-violet-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                  <PhoneCall className="w-6 h-6" />
+                                </div>
+                                <div>
+                                  <h3 className="text-lg font-bold text-zinc-900 mb-1">
+                                    {lang === "ar" ? "دليل الأرقام والاتصال" : "Phonebook & Contacts"}
+                                  </h3>
+                                  <p className="text-zinc-500 text-xs md:text-sm leading-relaxed">
+                                    {lang === "ar"
+                                      ? "البحث السريع في دليل أرقام العملاء للتواصل والتنسيق."
+                                      : "Quickly search phone numbers for seamless communication."}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="mt-6 flex items-center text-xs font-bold text-violet-600 group-hover:translate-x-1 rtl:group-hover:-translate-x-1 transition-transform gap-1">
+                                <span>{lang === "ar" ? "فتح دليل الأرقام" : "Open Phonebook"}</span>
+                                <ArrowUpRight className="w-4 h-4" />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* CS Operational Guidelines Card */}
+                          <div className="glass rounded-2xl md:rounded-[2.5rem] p-6 md:p-10 border border-white/40 shadow-xl space-y-6 bg-gradient-to-br from-white via-zinc-50/50 to-amber-500/5">
+                            <h3 className="text-xl font-bold text-zinc-900 flex items-center gap-2">
+                              <BookOpen className="w-5 h-5 text-amber-600" />
+                              {lang === "ar" ? "إرشادات مهام خدمة العملاء" : "Customer Service Operations Guide"}
+                            </h3>
+                            <div className="grid gap-6 grid-cols-1 md:grid-cols-3 text-right">
+                              <div className="space-y-2 p-4 rounded-xl bg-white/60 border border-zinc-100">
+                                <h4 className="font-bold text-zinc-800 text-sm md:text-base flex items-center gap-2">
+                                  <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 text-xs flex items-center justify-center">1</span>
+                                  {lang === "ar" ? "متابعة الطلبات" : "Order Tracking"}
+                                </h4>
+                                <p className="text-zinc-500 text-xs md:text-sm leading-relaxed">
+                                  {lang === "ar"
+                                    ? "استخدم قسم (العملاء) للتعرف على بيانات العميل ومكان التوريد، ومتابعة التفاصيل بسهولة."
+                                    : "Use the Customers tab to inspect client details and delivery locations easily."}
+                                </p>
+                              </div>
+                              <div className="space-y-2 p-4 rounded-xl bg-white/60 border border-zinc-100">
+                                <h4 className="font-bold text-zinc-800 text-sm md:text-base flex items-center gap-2">
+                                  <span className="w-6 h-6 rounded-full bg-amber-100 text-amber-600 text-xs flex items-center justify-center">2</span>
+                                  {lang === "ar" ? "مراحل التصنيع" : "Manufacturing Status"}
+                                </h4>
+                                <p className="text-zinc-500 text-xs md:text-sm leading-relaxed">
+                                  {lang === "ar"
+                                    ? "في قسم (الإنتاج)، يمكنك الاطلاع على مراحل تصنيع الغرف لكل عميل وإفادته بالحالة الحالية."
+                                    : "In the Production tab, view the exact manufacturing stage for client updates."}
+                                </p>
+                              </div>
+                              <div className="space-y-2 p-4 rounded-xl bg-white/60 border border-zinc-100">
+                                <h4 className="font-bold text-zinc-800 text-sm md:text-base flex items-center gap-2">
+                                  <span className="w-6 h-6 rounded-full bg-violet-100 text-violet-600 text-xs flex items-center justify-center">3</span>
+                                  {lang === "ar" ? "دليل الاتصال السريع" : "Quick Contact Directory"}
+                                </h4>
+                                <p className="text-zinc-500 text-xs md:text-sm leading-relaxed">
+                                  {lang === "ar"
+                                    ? "يمكنك استخدام دليل الأرقام للبحث الفوري عن رقم أي عميل بالاسم أو الهاتف مباشرة."
+                                    : "Search for client contacts instantly by phone number or name in Phonebook."}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
                       ) : (
                         <div className="space-y-6 md:space-y-8">
                           {/* Header */}
