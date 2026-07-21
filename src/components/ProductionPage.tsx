@@ -12,7 +12,7 @@ export const ProductionPage: React.FC<{
   t: Record<string, string>;
   stages: any[];
   onStageUpdate: (stageId: string, status: string) => void;
-  userProfile?: { role: string; permissions: string[] } | null;
+  userProfile?: { username?: string; role: string; permissions: string[] } | null;
   productionFilter: "all" | "completed";
   onProductionFilterChange: (filter: "all" | "completed") => void;
 }> = ({
@@ -70,6 +70,14 @@ export const ProductionPage: React.FC<{
     userProfile?.role === "super_admin" ||
     perms.includes("production.edit") ||
     perms.includes("reports.view");
+
+  const canEditStages =
+    isAdmin ||
+    userProfile?.role === "super_admin" ||
+    userProfile?.username === "alex_store" ||
+    userProfile?.username === "cairo_store" ||
+    perms.includes("production.alexandria") ||
+    perms.includes("production.cairo");
 
   const filteredProductionData = allProductionData.filter((order) => {
     // 1. Governorate filter
@@ -249,11 +257,44 @@ export const ProductionPage: React.FC<{
                       const stageStatus = stageRecord?.status || "not_started";
                       const isDone = stageStatus === "done";
                       const isInProgress = stageStatus === "in_progress";
+
+                      // Store users: yellow only. Admin: green only.
+                      const isStoreOnly = canEditStages && !isAdmin;
+
+                      // Determine next status when clicked
+                      const getNextStatus = () => {
+                        if (isAdmin) {
+                          // Admin toggles: not_started/in_progress → done, done → not_started
+                          return isDone ? "not_started" : "done";
+                        } else {
+                          // Store: toggles between not_started ↔ in_progress (yellow)
+                          return isInProgress ? "not_started" : "in_progress";
+                        }
+                      };
+
+                      // Clickable if user has any edit right AND stage not already done for store users
+                      const clickable =
+                        canEditStages &&
+                        !!stageRecord &&
+                        (isAdmin || !isDone); // store cannot unset green
+
                       const circleColor = isDone
                         ? "bg-emerald-500 text-white"
                         : isInProgress
                           ? "bg-amber-500 text-white"
                           : "bg-zinc-200 text-zinc-500";
+
+                      // Tooltip text
+                      const tooltipText = isAdmin
+                        ? isDone
+                          ? lang === "ar" ? "إلغاء التأكيد" : "Undo confirm"
+                          : lang === "ar" ? "تأكيد وإرسال للعميل ✓" : "Confirm & notify customer ✓"
+                        : isInProgress
+                          ? lang === "ar" ? "إلغاء (لم تنته بعد)" : "Mark not ready"
+                          : isDone
+                            ? lang === "ar" ? "تم التأكيد من المسؤول" : "Confirmed by admin"
+                            : lang === "ar" ? "جاهز في المصنع 🟡" : "Ready in factory 🟡";
+
                       return (
                         <div
                           key={stageDef.key}
@@ -261,34 +302,21 @@ export const ProductionPage: React.FC<{
                         >
                           <button
                             onClick={() =>
-                              stageRecord &&
-                              isAdmin &&
-                              onStageUpdate(
-                                stageRecord.id,
-                                isDone ? "not_started" : "done",
-                              )
+                              clickable &&
+                              onStageUpdate(stageRecord!.id, getNextStatus())
                             }
-                            disabled={!isAdmin}
-                            className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${circleColor} ${isAdmin && stageRecord ? "cursor-pointer hover:scale-110 active:scale-95" : "cursor-default"}`}
+                            disabled={!clickable}
+                            title={isStoreOnly && isDone ? (lang === "ar" ? "تم التأكيد من المسؤول" : "Confirmed by admin") : undefined}
+                            className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${circleColor} ${clickable ? "cursor-pointer hover:scale-110 active:scale-95 shadow-sm" : "cursor-default opacity-80"}`}
                           >
-                            {isDone ? "✓" : idx + 1}
+                            {isDone ? "✓" : isInProgress ? "●" : idx + 1}
                           </button>
                           <span className="text-[9px] text-zinc-500">
                             {lang === "ar" ? stageDef.ar : stageDef.en}
                           </span>
-                          {isAdmin && stageRecord && (
-                            <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 bg-zinc-900 text-white text-[8px] rounded-xl px-2 py-1 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                              {isDone
-                                ? lang === "ar"
-                                  ? "إلغاء"
-                                  : "Undo"
-                                : isInProgress
-                                  ? lang === "ar"
-                                    ? "إكمال"
-                                    : "Complete"
-                                  : lang === "ar"
-                                    ? "بدء"
-                                    : "Start"}
+                          {canEditStages && stageRecord && (
+                            <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 bg-zinc-900 text-white text-[8px] rounded-xl px-2 py-1 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-lg text-center max-w-[100px] leading-tight">
+                              {tooltipText}
                             </div>
                           )}
                         </div>

@@ -1590,7 +1590,22 @@ export default function App() {
   };
 
   const handleStageUpdate = async (stageId: string, status: string) => {
-    if (!ensureAdminAccess()) return;
+    const canUserUpdateStage =
+      isAdminUser ||
+      userProfile?.role === "super_admin" ||
+      userProfile?.username === "alex_store" ||
+      userProfile?.username === "cairo_store" ||
+      userProfile?.permissions?.includes("production.alexandria") ||
+      userProfile?.permissions?.includes("production.cairo");
+
+    if (!canUserUpdateStage) {
+      toast.error(
+        lang === "ar"
+          ? "ليس لديك صلاحية لتعديل مراحل الإنتاج"
+          : "You do not have permission to update production stages",
+      );
+      return;
+    }
     const updates: any = { status };
     if (status === "done") {
       updates.completed_at = new Date().toISOString();
