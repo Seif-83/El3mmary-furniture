@@ -159,7 +159,7 @@ body {
   content: "";
   position: absolute;
   left: 50%;
-  bottom: -0.85rem;
+  bottom: 3rem;
   transform: translateX(-50%);
   width: 0;
   height: 4px;

@@ -82,7 +82,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         </h2>
         <p className="text-zinc-500 text-base md:text-lg mt-2 max-w-2xl mx-auto">
           {isAr 
-            ? "بوابة العمري للأثاث لمتابعة الإنتاج والتعاقدات" 
+            ? "بوابة العماري للأثاث لمتابعة الإنتاج والتعاقدات" 
             : "El3mmary Furniture production & contract portal"}
         </p>
       </div>

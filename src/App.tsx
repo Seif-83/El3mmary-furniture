@@ -1937,36 +1937,6 @@ export default function App() {
     }
 
     try {
-      // Hardcoded local admin shortcut (seif / sosi)
-      if (targetUsername === "seif" && targetPassword === "sosi") {
-        const demoProfile = {
-          id: "local-seif",
-          username: "seif",
-          email: "seif@example.com",
-          role: "super_admin",
-          permissions: [
-            "contracts.upload",
-            "contracts.edit",
-            "production.view",
-            "production.edit",
-            "production.alexandria",
-            "production.cairo",
-            "users.manage",
-            "reports.view",
-          ],
-        };
-        setCurrentUser({ id: demoProfile.id, email: demoProfile.email } as any);
-        setUserProfile(demoProfile as any);
-        setGovernorateFilter("all");
-        setAdminSubView("dashboard");
-        setIsAuthChecking(false);
-        toast.success(lang === "ar" ? "تم تسجيل الدخول" : "Logged in successfully");
-        setFormData({ ...formData, username: "", password: "" });
-        await logActivity("login", `${targetUsername} ${lang === "ar" ? "سجل دخول" : "logged in"}`);
-        setIsLoading(false);
-        return;
-      }
-
       // 1. Query user_profiles table for username mapping
       const { data: profileData, error: profileErr } = await supabase
         .from("user_profiles")
