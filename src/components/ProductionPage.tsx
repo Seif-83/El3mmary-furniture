@@ -79,6 +79,15 @@ export const ProductionPage: React.FC<{
     perms.includes("production.alexandria") ||
     perms.includes("production.cairo");
 
+  // Store-only users: can edit stages but should NOT see phone numbers
+  const isStoreUser =
+    (userProfile?.username === "alex_store" ||
+      userProfile?.username === "cairo_store" ||
+      perms.includes("production.alexandria") ||
+      perms.includes("production.cairo")) &&
+    !isAdmin &&
+    userProfile?.role !== "super_admin";
+
   const filteredProductionData = allProductionData.filter((order) => {
     // 1. Governorate filter
     if (govFilter !== "all" && order.governorate !== govFilter) {
@@ -204,9 +213,11 @@ export const ProductionPage: React.FC<{
                     <h3 className="text-xl font-bold text-zinc-900">
                       {order.customerName}
                     </h3>
-                    <p className="text-sm text-zinc-500 font-mono">
-                      {order.phone}
-                    </p>
+                    {!isStoreUser && (
+                      <p className="text-sm text-zinc-500 font-mono">
+                        {order.phone}
+                      </p>
+                    )}
                   </div>
                   <div className="bg-accent-tan/10 px-3 py-1 rounded-full text-xs font-bold text-accent-tan">
                     {order.contractDate
