@@ -3766,11 +3766,11 @@ export default function App() {
             key="app"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="flex flex-col md:flex-row w-full min-h-screen"
+            className="flex flex-col lg:flex-row w-full min-h-screen"
           >
             {/* Mobile Header Bar */}
             {currentUser && isAuthorizedUser && (
-              <div className="md:hidden sticky top-0 w-full z-40 glass-dark flex items-center justify-between p-4 border-b border-black/5">
+              <div className="lg:hidden sticky top-0 w-full z-40 glass-dark flex items-center justify-between p-4 border-b border-black/5">
                 <div className="logo border-b-2 border-accent-tan pb-0.5 text-lg font-bold tracking-widest uppercase">
                   {t.brand}
                 </div>
@@ -3791,7 +3791,7 @@ export default function App() {
             {/* Mobile Navigation Drawer */}
             <AnimatePresence>
               {sidebarOpen && (
-                <div className="fixed inset-0 z-50 md:hidden">
+                <div className="fixed inset-0 z-50 lg:hidden">
                   {/* Backdrop */}
                   <motion.div
                     initial={{ opacity: 0 }}
@@ -3933,7 +3933,7 @@ export default function App() {
             </AnimatePresence>
 
             {/* Desktop Sidebar (hidden on mobile) */}
-            <aside className="hidden md:flex w-64 glass-dark shrink-0 flex-col md:h-screen md:sticky md:top-0 z-40">
+            <aside className="hidden lg:flex w-64 glass-dark shrink-0 flex-col lg:h-screen lg:sticky lg:top-0 z-40">
               <div className="flex items-center justify-between p-6 md:p-8">
                 <div className="logo border-b-2 border-accent-tan pb-1 text-xl font-bold tracking-widest uppercase">
                   {t.brand}
@@ -4042,7 +4042,7 @@ export default function App() {
               </nav>
             </aside>
 
-            <main className="flex-1 p-6 md:p-12 max-w-7xl mx-auto w-full">
+            <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 xl:p-12 max-w-7xl mx-auto w-full">
               <AnimatePresence mode="wait">
                 {currentUser && isAuthorizedUser ? (
                   <motion.div
@@ -5442,7 +5442,7 @@ export default function App() {
                             </button>
                           ))}
                         </div>
-                        <div className="hidden md:block glass glass-table rounded-[2.5rem] overflow-hidden p-6 md:p-10 shadow-xl border border-white/40">
+                        <div className="hidden lg:block glass glass-table rounded-[2.5rem] overflow-hidden p-4 lg:p-8 xl:p-10 shadow-xl border border-white/40">
                           <div className="overflow-x-auto">
                             <table className="w-full text-left table-zebra">
                               <thead>
@@ -5491,17 +5491,17 @@ export default function App() {
                                         </span>
                                       </td>
                                       <td className="px-4 py-4">
-                                        <div className="flex gap-4 justify-between items-center w-full">
+                                        <div className="flex gap-1.5 xl:gap-3 justify-between items-center w-full">
                                           {isAdminUser && (
                                             <>
                                               <button
                                                 onClick={() =>
                                                   handleOpenEditModal(r)
                                                 }
-                                                className="flex items-center gap-2 bg-zinc-800 text-white px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-zinc-700 active:scale-95 transition-all duration-200 shadow-md shadow-zinc-200 hover:shadow-lg"
+                                                className="flex items-center gap-2 bg-zinc-800 text-white px-3 xl:px-5 py-2.5 xl:py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-zinc-700 active:scale-95 transition-all duration-200 shadow-md shadow-zinc-200 hover:shadow-lg"
                                               >
                                                 <Edit2 className="w-4 h-4" />
-                                                <span>
+                                                <span className="hidden xl:inline">
                                                   {lang === "ar"
                                                     ? "تعديل"
                                                     : "Edit"}
@@ -5509,10 +5509,10 @@ export default function App() {
                                               </button>
                                               <button
                                                 onClick={getInspectionActionForCustomer(r).onClick}
-                                                className="ml-2 flex items-center gap-2 bg-accent-tan text-white px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-accent-tan/90 active:scale-95 transition-all duration-200 shadow-md"
+                                                className="flex items-center gap-2 bg-accent-tan text-white px-3 xl:px-5 py-2.5 xl:py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-accent-tan/90 active:scale-95 transition-all duration-200 shadow-md"
                                               >
                                                 <Eye className="w-4 h-4" />
-                                                <span>
+                                                <span className="hidden xl:inline">
                                                   {getInspectionActionForCustomer(r).label}
                                                 </span>
                                               </button>
@@ -5527,10 +5527,10 @@ export default function App() {
                                                     handleDeleteCustomer(id || "", phone);
                                                   }
                                                 }}
-                                                className="btn-3d btn-3d-danger flex items-center gap-2 bg-white-50 text-white-500 border border-white-100 px-5 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-white-500 hover:text-white active:scale-95 transition-all duration-200 hover:shadow-lg hover:shadow-white-100"
+                                                className="btn-3d btn-3d-danger flex items-center gap-2 bg-white-50 text-white-500 border border-white-100 px-3 xl:px-5 py-2.5 xl:py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-white-500 hover:text-white active:scale-95 transition-all duration-200 hover:shadow-lg hover:shadow-white-100"
                                               >
                                                 <Trash2 className="w-4 h-4" />
-                                                <span>{t.delete}</span>
+                                                <span className="hidden xl:inline">{t.delete}</span>
                                               </button>
                                             </>
                                           )}
@@ -5558,7 +5558,7 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-1 gap-4 md:hidden">
+                        <div className="grid grid-cols-1 gap-4 lg:hidden">
                           {unifiedCustomers
                             .filter((r) => matchesFilters(r))
                             .map((r) => (
@@ -5638,7 +5638,7 @@ export default function App() {
                       </div>
                     ) : (
                       <div className="space-y-4">
-                        <div className="hidden md:block glass glass-table rounded-3xl overflow-hidden p-4 md:p-8">
+                        <div className="hidden lg:block glass glass-table rounded-3xl overflow-hidden p-4 lg:p-8">
                           <div className="overflow-x-auto">
                             <table className="w-full text-left table-zebra">
                               <thead>
@@ -5701,7 +5701,7 @@ export default function App() {
                                           {r.visitDate}
                                         </td>
                                       )}
-                                      <td className="px-4 py-6 text-center flex gap-3 justify-center">
+                                      <td className="px-4 py-6 text-center flex gap-1.5 xl:gap-3 justify-center">
                                         {isInspectionView &&
                                           isAdminUser && (
                                             <button
@@ -5710,9 +5710,10 @@ export default function App() {
                                                 setInspectionStep(2);
                                                 setIsInspectionModalOpen(true);
                                               }}
-                                              className="text-zinc-600 border border-zinc-200 px-5 py-3 rounded-lg text-xs font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all"
+                                              className="flex items-center gap-1.5 text-zinc-600 border border-zinc-200 px-3 xl:px-5 py-2.5 xl:py-3 rounded-lg text-xs font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all"
                                             >
-                                              {t.step2}
+                                              <ClipboardList className="w-4 h-4" />
+                                              <span className="hidden xl:inline">{t.step2}</span>
                                             </button>
                                           )}
                                         {isAdminUser &&
@@ -5726,7 +5727,7 @@ export default function App() {
                                                     : "non_contracted_customers",
                                                 )
                                               }
-                                              className="text-zinc-600 border border-zinc-200 px-5 py-3 rounded-lg text-xs font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all"
+                                              className="text-zinc-600 border border-zinc-200 px-3 xl:px-5 py-2.5 xl:py-3 rounded-lg text-xs font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all"
                                             >
                                               <Edit2 className="w-4 h-4" />
                                             </button>
@@ -5739,7 +5740,7 @@ export default function App() {
                                                   r,
                                                 )
                                               }
-                                              className="text-emerald-600 border border-emerald-200 px-5 py-3 rounded-lg text-xs font-bold uppercase hover:bg-emerald-600 hover:text-white transition-all"
+                                              className="text-emerald-600 border border-emerald-200 px-3 xl:px-5 py-2.5 xl:py-3 rounded-lg text-xs font-bold uppercase hover:bg-emerald-600 hover:text-white transition-all"
                                               title={
                                                 lang === "ar"
                                                   ? "نقل للمتعاقدين"
@@ -5754,7 +5755,7 @@ export default function App() {
                                             setSelectedRecord(r);
                                             setIsDetailModalOpen(true);
                                           }}
-                                          className="text-zinc-400 border border-zinc-200 px-5 py-3 rounded-lg text-xs font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all"
+                                          className="text-zinc-400 border border-zinc-200 px-3 xl:px-5 py-2.5 xl:py-3 rounded-lg text-xs font-bold uppercase hover:bg-zinc-800 hover:text-white transition-all"
                                         >
                                           <Eye className="w-4 h-4" />
                                         </button>
@@ -5773,7 +5774,7 @@ export default function App() {
                                                   r.id,
                                                 );
                                             }}
-                                            className="text-red-500 border border-red-200 px-5 py-3 rounded-lg text-xs font-bold uppercase hover:bg-red-600 hover:text-white transition-all shadow-sm"
+                                            className="text-red-500 border border-red-200 px-3 xl:px-5 py-2.5 xl:py-3 rounded-lg text-xs font-bold uppercase hover:bg-red-600 hover:text-white transition-all shadow-sm"
                                           >
                                             <Trash2 className="w-4 h-4" />
                                           </button>
@@ -5799,7 +5800,7 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-1 gap-4 md:hidden">
+                        <div className="grid grid-cols-1 gap-4 lg:hidden">
                           {activeRecords
                             .filter((r) => matchesFilters(r))
                             .map((r) => (
