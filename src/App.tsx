@@ -1695,6 +1695,34 @@ export default function App() {
     };
   }, []);
 
+  // Lock body scroll whenever any modal dialog is open to prevent background scrolling
+  useEffect(() => {
+    const isAnyModalOpen =
+      isModalOpen ||
+      isInspectionModalOpen ||
+      isDetailModalOpen ||
+      isEditCatalogModalOpen ||
+      isConfirmModalOpen ||
+      isContractUploadOpen;
+
+    if (isAnyModalOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [
+    isModalOpen,
+    isInspectionModalOpen,
+    isDetailModalOpen,
+    isEditCatalogModalOpen,
+    isConfirmModalOpen,
+    isContractUploadOpen,
+  ]);
+
   const handleImportExcel = (e: ChangeEvent<HTMLInputElement>) => {
     if (!ensureAdminAccess()) {
       e.target.value = "";
