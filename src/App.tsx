@@ -3332,12 +3332,14 @@ export default function App() {
       return;
     }
     const toastId = toast.loading(
-      lang === "ar" ? "جاري رفع البورتفوليو إلى Google Drive..." : "Uploading portfolio to Google Drive...",
+      lang === "ar" ? "جاري رفع البورتفوليو..." : "Uploading portfolio...",
     );
+    let uploadedUrl = "";
+    let isDrive = false;
+
     try {
       const safeFileName = file.name;
 
-      // Convert file to Base64
       const reader = new FileReader();
       const base64Promise = new Promise<string>((resolve, reject) => {
         reader.onload = () => {
@@ -3350,14 +3352,9 @@ export default function App() {
       reader.readAsDataURL(file);
       const base64Data = await base64Promise;
 
-      const driveUploadUrl = import.meta.env.VITE_GOOGLE_DRIVE_UPLOAD_URL;
-      if (!driveUploadUrl) {
-        throw new Error(
-          lang === "ar"
-            ? "رابط رفع Google Drive غير مهيأ في ملف الإعدادات"
-            : "Google Drive upload URL is not configured in environment",
-        );
-      }
+      const driveUploadUrl =
+        import.meta.env.VITE_GOOGLE_DRIVE_UPLOAD_URL?.trim() ||
+        "https://script.google.com/macros/s/AKfycbyoomg69wsCclO0eQV33mjv2rIoNNn1gHpbhDk9NV4DzeNirR9NBeee8Q8bK81rlXIdrA/exec";
 
       const response = await fetch(driveUploadUrl, {
         method: "POST",
@@ -3370,31 +3367,100 @@ export default function App() {
         redirect: "follow",
       });
 
-      if (!response.ok) {
-        throw new Error(`Server responded with status ${response.status}`);
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success && result.url) {
+          uploadedUrl = result.url;
+          isDrive = true;
+        } else {
+          console.warn(
+            "Google Drive upload response error, switching to Supabase Storage fallback:",
+            result.error,
+          );
+        }
+      } else {
+        console.warn(
+          `Google Drive upload HTTP ${response.status}, switching to Supabase Storage fallback`,
+        );
       }
+    } catch (driveErr) {
+      console.warn(
+        "Google Drive upload error, switching to Supabase Storage fallback:",
+        driveErr,
+      );
+    }
 
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error || "Google Drive upload failed");
+    // Fallback to Supabase Storage if Google Drive upload didn't return a URL
+    if (!uploadedUrl) {
+      try {
+        if (!SUPABASE_CONFIGURED) {
+          throw new Error(
+            lang === "ar"
+              ? "فشل رفع الملف: لم يتم ضبط Supabase Storage أو Google Drive."
+              : "Upload failed: Neither Google Drive nor Supabase Storage is configured.",
+          );
+        }
+        const timestamp = Date.now();
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const fileName = `portfolio_${timestamp}_${safeName}`;
+
+        let bucketToUse = "portfolios";
+        let uploadResult = await supabase.storage
+          .from(bucketToUse)
+          .upload(fileName, file, {
+            contentType: file.type,
+            cacheControl: "3600",
+            upsert: true,
+          });
+
+        if (uploadResult.error) {
+          bucketToUse = CONTRACT_BUCKET;
+          uploadResult = await supabase.storage
+            .from(bucketToUse)
+            .upload(fileName, file, {
+              contentType: file.type,
+              cacheControl: "3600",
+              upsert: true,
+            });
+        }
+
+        if (uploadResult.error) {
+          throw uploadResult.error;
+        }
+
+        const publicUrlData = supabase.storage
+          .from(bucketToUse)
+          .getPublicUrl(fileName);
+        if (publicUrlData.error) throw publicUrlData.error;
+        if (!publicUrlData.data?.publicUrl) {
+          throw new Error("Could not generate public URL for file");
+        }
+        uploadedUrl = publicUrlData.data.publicUrl;
+      } catch (storageErr: any) {
+        console.error("Storage upload error:", storageErr);
+        const errorMsg =
+          storageErr.message || (lang === "ar" ? "فشل رفع الملف" : "Upload failed");
+        toast.error(
+          lang === "ar"
+            ? `فشل رفع الملف: ${errorMsg}`
+            : `Upload failed: ${errorMsg}`,
+          { id: toastId },
+        );
+        return;
       }
+    }
 
-      setInspectionFormData((prev) => ({ ...prev, portfolio: result.url }));
+    if (uploadedUrl) {
+      setInspectionFormData((prev) => ({ ...prev, portfolio: uploadedUrl }));
       toast.success(
         lang === "ar"
-          ? "تم رفع البورتفوليو إلى Google Drive بنجاح"
-          : "Portfolio uploaded to Google Drive successfully",
-        { id: toastId }
-      );
-    } catch (err: any) {
-      console.error("Upload error:", err);
-      const errorMsg =
-        err.message || (lang === "ar" ? "فشل رفع الملف" : "Upload failed");
-      toast.error(
-        lang === "ar"
-          ? `فشل رفع الملف: ${errorMsg}`
-          : `Upload failed: ${errorMsg}`,
-        { id: toastId }
+          ? isDrive
+            ? "تم رفع البورتفوليو إلى Google Drive بنجاح"
+            : "تم رفع البورتفوليو بنجاح"
+          : isDrive
+            ? "Portfolio uploaded to Google Drive successfully"
+            : "Portfolio uploaded successfully",
+        { id: toastId },
       );
     }
   };
