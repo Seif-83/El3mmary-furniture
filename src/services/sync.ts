@@ -56,6 +56,18 @@ const isTestRecord = (record: any): boolean => {
 export class SyncManager {
   private static isSyncing = false;
   private static onStatusChangeListeners: ((online: boolean) => void)[] = [];
+  private static lastPullTime: Record<string, number> = {};
+  private static readonly PULL_CACHE_DURATIONS: Record<string, number> = {
+    app_settings: 900000,
+    catalogs: 900000,
+    clients: 300000,
+    production_stages: 120000,
+    inspections: 120000,
+    customers: 120000,
+    contracted_customers: 120000,
+    non_contracted_customers: 120000,
+    payments: 120000,
+  };
 
   static init(onStatusChange: (online: boolean) => void) {
     this.onStatusChangeListeners.push(onStatusChange);
@@ -126,7 +138,7 @@ export class SyncManager {
     }
   }
 
-  static async triggerSync() {
+  static async triggerSync(options?: { force?: boolean }) {
     if (!SUPABASE_CONFIGURED) {
       console.warn("Sync skipped: Supabase is not configured.");
       return;
@@ -142,22 +154,18 @@ export class SyncManager {
         .catch((err) => console.warn("Failed to reset stuck syncing items", err));
 
       await this.processQueue();
-      await this.pullRemoteData();
+      await this.pullRemoteData(options?.force);
     } finally {
       this.isSyncing = false;
     }
   }
 
-  static async pullRemoteData() {
+  static async pullRemoteData(force?: boolean) {
     if (!SUPABASE_CONFIGURED) {
       console.warn("Pull remote data skipped: Supabase is not configured.");
       return;
     }
     if (!navigator.onLine) return;
-
-    // Shared, server-side record of every deletion, so this device knows
-    // about deletions performed on OTHER devices too (see fetchRemoteTombstones).
-    const remoteTombstones = await this.fetchRemoteTombstones();
 
     const tablesToSync = [
       "inspections",
@@ -171,14 +179,44 @@ export class SyncManager {
       "app_settings",
     ];
 
-    for (const tableName of tablesToSync) {
+    const tablesToPull = tablesToSync.filter((tableName) => {
+      if (force) return true;
+      const lastPulled = this.lastPullTime[tableName] || 0;
+      const cacheDuration = this.PULL_CACHE_DURATIONS[tableName] || 0;
+      return Date.now() - lastPulled >= cacheDuration;
+    });
+
+    if (tablesToPull.length === 0) {
+      return;
+    }
+
+    // Shared, server-side record of every deletion, so this device knows
+    // about deletions performed on OTHER devices too (see fetchRemoteTombstones).
+    const remoteTombstones = await this.fetchRemoteTombstones();
+
+    const TABLE_COLUMNS: Record<string, string> = {
+      inspections: "id, customer_name, phone, address, delivery_address, visit_date, visit_date_to, notes, status, portfolio, delivery_date, pickup_date, portfolio_date, contract_date, governorate, room_types, contract_url, rooms, pieces, total_amount, room_aro_veneer, room_aro_veneer_price, created_at",
+      customers: "id, name, phone, address, delivery_address, visit_date, visit_date_to, notes, delivery_date, pickup_date, portfolio_date, governorate, created_at",
+      contracted_customers: "id, customer_name, phone, address, delivery_address, visit_date, visit_date_to, notes, status, portfolio, delivery_date, pickup_date, portfolio_date, contract_date, governorate, room_types, contract_url, rooms, pieces, total_amount, room_aro_veneer, room_aro_veneer_price, created_at, finalized_at",
+      non_contracted_customers: "id, customer_name, phone, address, delivery_address, visit_date, visit_date_to, notes, status, portfolio, delivery_date, pickup_date, portfolio_date, contract_date, governorate, room_types, contract_url, rooms, pieces, total_amount, room_aro_veneer, room_aro_veneer_price, created_at, finalized_at",
+      catalogs: "id, title, data, created_at",
+      payments: "id, client_id, visit_id, amount, paid_at, installment, note, created_at",
+      production_stages: "id, client_id, visit_id, stage, status, completed_at, created_at",
+      clients: "id, name, phones, address, governorate, created_at",
+      app_settings: "key, value, updated_at",
+    };
+
+    for (const tableName of tablesToPull) {
       const pkColumn = tableName === "app_settings" ? "key" : "id";
-      const { data, error } = await supabase.from(tableName).select("*");
+      const columns = TABLE_COLUMNS[tableName] || "*";
+      const { data, error } = await supabase.from(tableName).select(columns);
       if (error) {
         console.warn(`Failed to pull remote data for ${tableName}:`, error.message || error);
         continue;
       }
       if (!Array.isArray(data)) continue;
+
+      this.lastPullTime[tableName] = Date.now();
 
       const tombIds = remoteTombstones.byId.get(tableName);
       const tombPhones = remoteTombstones.byPhone.get(tableName);
@@ -380,7 +418,9 @@ export class SyncManager {
     const byPhone = new Map<string, Set<string>>();
     if (!SUPABASE_CONFIGURED) return { byId, byPhone };
 
-    const { data, error } = await supabase.from("deleted_records").select("*");
+    const { data, error } = await supabase
+      .from("deleted_records")
+      .select("table_name, record_id, phone");
     if (error) {
       console.warn("Failed to pull remote tombstones:", error.message || error);
       return { byId, byPhone };

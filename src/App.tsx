@@ -41,6 +41,8 @@ import {
   MapPin,
   ArrowUpRight,
   BookOpen,
+  TrendingUp,
+  SlidersHorizontal,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { supabase, supabaseAdmin, SUPABASE_CONFIGURED } from "./lib/supabase";
@@ -176,6 +178,14 @@ export default function App() {
     | "users"
   >("dashboard");
   const [productionFilter, setProductionFilter] = useState<"all" | "completed">("all");
+  const [analysisStartDate, setAnalysisStartDate] = useState<string>(
+    new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+  );
+  const [analysisEndDate, setAnalysisEndDate] = useState<string>(
+    new Date().toISOString().split("T")[0],
+  );
+  const [selectedAnalysisTab, setSelectedAnalysisTab] = useState<"today" | "week" | "month" | "custom">("today");
+  const [analysisSearchQuery, setAnalysisSearchQuery] = useState<string>("");
   const [catalogs, setCatalogs] = useState<CatalogSheet[]>([]);
   const [customerRecords, setCustomerRecords] = useState<CustomerRecord[]>([]);
   const [inspections, setInspections] = useState<Inspection[]>([]);
@@ -322,6 +332,59 @@ export default function App() {
     filteredContractedCustomers,
     filteredNotContractedCustomers,
   ]);
+
+  const analysisStats = useMemo(() => {
+    const today = new Date();
+    
+    // Start of Today
+    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    
+    // Start of This Week (Saturday start)
+    const currentDay = today.getDay();
+    const diffToSaturday = currentDay === 6 ? 0 : -(currentDay + 1);
+    const startOfThisWeek = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate() + diffToSaturday
+    ).getTime();
+    
+    // Start of This Month
+    const startOfThisMonth = new Date(today.getFullYear(), today.getMonth(), 1).getTime();
+    
+    // Custom range boundaries
+    const customStart = analysisStartDate ? new Date(analysisStartDate + "T00:00:00").getTime() : 0;
+    const customEnd = analysisEndDate ? new Date(analysisEndDate + "T23:59:59").getTime() : Infinity;
+
+    const todayList: any[] = [];
+    const weekList: any[] = [];
+    const monthList: any[] = [];
+    const customList: any[] = [];
+
+    unifiedCustomers.forEach((c) => {
+      const createdTime = c.createdAt?.toDate?.()?.getTime() || 0;
+      if (!createdTime) return;
+
+      if (createdTime >= startOfToday) {
+        todayList.push(c);
+      }
+      if (createdTime >= startOfThisWeek) {
+        weekList.push(c);
+      }
+      if (createdTime >= startOfThisMonth) {
+        monthList.push(c);
+      }
+      if (createdTime >= customStart && createdTime <= customEnd) {
+        customList.push(c);
+      }
+    });
+
+    return {
+      today: todayList,
+      week: weekList,
+      month: monthList,
+      custom: customList,
+    };
+  }, [unifiedCustomers, analysisStartDate, analysisEndDate]);
 
   const getStatusBadge = (status: string) => {
     if (status === "contracted")
@@ -1172,8 +1235,7 @@ export default function App() {
     return true;
   };
 
-  const refreshAllData = async (preferredSheetId?: string | null) => {
-    // Phase 1: Load instantly from IndexedDB
+  const refreshLocalDataOnly = async (preferredSheetId?: string | null) => {
     const localCatalogs = await ProductService.getCatalogs();
     const sheets = localCatalogs.map((r: any) => ({
       ...r,
@@ -1225,175 +1287,17 @@ export default function App() {
         note: p.note ?? null,
       })),
     );
+  };
 
-    // Phase 2: If online, fetch fresh data from Supabase in the background
+  const refreshAllData = async (preferredSheetId?: string | null) => {
+    // 1. Load instantly from IndexedDB
+    await refreshLocalDataOnly(preferredSheetId);
+
+    // 2. Trigger sync pull via SyncManager (which respects table caching rules)
     if (navigator.onLine) {
       try {
-        const [
-          { data: catData },
-          { data: custData },
-          { data: inspData },
-          { data: contrData },
-          { data: nonContrData },
-          { data: stagesData },
-          { data: settingsData },
-          { data: paymentsData },
-          { data: clientsData },
-        ] = await Promise.all([
-          supabase
-            .from("catalogs")
-            .select("*")
-            .order("created_at", { ascending: false }),
-          supabase
-            .from("customers")
-            .select("*")
-            .order("created_at", { ascending: false }),
-          supabase
-            .from("inspections")
-            .select("*")
-            .order("created_at", { ascending: false }),
-          supabase
-            .from("contracted_customers")
-            .select("*")
-            .order("finalized_at", { ascending: false }),
-          supabase
-            .from("non_contracted_customers")
-            .select("*")
-            .order("finalized_at", { ascending: false }),
-          supabase.from("production_stages").select("*"),
-          supabase.from("app_settings").select("*"),
-          supabase
-            .from("payments")
-            .select("id, amount, paid_at, installment, note")
-            .order("paid_at", { ascending: false }),
-          supabase.from("clients").select("*"),
-        ]);
-
-        // Phase 3: Update IndexedDB with conflict resolution
-        // Filter out known test/sample records from remote data to avoid reintroducing them
-        const filteredCatData = catData || [];
-        const filteredCustData = (custData || []).filter((r: any) => {
-          try {
-            return !isTestCustomer(mapCustomerFromDB(r));
-          } catch {
-            return true;
-          }
-        });
-        const filteredInspData = (inspData || []).filter((r: any) => {
-          try {
-            return !isTestCustomer(mapInspectionFromDB(r));
-          } catch {
-            return true;
-          }
-        });
-        const filteredContrData = (contrData || []).filter((r: any) => {
-          try {
-            return !isTestCustomer(mapInspectionFromDB(r));
-          } catch {
-            return true;
-          }
-        });
-        const filteredNonContrData = (nonContrData || []).filter((r: any) => {
-          try {
-            return !isTestCustomer(mapInspectionFromDB(r));
-          } catch {
-            return true;
-          }
-        });
-        const updatePromises: Promise<boolean>[] = [];
-        if (filteredCatData)
-          filteredCatData.forEach((r: any) =>
-            updatePromises.push(SyncManager.resolveConflict("catalogs", r)),
-          );
-        if (filteredCustData)
-          filteredCustData.forEach((r: any) =>
-            updatePromises.push(SyncManager.resolveConflict("customers", r)),
-          );
-        if (filteredInspData)
-          filteredInspData.forEach((r: any) =>
-            updatePromises.push(SyncManager.resolveConflict("inspections", r)),
-          );
-        if (filteredContrData)
-          filteredContrData.forEach((r: any) =>
-            updatePromises.push(
-              SyncManager.resolveConflict("contracted_customers", r),
-            ),
-          );
-        if (filteredNonContrData)
-          filteredNonContrData.forEach((r: any) =>
-            updatePromises.push(
-              SyncManager.resolveConflict("non_contracted_customers", r),
-            ),
-          );
-        if (stagesData)
-          stagesData.forEach((r: any) =>
-            updatePromises.push(
-              SyncManager.resolveConflict("production_stages", r),
-            ),
-          );
-        if (settingsData)
-          settingsData.forEach((r: any) =>
-            updatePromises.push(SyncManager.resolveConflict("app_settings", r)),
-          );
-        if (paymentsData)
-          paymentsData.forEach((r: any) =>
-            updatePromises.push(SyncManager.resolveConflict("payments", r)),
-          );
-        if (clientsData)
-          clientsData.forEach((r: any) =>
-            updatePromises.push(SyncManager.resolveConflict("clients", r)),
-          );
-
-        await Promise.all(updatePromises);
-
-        // Phase 4: Reload from IndexedDB to show fresh synced data and update UI
-        const syncedCatalogs = await ProductService.getCatalogs();
-        const syncedSheets = syncedCatalogs.map((r: any) => ({
-          ...r,
-          createdAt: toTimestamp(r.created_at),
-        })) as CatalogSheet[];
-        setCatalogs(syncedSheets);
-
-        const syncedCustomers = await CustomerService.getAll();
-        setCustomerRecords(
-          syncedCustomers
-            .map(mapCustomerFromDB)
-            .filter((c) => !isTestCustomer(c)),
-        );
-
-        const syncedInspections = await OrderService.getInspections();
-        setInspections(syncedInspections.map(mapInspectionFromDB));
-
-        const syncedContracted = await OrderService.getContracted();
-        setContractedCustomers(
-          sortContractedRecordsByContractDate(
-            syncedContracted.map(mapInspectionFromDB),
-          ),
-        );
-
-        const syncedNonContracted = await OrderService.getNonContracted();
-        setNotContractedCustomers(
-          sortContractedRecordsByContractDate(
-            syncedNonContracted.map(mapInspectionFromDB),
-          ),
-        );
-
-        const syncedStages = await StageService.getStages();
-        setStages(syncedStages);
-
-        const syncedSettings = await SettingsService.getSettings();
-        setSettings(syncedSettings);
-
-        const syncedPayments = await InvoiceService.getPayments();
-        setAllPayments(
-          syncedPayments.map((p: any) => ({
-            id: p.id,
-            amount: p.amount,
-            paid_at: p.paid_at,
-            installment: p.installment ?? null,
-            note: p.note ?? null,
-          })),
-        );
+        await SyncManager.triggerSync();
+        await refreshLocalDataOnly(preferredSheetId);
       } catch (err) {
         console.error("Background sync fetch failed:", err);
       }
@@ -1701,7 +1605,7 @@ export default function App() {
         try {
           const { data: profile, error } = await supabase
             .from("user_profiles")
-            .select("*")
+            .select("id, username, email, role, permissions")
             .eq("id", user.id)
             .maybeSingle();
 
@@ -1753,7 +1657,7 @@ export default function App() {
       void syncAuthorizedUser(session?.user ?? null);
     });
 
-    // Start polling every 15s for reliability and trigger sync automatically in the background
+    // Start background polling every 2 minutes for reliability
     const pollingId = setInterval(async () => {
       const u = userProfileRef.current;
       if (u) {
@@ -1764,9 +1668,9 @@ export default function App() {
             console.error("Auto sync background error:", e);
           }
         }
-        void refreshAllData();
+        void refreshLocalDataOnly();
       }
-    }, 15000);
+    }, 120000);
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
@@ -1976,7 +1880,7 @@ export default function App() {
       // Fetch full profile details
       const { data: fullProfile } = await supabase
         .from("user_profiles")
-        .select("*")
+        .select("id, username, email, role, permissions")
         .eq("id", user?.id)
         .maybeSingle();
 
@@ -3399,57 +3303,61 @@ export default function App() {
       );
       return;
     }
+    const toastId = toast.loading(
+      lang === "ar" ? "جاري رفع البورتفوليو إلى Google Drive..." : "Uploading portfolio to Google Drive...",
+    );
     try {
-      // Sanitize filename: remove non-ASCII characters and spaces
-      // Create a URL-safe storage key
-      const timestamp = Date.now();
-      const randomId = Math.random().toString(36).substring(2, 11);
-      const safeFileName = `portfolio-${timestamp}-${randomId}.pdf`;
+      const safeFileName = file.name;
 
-      console.log("Original file name:", file.name);
-      console.log("Safe storage key:", safeFileName);
+      // Convert file to Base64
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onload = () => {
+          const result = reader.result as string;
+          const base64 = result.split(",")[1];
+          resolve(base64);
+        };
+        reader.onerror = (error) => reject(error);
+      });
+      reader.readAsDataURL(file);
+      const base64Data = await base64Promise;
 
-      // Use Supabase client storage API
-      let uploadResult = await supabase.storage
-        .from("portfolios")
-        .upload(safeFileName, file, {
-          cacheControl: "3600",
-          upsert: false,
-        });
-
-      // If upload fails with invalid key error, try with upsert=true
-      if (
-        uploadResult.error &&
-        (uploadResult.error.message?.includes("Invalid key") ||
-          uploadResult.error.message?.includes("row-level security"))
-      ) {
-        console.warn(
-          "Initial upload failed; retrying with upsert flag...",
-          uploadResult.error,
-        );
-        uploadResult = await supabase.storage
-          .from("portfolios")
-          .upload(safeFileName, file, {
-            cacheControl: "3600",
-            upsert: true,
-          });
-      }
-
-      if (uploadResult.error) {
-        console.error("Supabase storage error:", uploadResult.error);
-        throw new Error(uploadResult.error.message || "Failed to upload file");
-      }
-
-      if (uploadResult.data) {
-        const publicUrl = supabase.storage
-          .from("portfolios")
-          .getPublicUrl(safeFileName).data.publicUrl;
-
-        setInspectionFormData((prev) => ({ ...prev, portfolio: publicUrl }));
-        toast.success(
-          lang === "ar" ? "تم رفع البورتفوليو" : "Portfolio uploaded",
+      const driveUploadUrl = import.meta.env.VITE_GOOGLE_DRIVE_UPLOAD_URL;
+      if (!driveUploadUrl) {
+        throw new Error(
+          lang === "ar"
+            ? "رابط رفع Google Drive غير مهيأ في ملف الإعدادات"
+            : "Google Drive upload URL is not configured in environment",
         );
       }
+
+      const response = await fetch(driveUploadUrl, {
+        method: "POST",
+        body: JSON.stringify({
+          filename: safeFileName,
+          mimeType: file.type,
+          base64Data: base64Data,
+          folderName: "contracts",
+        }),
+        redirect: "follow",
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server responded with status ${response.status}`);
+      }
+
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || "Google Drive upload failed");
+      }
+
+      setInspectionFormData((prev) => ({ ...prev, portfolio: result.url }));
+      toast.success(
+        lang === "ar"
+          ? "تم رفع البورتفوليو إلى Google Drive بنجاح"
+          : "Portfolio uploaded to Google Drive successfully",
+        { id: toastId }
+      );
     } catch (err: any) {
       console.error("Upload error:", err);
       const errorMsg =
@@ -3458,6 +3366,7 @@ export default function App() {
         lang === "ar"
           ? `فشل رفع الملف: ${errorMsg}`
           : `Upload failed: ${errorMsg}`,
+        { id: toastId }
       );
     }
   };
@@ -3585,13 +3494,271 @@ export default function App() {
               <div key={i} className="skeleton h-16 w-full" />
             ))}
           </div>
-          <div className="space-y-2 mt-4">
-            <div className="skeleton h-4 w-full" />
-            <div className="skeleton h-4 w-5/6" />
+        <div className="space-y-2 mt-4">
+          <div className="skeleton h-4 w-full" />
+          <div className="skeleton h-4 w-5/6" />
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderAnalysisDashboard = () => {
+    const activeList =
+      selectedAnalysisTab === "today" ? analysisStats.today :
+      selectedAnalysisTab === "week" ? analysisStats.week :
+      selectedAnalysisTab === "month" ? analysisStats.month :
+      analysisStats.custom;
+
+    const filteredActiveList = activeList.filter((customer) => {
+      const query = analysisSearchQuery.toLowerCase().trim();
+      if (!query) return true;
+      return (
+        customer.name?.toLowerCase().includes(query) ||
+        customer.phone?.toLowerCase().includes(query) ||
+        customer.governorate?.toLowerCase().includes(query)
+      );
+    });
+
+    const activeTitle =
+      selectedAnalysisTab === "today" ? (lang === "ar" ? "اليوم" : "Today") :
+      selectedAnalysisTab === "week" ? (lang === "ar" ? "هذا الأسبوع" : "This Week") :
+      selectedAnalysisTab === "month" ? (lang === "ar" ? "هذا الشهر" : "This Month") :
+      (lang === "ar" ? "فترة مخصصة" : "Custom Period");
+
+    return (
+      <div className="space-y-6 md:space-y-8 mt-6">
+        {/* Section Heading */}
+        <div className="flex items-center justify-between border-b border-zinc-200/60 pb-3 md:pb-4">
+          <h2 className="text-xl md:text-2xl font-bold text-zinc-900 flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-accent-tan" />
+            {lang === "ar" ? "تحليل إدخال العملاء" : "Customer Entry Analysis"}
+          </h2>
+          <span className="text-[10px] md:text-xs font-bold text-zinc-400 uppercase tracking-widest bg-zinc-100 px-3 py-1 rounded-full">
+            {lang === "ar" ? "تحديث تلقائي" : "Auto updated"}
+          </span>
+        </div>
+
+        {/* Stats Grid */}
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Card 1: Today */}
+          <div
+            onClick={() => setSelectedAnalysisTab("today")}
+            className={`group relative glass rounded-2xl md:rounded-[2rem] p-5 md:p-6 shadow-md border cursor-pointer transition-all duration-300 overflow-hidden ${
+              selectedAnalysisTab === "today"
+                ? "border-accent-tan/60 bg-gradient-to-br from-white via-white to-accent-tan/5 shadow-lg -translate-y-1"
+                : "border-white/40 hover:border-accent-tan/30 hover:shadow-lg"
+            }`}
+          >
+            <div className="relative flex items-center justify-between">
+              <div className="space-y-1.5 text-right">
+                <span className="text-[10px] md:text-xs font-bold text-accent-tan uppercase tracking-wider bg-accent-tan/10 px-2.5 py-1 rounded-full">
+                  {lang === "ar" ? "اليوم" : "Today"}
+                </span>
+                <div className="text-2xl md:text-4xl font-bold text-zinc-900">
+                  {analysisStats.today.length}
+                </div>
+                <div className="text-[10px] md:text-xs text-zinc-400 font-medium">
+                  {lang === "ar" ? "العملاء المضافين اليوم" : "Customers added today"}
+                </div>
+              </div>
+              <div className={`w-12 h-12 md:w-14 md:h-14 rounded-2xl flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-110 ${
+                selectedAnalysisTab === "today" ? "bg-accent-tan text-zinc-900" : "bg-zinc-100 text-zinc-500"
+              }`}>
+                <Calendar className="w-5 h-5 md:w-6 md:h-6" />
+              </div>
+            </div>
           </div>
+
+          {/* Card 2: This Week */}
+          <div
+            onClick={() => setSelectedAnalysisTab("week")}
+            className={`group relative glass rounded-2xl md:rounded-[2rem] p-5 md:p-6 shadow-md border cursor-pointer transition-all duration-300 overflow-hidden ${
+              selectedAnalysisTab === "week"
+                ? "border-blue-500/60 bg-gradient-to-br from-white via-white to-blue-500/5 shadow-lg -translate-y-1"
+                : "border-white/40 hover:border-blue-500/30 hover:shadow-lg"
+            }`}
+          >
+            <div className="relative flex items-center justify-between">
+              <div className="space-y-1.5 text-right">
+                <span className="text-[10px] md:text-xs font-bold text-blue-600 uppercase tracking-wider bg-blue-50 px-2.5 py-1 rounded-full">
+                  {lang === "ar" ? "هذا الأسبوع" : "This Week"}
+                </span>
+                <div className="text-2xl md:text-4xl font-bold text-zinc-900">
+                  {analysisStats.week.length}
+                </div>
+                <div className="text-[10px] md:text-xs text-zinc-400 font-medium">
+                  {lang === "ar" ? "من السبت للجمعة" : "Saturday to Friday"}
+                </div>
+              </div>
+              <div className={`w-12 h-12 md:w-14 md:h-14 rounded-2xl flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-110 ${
+                selectedAnalysisTab === "week" ? "bg-blue-500 text-white" : "bg-zinc-100 text-zinc-500"
+              }`}>
+                <TrendingUp className="w-5 h-5 md:w-6 md:h-6" />
+              </div>
+            </div>
+          </div>
+
+          {/* Card 3: This Month */}
+          <div
+            onClick={() => setSelectedAnalysisTab("month")}
+            className={`group relative glass rounded-2xl md:rounded-[2rem] p-5 md:p-6 shadow-md border cursor-pointer transition-all duration-300 overflow-hidden ${
+              selectedAnalysisTab === "month"
+                ? "border-emerald-500/60 bg-gradient-to-br from-white via-white to-emerald-500/5 shadow-lg -translate-y-1"
+                : "border-white/40 hover:border-emerald-500/30 hover:shadow-lg"
+            }`}
+          >
+            <div className="relative flex items-center justify-between">
+              <div className="space-y-1.5 text-right">
+                <span className="text-[10px] md:text-xs font-bold text-emerald-600 uppercase tracking-wider bg-emerald-50 px-2.5 py-1 rounded-full">
+                  {lang === "ar" ? "هذا الشهر" : "This Month"}
+                </span>
+                <div className="text-2xl md:text-4xl font-bold text-zinc-900">
+                  {analysisStats.month.length}
+                </div>
+                <div className="text-[10px] md:text-xs text-zinc-400 font-medium">
+                  {lang === "ar" ? "خلال الشهر الحالي" : "During current month"}
+                </div>
+              </div>
+              <div className={`w-12 h-12 md:w-14 md:h-14 rounded-2xl flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-110 ${
+                selectedAnalysisTab === "month" ? "bg-emerald-500 text-white" : "bg-zinc-100 text-zinc-500"
+              }`}>
+                <Users className="w-5 h-5 md:w-6 md:h-6" />
+              </div>
+            </div>
+          </div>
+
+          {/* Card 4: Custom Period */}
+          <div
+            onClick={() => setSelectedAnalysisTab("custom")}
+            className={`group relative glass rounded-2xl md:rounded-[2rem] p-5 md:p-6 shadow-md border cursor-pointer transition-all duration-300 overflow-hidden ${
+              selectedAnalysisTab === "custom"
+                ? "border-violet-500/60 bg-gradient-to-br from-white via-white to-violet-500/5 shadow-lg -translate-y-1"
+                : "border-white/40 hover:border-violet-500/30 hover:shadow-lg"
+            }`}
+          >
+            <div className="relative flex items-center justify-between">
+              <div className="space-y-1.5 text-right">
+                <span className="text-[10px] md:text-xs font-bold text-violet-600 uppercase tracking-wider bg-violet-50 px-2.5 py-1 rounded-full">
+                  {lang === "ar" ? "فترة مخصصة" : "Custom Period"}
+                </span>
+                <div className="text-2xl md:text-4xl font-bold text-zinc-900">
+                  {analysisStats.custom.length}
+                </div>
+                <div className="text-[10px] md:text-xs text-zinc-400 font-medium">
+                  {lang === "ar" ? "اختر النطاق بالأسفل" : "Choose range below"}
+                </div>
+              </div>
+              <div className={`w-12 h-12 md:w-14 md:h-14 rounded-2xl flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-110 ${
+                selectedAnalysisTab === "custom" ? "bg-violet-500 text-white" : "bg-zinc-100 text-zinc-500"
+              }`}>
+                <SlidersHorizontal className="w-5 h-5 md:w-6 md:h-6" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Date Inputs for Custom range */}
+        {selectedAnalysisTab === "custom" && (
+          <div className="glass rounded-2xl p-4 md:p-6 border border-white/40 shadow-md flex flex-col sm:flex-row gap-4 items-center justify-center max-w-2xl mx-auto animate-fade-in">
+            <div className="w-full sm:w-1/2 space-y-1">
+              <label className="text-[10px] font-bold uppercase text-zinc-400 px-1">
+                {lang === "ar" ? "تاريخ البدء" : "Start Date"}
+              </label>
+              <input
+                type="date"
+                className="w-full px-4 py-2.5 bg-black/5 border border-black/5 rounded-xl text-sm font-medium text-zinc-800 outline-none focus:bg-white focus:border-zinc-300 transition-all"
+                value={analysisStartDate}
+                onChange={(e) => setAnalysisStartDate(e.target.value)}
+              />
+            </div>
+            <div className="w-full sm:w-1/2 space-y-1">
+              <label className="text-[10px] font-bold uppercase text-zinc-400 px-1">
+                {lang === "ar" ? "تاريخ النهاية" : "End Date"}
+              </label>
+              <input
+                type="date"
+                className="w-full px-4 py-2.5 bg-black/5 border border-black/5 rounded-xl text-sm font-medium text-zinc-800 outline-none focus:bg-white focus:border-zinc-300 transition-all"
+                value={analysisEndDate}
+                onChange={(e) => setAnalysisEndDate(e.target.value)}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Active Period Customer List */}
+        <div className="glass rounded-2xl border border-white/40 p-4 md:p-6 shadow-lg space-y-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-zinc-100 pb-3 gap-3">
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold text-zinc-800 text-sm md:text-base">
+                {lang === "ar" ? `قائمة عملاء فترة (${activeTitle})` : `Customers in Period (${activeTitle})`}
+              </h3>
+              <span className="text-xs font-bold bg-zinc-100 text-zinc-500 px-3 py-1 rounded-full">
+                {filteredActiveList.length} / {activeList.length} {lang === "ar" ? "عملاء" : "Customers"}
+              </span>
+            </div>
+            
+            {/* Search Input */}
+            <div className="relative group w-full sm:w-auto">
+              <Search className="absolute top-1/2 -translate-y-1/2 right-3 w-3.5 h-3.5 text-zinc-400 group-focus-within:text-zinc-700 transition-colors pointer-events-none z-10" />
+              <input
+                type="text"
+                placeholder={lang === "ar" ? "بحث في هذه الفترة..." : "Search in this period..."}
+                value={analysisSearchQuery}
+                onChange={(e) => setAnalysisSearchQuery(e.target.value)}
+                className="bg-black/5 border border-black/5 pr-9 pl-4 py-2 rounded-xl text-xs font-medium outline-none w-full sm:w-48 sm:focus:w-60 focus:bg-white focus:border-zinc-300 transition-all duration-300 placeholder:text-zinc-400 text-zinc-800"
+              />
+            </div>
+          </div>
+
+          {filteredActiveList.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-right border-collapse">
+                <thead>
+                  <tr className="border-b border-zinc-100 text-[10px] md:text-xs font-bold uppercase tracking-wider text-zinc-400">
+                    <th className="py-2.5 px-3">{lang === "ar" ? "الاسم" : "Name"}</th>
+                    <th className="py-2.5 px-3">{lang === "ar" ? "الهاتف" : "Phone"}</th>
+                    <th className="py-2.5 px-3">{lang === "ar" ? "المحافظة" : "Governorate"}</th>
+                    <th className="py-2.5 px-3">{lang === "ar" ? "الحالة" : "Status"}</th>
+                    <th className="py-2.5 px-3">{lang === "ar" ? "تاريخ الإضافة" : "Date Added"}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-50 text-xs md:text-sm">
+                  {filteredActiveList.map((customer) => {
+                    const badge = getStatusBadge(customer.status);
+                    const addedDate = customer.createdAt?.toDate?.()?.toLocaleDateString(
+                      lang === "ar" ? "ar-EG" : "en-US",
+                      { year: 'numeric', month: 'short', day: 'numeric' }
+                    ) || "-";
+
+                    return (
+                      <tr key={customer.id || customer.phone} className="hover:bg-zinc-50/50 transition-colors">
+                        <td className="py-3 px-3 font-semibold text-zinc-900">{customer.name || "-"}</td>
+                        <td className="py-3 px-3 text-zinc-500 font-mono" dir="ltr">{customer.phone || "-"}</td>
+                        <td className="py-3 px-3 text-zinc-600">{customer.governorate || "-"}</td>
+                        <td className="py-3 px-3">
+                          <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] md:text-xs font-bold leading-none ${badge.cls}`}>
+                            {badge.label}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-zinc-400 font-medium">{addedDate}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="py-12 text-center text-zinc-400">
+              <Users className="w-10 h-10 text-zinc-200 mx-auto mb-2" />
+              <p className="text-sm font-semibold">
+                {lang === "ar" ? "لا يوجد عملاء مضافين في هذه الفترة" : "No customers added in this period"}
+              </p>
+            </div>
+          )}
         </div>
       </div>
     );
+  };
 
   return (
     <div
@@ -5301,6 +5468,8 @@ export default function App() {
                             ))}
                           </div>
 
+                          {isAdminUser && renderAnalysisDashboard()}
+
                           {/* Welcome */}
                           <div className="relative overflow-hidden glass rounded-xl md:rounded-[3rem] p-4 md:p-8 shadow-2xl border border-white/40 bg-gradient-to-br from-accent-tan/5 via-white to-accent-sage/5">
                             <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_top_left,rgba(251,191,36,0.04),transparent_50%)]" />
@@ -6293,9 +6462,9 @@ export default function App() {
                             {inspectionFormData.portfolio ? (
                               <div className="flex items-center gap-2">
                                 <span className="flex-1 truncate text-sm px-5 py-4 bg-black/5 border border-black/5 rounded-2xl">
-                                  {inspectionFormData.portfolio
-                                    .split("/")
-                                    .pop() || inspectionFormData.portfolio}
+                                  {inspectionFormData.portfolio.includes("google.com")
+                                    ? (lang === "ar" ? "ملف Google Drive" : "Google Drive File")
+                                    : (inspectionFormData.portfolio.split("/").pop() || inspectionFormData.portfolio)}
                                 </span>
                                 <button
                                   type="button"
@@ -7282,7 +7451,9 @@ export default function App() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-bold text-zinc-900 truncate mb-0.5">
-                          {selectedRecord.portfolio}
+                          {selectedRecord.portfolio.includes("google.com")
+                            ? (lang === "ar" ? "ملف Google Drive" : "Google Drive File")
+                            : (selectedRecord.portfolio.split("/").pop() || selectedRecord.portfolio)}
                         </p>
                         <p className="text-[10px] text-zinc-400">
                           {t.portfolioDate}:{" "}

@@ -87,7 +87,7 @@ export const ActivitiesPage: React.FC<{
     try {
       const { data } = await supabase
         .from("activity_logs")
-        .select("*")
+        .select("id, created_at, type, message")
         .order("created_at", { ascending: false })
         .limit(100);
       setActivities(data || []);

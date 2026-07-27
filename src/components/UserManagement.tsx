@@ -88,7 +88,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ lang, currentUse
     try {
       const { data, error } = await supabase
         .from("user_profiles")
-        .select("*")
+        .select("id, username, email, role, permissions, created_at")
         .order("created_at", { ascending: false });
 
       if (error) throw error;
