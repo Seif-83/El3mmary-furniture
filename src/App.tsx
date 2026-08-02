@@ -110,7 +110,14 @@ export default function App() {
   const t = translations[lang];
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [userProfile, setUserProfile] = useState<{ id: string; username: string; email: string; role: string; permissions: string[] } | null>(null);
+  const [userProfile, setUserProfile] = useState<{ id: string; username: string; email: string; role: string; permissions: string[] } | null>(() => {
+    try {
+      const cached = localStorage.getItem("el3mmary_user_profile");
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
   const [customerSession, setCustomerSession] = useState<{ phone: string; name: string; record: any } | null>(null);
   const [customerPhoneInput, setCustomerPhoneInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -1597,64 +1604,75 @@ export default function App() {
       }
     });
 
-    let pollingInterval: ReturnType<typeof setInterval> | null = null;
-
     const syncAuthorizedUser = async (user: User | null, event?: string) => {
       setCurrentUser(user);
       if (user) {
-        try {
-          const { data: profile, error } = await supabase
-            .from("user_profiles")
-            .select("id, username, email, role, permissions")
-            .eq("id", user.id)
-            .maybeSingle();
-
-          if (profile) {
-            setUserProfile(profile);
-
-            // Apply factory restrictions to governorateFilter
-            const hasAlex = profile.role === "super_admin" || profile.permissions?.includes("production.alexandria");
-            const hasCairo = profile.role === "super_admin" || profile.permissions?.includes("production.cairo");
-
-            if (hasAlex && !hasCairo) {
-              setGovernorateFilter("الاسكندرية");
-            } else if (hasCairo && !hasAlex) {
-              setGovernorateFilter("القاهرة");
-            } else {
-              setGovernorateFilter("all");
+        let activeProfile = userProfileRef.current;
+        if (!activeProfile) {
+          try {
+            const cached = localStorage.getItem("el3mmary_user_profile");
+            if (cached) {
+              activeProfile = JSON.parse(cached);
+              setUserProfile(activeProfile);
             }
+          } catch {}
+        }
 
-            await refreshLocalDataOnly();
-            if (navigator.onLine) {
-              await SyncManager.triggerSync();
+        if (navigator.onLine) {
+          try {
+            const profilePromise = supabase
+              .from("user_profiles")
+              .select("id, username, email, role, permissions")
+              .eq("id", user.id)
+              .maybeSingle();
+
+            const timeoutPromise = new Promise<{ data: null; error: any }>((resolve) =>
+              setTimeout(() => resolve({ data: null, error: new Error("Network timeout") }), 3500)
+            );
+
+            const res = (await Promise.race([profilePromise, timeoutPromise])) as any;
+            if (res && res.data) {
+              activeProfile = res.data;
+              setUserProfile(res.data);
+              localStorage.setItem("el3mmary_user_profile", JSON.stringify(res.data));
             }
-            await refreshLocalDataOnly();
-          } else {
-            setUserProfile(null);
-            if (event === "SIGNED_OUT" || event === "USER_DELETED") {
-              clearDashboardData();
-            }
+          } catch (error) {
+            console.warn("Failed to fetch user profile over network, relying on local profile", error);
           }
-        } catch (error) {
-          console.error("Failed to sync dashboard data", error);
-          toast.error(
-            lang === "ar" ? "تعذر تحديث البيانات" : "Failed to refresh data",
-          );
+        }
+
+        if (activeProfile) {
+          const hasAlex = activeProfile.role === "super_admin" || activeProfile.permissions?.includes("production.alexandria");
+          const hasCairo = activeProfile.role === "super_admin" || activeProfile.permissions?.includes("production.cairo");
+
+          if (hasAlex && !hasCairo) {
+            setGovernorateFilter("الاسكندرية");
+          } else if (hasCairo && !hasAlex) {
+            setGovernorateFilter("القاهرة");
+          } else {
+            setGovernorateFilter("all");
+          }
+
+          if (navigator.onLine) {
+            void SyncManager.triggerSync();
+          }
+          await refreshLocalDataOnly();
+        } else {
+          setUserProfile(null);
+          localStorage.removeItem("el3mmary_user_profile");
+          if (event === "SIGNED_OUT" || event === "USER_DELETED") {
+            clearDashboardData();
+          }
         }
       } else {
         setUserProfile(null);
+        localStorage.removeItem("el3mmary_user_profile");
         if (event === "SIGNED_OUT" || event === "USER_DELETED") {
           clearDashboardData();
         }
       }
       setIsAuthChecking(false);
     };
-
-    supabase.auth
-      .getSession()
-      .then(({ data: { session } }: { data: { session: any } }) => {
-        void syncAuthorizedUser(session?.user ?? null);
-      });
 
     const {
       data: { subscription: authListener },
@@ -1919,6 +1937,9 @@ export default function App() {
 
       if (fullProfile) {
         setUserProfile(fullProfile);
+        try {
+          localStorage.setItem("el3mmary_user_profile", JSON.stringify(fullProfile));
+        } catch {}
 
         // Apply factory restrictions to governorateFilter
         const hasAlex = fullProfile.role === "super_admin" || fullProfile.permissions?.includes("production.alexandria");
@@ -1942,7 +1963,13 @@ export default function App() {
           setAdminSubView("production");
         }
 
+        // Instantly populate local data from IndexedDB so the UI displays all counts/records immediately!
         await refreshLocalDataOnly();
+
+        // Trigger background sync in parallel if online
+        if (navigator.onLine) {
+          void SyncManager.triggerSync().then(() => refreshLocalDataOnly());
+        }
       }
 
       setIsAuthChecking(false);
@@ -2077,6 +2104,9 @@ export default function App() {
     }
     setCurrentUser(null);
     setUserProfile(null);
+    try {
+      localStorage.removeItem("el3mmary_user_profile");
+    } catch {}
     setCustomerSession(null);
     toast.success(lang === "ar" ? "تم تسجيل الخروج" : "Logged out");
   };

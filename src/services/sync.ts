@@ -69,15 +69,22 @@ export class SyncManager {
     payments: 120000,
   };
 
+  private static initialized = false;
+
   static init(onStatusChange: (online: boolean) => void) {
-    this.onStatusChangeListeners.push(onStatusChange);
+    if (!this.onStatusChangeListeners.includes(onStatusChange)) {
+      this.onStatusChangeListeners.push(onStatusChange);
+    }
     
+    if (this.initialized) return;
+    this.initialized = true;
+
     window.addEventListener("online", () => this.handleNetworkChange(true));
     window.addEventListener("offline", () => this.handleNetworkChange(false));
     
     // Initial sync check
     if (navigator.onLine) {
-      this.triggerSync();
+      void this.triggerSync();
     }
   }
 
