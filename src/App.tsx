@@ -1599,7 +1599,7 @@ export default function App() {
 
     let pollingInterval: ReturnType<typeof setInterval> | null = null;
 
-    const syncAuthorizedUser = async (user: User | null) => {
+    const syncAuthorizedUser = async (user: User | null, event?: string) => {
       setCurrentUser(user);
       if (user) {
         try {
@@ -1624,13 +1624,16 @@ export default function App() {
               setGovernorateFilter("all");
             }
 
+            await refreshLocalDataOnly();
             if (navigator.onLine) {
               await SyncManager.triggerSync();
             }
-            await refreshAllData();
+            await refreshLocalDataOnly();
           } else {
             setUserProfile(null);
-            clearDashboardData();
+            if (event === "SIGNED_OUT" || event === "USER_DELETED") {
+              clearDashboardData();
+            }
           }
         } catch (error) {
           console.error("Failed to sync dashboard data", error);
@@ -1640,7 +1643,9 @@ export default function App() {
         }
       } else {
         setUserProfile(null);
-        clearDashboardData();
+        if (event === "SIGNED_OUT" || event === "USER_DELETED") {
+          clearDashboardData();
+        }
       }
       setIsAuthChecking(false);
     };
@@ -1653,8 +1658,8 @@ export default function App() {
 
     const {
       data: { subscription: authListener },
-    } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
-      void syncAuthorizedUser(session?.user ?? null);
+    } = supabase.auth.onAuthStateChange((event: any, session: any) => {
+      void syncAuthorizedUser(session?.user ?? null, event);
     });
 
     // Start background polling every 2 minutes for reliability
@@ -1936,6 +1941,8 @@ export default function App() {
         ) {
           setAdminSubView("production");
         }
+
+        await refreshLocalDataOnly();
       }
 
       setIsAuthChecking(false);
