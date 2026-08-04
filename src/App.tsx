@@ -1185,6 +1185,9 @@ export default function App() {
     phone: "",
     phones: [""],
     pickupDate: "",
+    visitDate: "",
+    locationUrl: "",
+    notes: "",
     address: "",
     governorate: "",
   });
@@ -1205,6 +1208,9 @@ export default function App() {
           phone: formData.phone,
           phones: formData.phones,
           pickupDate: formData.pickupDate,
+          visitDate: formData.visitDate,
+          locationUrl: formData.locationUrl,
+          notes: formData.notes,
           address: formData.address,
           governorate: formData.governorate,
         }),
@@ -3157,6 +3163,9 @@ export default function App() {
         (Array.isArray(draft.phones) &&
           draft.phones.some((p: string) => (p || "").trim() !== "")) ||
         (draft.address || "").trim() !== "" ||
+        (draft.visitDate || "").trim() !== "" ||
+        (draft.locationUrl || "").trim() !== "" ||
+        (draft.notes || "").trim() !== "" ||
         (draft.pickupDate || "").trim() !== "" ||
         (draft.governorate || "").trim() !== "");
 
@@ -3166,6 +3175,9 @@ export default function App() {
       phone: hasDraftContent ? draft.phone || "" : "",
       phones: hasDraftContent ? draft.phones || [""] : [""],
       pickupDate: hasDraftContent ? draft.pickupDate || "" : "",
+      visitDate: hasDraftContent ? draft.visitDate || "" : "",
+      locationUrl: hasDraftContent ? draft.locationUrl || "" : "",
+      notes: hasDraftContent ? draft.notes || "" : "",
       address: hasDraftContent ? draft.address || "" : "",
       governorate: hasDraftContent ? draft.governorate || "" : "",
     });
@@ -3189,7 +3201,10 @@ export default function App() {
       name: record.name || record.customerName || "",
       phone: phones[0] || "",
       phones,
-      pickupDate: record.pickupDate || "",
+      pickupDate: record.pickupDate || record.pickup_date || "",
+      visitDate: record.visitDate || record.visit_date || "",
+      locationUrl: record.locationUrl || record.location_url || record.deliveryAddress || record.delivery_address || "",
+      notes: record.notes || "",
       address: record.address || record.pickupDate || "",
       governorate: record.governorate || "",
     });
@@ -3545,6 +3560,10 @@ export default function App() {
           name: formData.name.trim(),
           phone: combinedPhone,
           address: formData.address || null,
+          location_url: formData.locationUrl || null,
+          delivery_address: formData.locationUrl || null,
+          visit_date: formData.visitDate || null,
+          notes: formData.notes || null,
           pickup_date: formData.pickupDate || null,
           governorate: formData.governorate || null,
           created_at: new Date().toISOString(),
@@ -3563,6 +3582,10 @@ export default function App() {
             customer_name: formData.name.trim(),
             phone: combinedPhone,
             address: formData.address || null,
+            delivery_address: formData.locationUrl || null,
+            location_url: formData.locationUrl || null,
+            visit_date: formData.visitDate || null,
+            notes: formData.notes || null,
             pickup_date: formData.pickupDate || null,
             governorate: formData.governorate || null,
           };
@@ -3572,6 +3595,10 @@ export default function App() {
             customer_name: formData.name.trim(),
             phone: combinedPhone,
             address: formData.address || null,
+            delivery_address: formData.locationUrl || null,
+            location_url: formData.locationUrl || null,
+            visit_date: formData.visitDate || null,
+            notes: formData.notes || null,
             pickup_date: formData.pickupDate || null,
             governorate: formData.governorate || null,
           };
@@ -3581,6 +3608,10 @@ export default function App() {
             customer_name: formData.name.trim(),
             phone: combinedPhone,
             address: formData.address || null,
+            delivery_address: formData.locationUrl || null,
+            location_url: formData.locationUrl || null,
+            visit_date: formData.visitDate || null,
+            notes: formData.notes || null,
             pickup_date: formData.pickupDate || null,
             governorate: formData.governorate || null,
           };
@@ -3590,6 +3621,10 @@ export default function App() {
             name: formData.name.trim(),
             phone: combinedPhone,
             address: formData.address || null,
+            delivery_address: formData.locationUrl || null,
+            location_url: formData.locationUrl || null,
+            visit_date: formData.visitDate || null,
+            notes: formData.notes || null,
             pickup_date: formData.pickupDate || null,
             governorate: formData.governorate || null,
           };
@@ -3604,6 +3639,136 @@ export default function App() {
       toast.error(error.message);
     }
     setIsLoading(false);
+  };
+
+  const handleStartInspectionFromModal = async () => {
+    const phones = (formData.phones || [formData.phone])
+      .map((p: string) => normalizePhone(p))
+      .filter(Boolean);
+    if (!formData.name?.trim() || phones.length === 0) {
+      toast.error(
+        lang === "ar"
+          ? "يرجى إدخال اسم العميل ورقم هاتف صحيح"
+          : "Please enter customer name and a valid phone number",
+      );
+      return;
+    }
+    const combinedPhone = phones.join(", ");
+    setIsLoading(true);
+    try {
+      const exists = unifiedCustomers.some((c) => {
+        const existingId = c.id || c.raw?.id;
+        if (modalMode === "edit" && existingId === editingId) return false;
+
+        const rawPhone = c.raw?.phone || c.phone || "";
+        const existingPhones = rawPhone
+          .split(/[,;\s]+/)
+          .map((p: string) => normalizePhone(p))
+          .filter(Boolean);
+
+        return phones.some((inputPhone) =>
+          existingPhones.includes(normalizePhone(inputPhone)),
+        );
+      });
+
+      if (exists) {
+        toast.error(
+          lang === "ar"
+            ? "هذا الرقم مسجل بالفعل في النظام لعميل آخر"
+            : "This phone number is already registered for another customer",
+        );
+        setIsLoading(false);
+        return;
+      }
+
+      let customerId = editingId;
+
+      if (modalMode === "add") {
+        customerId = crypto.randomUUID();
+        const newCustomer = {
+          id: customerId,
+          name: formData.name.trim(),
+          phone: combinedPhone,
+          address: formData.address || null,
+          delivery_address: formData.locationUrl || null,
+          location_url: formData.locationUrl || null,
+          visit_date: formData.visitDate || null,
+          notes: formData.notes || null,
+          pickup_date: formData.pickupDate || null,
+          governorate: formData.governorate || null,
+          created_at: new Date().toISOString(),
+        };
+        await CustomerService.insert(newCustomer);
+        try {
+          localStorage.removeItem(NEW_CUSTOMER_DRAFT_KEY);
+        } catch {}
+      } else {
+        if (editingCollection === "inspections") {
+          await OrderService.updateInspection(editingId!, {
+            customer_name: formData.name.trim(),
+            phone: combinedPhone,
+            address: formData.address || null,
+            delivery_address: formData.locationUrl || null,
+            location_url: formData.locationUrl || null,
+            visit_date: formData.visitDate || null,
+            notes: formData.notes || null,
+            pickup_date: formData.pickupDate || null,
+            governorate: formData.governorate || null,
+          });
+        } else {
+          await CustomerService.update(editingId!, {
+            name: formData.name.trim(),
+            phone: combinedPhone,
+            address: formData.address || null,
+            delivery_address: formData.locationUrl || null,
+            location_url: formData.locationUrl || null,
+            visit_date: formData.visitDate || null,
+            notes: formData.notes || null,
+            pickup_date: formData.pickupDate || null,
+            governorate: formData.governorate || null,
+          });
+        }
+      }
+
+      await refreshAllData();
+      void playSound("success");
+
+      setIsModalOpen(false);
+
+      setAdminSubView("inspections");
+      setTimeout(() => {
+        setInspectionFormData({
+          customerName: formData.name.trim(),
+          phone: combinedPhone,
+          id: undefined,
+          address: formData.address || formData.pickupDate || "",
+          deliveryAddress: formData.locationUrl || "",
+          pickupDate: formData.pickupDate || formData.address || "",
+          visitDate: formData.visitDate || "",
+          visitDateTo: "",
+          notes: formData.notes || "",
+          governorate: formData.governorate || "",
+          rooms: 0,
+          pieces: [],
+          totalAmount: 0,
+        });
+        setEditingCollection("customers");
+        setEditingId(customerId ?? null);
+        setInspectionStep(1);
+        setIsInspectionModalOpen(true);
+      }, 120);
+
+      toast.success(
+        lang === "ar"
+          ? "تم حفظ العميل وبدء المعاينة"
+          : "Customer saved and inspection started",
+      );
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "An error occurred");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   if (isAuthChecking)
@@ -5432,6 +5597,15 @@ export default function App() {
                                 </p>
                               </div>
                               <div className="flex gap-2 md:gap-3 w-full md:w-auto">
+                                {isAdminUser && (
+                                  <button
+                                    onClick={handleOpenAddModal}
+                                    className="flex-1 md:flex-none bg-accent-tan hover:bg-accent-tan-dark text-zinc-900 px-3 py-2.5 md:px-6 lg:px-8 md:py-3 lg:py-4 rounded-xl md:rounded-2xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 md:gap-2 shadow-xl"
+                                  >
+                                    <Plus className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                                    {t.addCustomerBtn}
+                                  </button>
+                                )}
                                 {canAccessTab("inspections") && (
                                   <button
                                     onClick={() => setAdminSubView("inspections")}
@@ -7988,7 +8162,7 @@ export default function App() {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-[2.5rem] w-full max-w-md p-8 md:p-12 shadow-2xl relative z-10 overflow-hidden"
+              className="bg-white rounded-[2.5rem] w-full max-w-lg p-6 md:p-10 shadow-2xl relative z-10 overflow-hidden max-h-[90vh] overflow-y-auto"
             >
               <button
                 onClick={() => setIsModalOpen(false)}
@@ -8091,25 +8265,81 @@ export default function App() {
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase text-zinc-400 px-1">
-                    {lang === "ar" ? "عنوان المعاينة" : "Inspection Address"}
+                  <label className="text-[10px] font-bold uppercase text-zinc-400 px-1 flex items-center justify-between">
+                    <span>{lang === "ar" ? "عنوان المعاينة" : "Inspection Address"}</span>
+                    <span className="text-[9px] text-zinc-400 font-normal">{lang === "ar" ? "(اختياري)" : "(Optional)"}</span>
                   </label>
                   <input
                     type="text"
-                    className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl"
+                    className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl text-sm"
                     value={formData.address || ""}
                     onChange={(e) =>
                       setFormData({ ...formData, address: e.target.value })
                     }
                   />
                 </div>
-                <button
-                  disabled={isLoading}
-                  type="submit"
-                  className="w-full bg-zinc-900 text-white py-5 rounded-3xl font-bold uppercase tracking-widest shadow-2xl btn-3d btn-3d-zinc"
-                >
-                  {isLoading ? t.processing : t.save}
-                </button>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase text-zinc-400 px-1 flex items-center justify-between">
+                    <span>{t.visitDate}</span>
+                    <span className="text-[9px] text-zinc-400 font-normal">{lang === "ar" ? "(اختياري)" : "(Optional)"}</span>
+                  </label>
+                  <input
+                    type="date"
+                    className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl text-sm"
+                    value={formData.visitDate || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, visitDate: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase text-zinc-400 px-1 flex items-center justify-between">
+                    <span>{t.deliveryAddress}</span>
+                    <span className="text-[9px] text-zinc-400 font-normal">{lang === "ar" ? "(اختياري)" : "(Optional)"}</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={lang === "ar" ? "رابط موقع خرائط جوجل أو العنوان" : "Google Maps link or location"}
+                    className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl text-sm"
+                    value={formData.locationUrl || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, locationUrl: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase text-zinc-400 px-1 flex items-center justify-between">
+                    <span>{t.notes}</span>
+                    <span className="text-[9px] text-zinc-400 font-normal">{lang === "ar" ? "(اختياري)" : "(Optional)"}</span>
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder={lang === "ar" ? "أي ملاحظات إضافية..." : "Any additional notes..."}
+                    className="w-full px-5 py-3.5 bg-black/5 border border-black/5 rounded-2xl text-sm resize-none"
+                    value={formData.notes || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, notes: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                  <button
+                    disabled={isLoading}
+                    type="submit"
+                    className="flex-1 bg-zinc-900 text-white py-4 rounded-2xl font-bold uppercase tracking-wider shadow-xl btn-3d btn-3d-zinc text-xs sm:text-sm"
+                  >
+                    {isLoading ? t.processing : t.save}
+                  </button>
+                  <button
+                    disabled={isLoading}
+                    type="button"
+                    onClick={handleStartInspectionFromModal}
+                    className="flex-1 bg-amber-500 hover:bg-amber-400 text-zinc-950 py-4 rounded-2xl font-bold uppercase tracking-wider shadow-xl btn-3d text-xs sm:text-sm flex items-center justify-center gap-1.5"
+                  >
+                    <Calendar className="w-4 h-4" />
+                    {lang === "ar" ? "بدء المعاينة" : "Start Inspection"}
+                  </button>
+                </div>
               </form>
             </motion.div>
           </div>
