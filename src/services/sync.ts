@@ -40,7 +40,7 @@ const CUSTOMER_FACING_TABLES = new Set([
 
 // How long to trust a "synced" local record over an incomplete/stale remote
 // pull before treating its absence from the server as a real deletion.
-const RECONCILE_GRACE_MS = 60 * 1000;
+const RECONCILE_GRACE_MS = 120 * 1000;
 
 const isTestRecord = (record: any): boolean => {
   const name = String(record?.name || record?.customer_name || "")
@@ -56,6 +56,8 @@ const isTestRecord = (record: any): boolean => {
 export class SyncManager {
   private static isSyncing = false;
   private static onStatusChangeListeners: ((online: boolean) => void)[] = [];
+  private static onDataChangeListeners: (() => void)[] = [];
+  private static realtimeChannel: any = null;
   private static lastPullTime: Record<string, number> = {};
   private static readonly PULL_CACHE_DURATIONS: Record<string, number> = {
     app_settings: 900000,
@@ -70,6 +72,22 @@ export class SyncManager {
   };
 
   private static initialized = false;
+
+  static subscribeToDataChanges(callback: () => void) {
+    if (!this.onDataChangeListeners.includes(callback)) {
+      this.onDataChangeListeners.push(callback);
+    }
+  }
+
+  static notifyDataChangeListeners() {
+    this.onDataChangeListeners.forEach((listener) => {
+      try {
+        listener();
+      } catch (err) {
+        console.error("Error in data change listener:", err);
+      }
+    });
+  }
 
   static init(onStatusChange: (online: boolean) => void) {
     if (!this.onStatusChangeListeners.includes(onStatusChange)) {
@@ -91,7 +109,7 @@ export class SyncManager {
   private static handleNetworkChange(online: boolean) {
     this.onStatusChangeListeners.forEach(listener => listener(online));
     if (online) {
-      this.triggerSync();
+      this.triggerSync({ force: true });
     }
   }
 
@@ -349,6 +367,8 @@ export class SyncManager {
     } catch (e) {
       console.warn("Failed to prune old remote tombstones", e);
     }
+
+    this.notifyDataChangeListeners();
   }
   static async deleteLocalRecordsByPhone(tableName: string, phone: string) {
     const normalizedPhone = normalizePhone(phone);
@@ -494,7 +514,10 @@ export class SyncManager {
           try {
             const localRecord = await db.table(item.tableName).get(item.recordId);
             if (localRecord) {
-              await db.table(item.tableName).update(item.recordId, { synced: true });
+              await db.table(item.tableName).update(item.recordId, {
+                synced: true,
+                last_modified: Date.now(),
+              });
             }
           } catch (e) {
             console.warn(`Failed to update synced status for ${item.tableName}:${item.recordId}`, e);
@@ -540,6 +563,8 @@ export class SyncManager {
     if (payload && typeof payload === "object") {
       cleanedPayload = { ...payload };
       delete cleanedPayload.last_modified;
+      delete cleanedPayload.synced;
+      delete cleanedPayload.location_url;
       if (tableName === "production_stages") {
         delete cleanedPayload.client;
       }

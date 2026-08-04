@@ -1306,7 +1306,7 @@ export default function App() {
     // 1. Load instantly from IndexedDB
     await refreshLocalDataOnly(preferredSheetId);
 
-    // 2. Trigger sync pull via SyncManager (which respects table caching rules)
+    // 2. Trigger sync pull via SyncManager (respects cache durations)
     if (navigator.onLine) {
       try {
         await SyncManager.triggerSync();
@@ -1610,6 +1610,10 @@ export default function App() {
       }
     });
 
+    SyncManager.subscribeToDataChanges(() => {
+      void refreshLocalDataOnly();
+    });
+
     const syncAuthorizedUser = async (user: User | null, event?: string) => {
       setCurrentUser(user);
       if (user) {
@@ -1660,7 +1664,7 @@ export default function App() {
           }
 
           if (navigator.onLine) {
-            void SyncManager.triggerSync();
+            await SyncManager.triggerSync({ force: true });
           }
           await refreshLocalDataOnly();
         } else {
@@ -3560,7 +3564,6 @@ export default function App() {
           name: formData.name.trim(),
           phone: combinedPhone,
           address: formData.address || null,
-          location_url: formData.locationUrl || null,
           delivery_address: formData.locationUrl || null,
           visit_date: formData.visitDate || null,
           notes: formData.notes || null,
@@ -3583,7 +3586,6 @@ export default function App() {
             phone: combinedPhone,
             address: formData.address || null,
             delivery_address: formData.locationUrl || null,
-            location_url: formData.locationUrl || null,
             visit_date: formData.visitDate || null,
             notes: formData.notes || null,
             pickup_date: formData.pickupDate || null,
@@ -3596,7 +3598,6 @@ export default function App() {
             phone: combinedPhone,
             address: formData.address || null,
             delivery_address: formData.locationUrl || null,
-            location_url: formData.locationUrl || null,
             visit_date: formData.visitDate || null,
             notes: formData.notes || null,
             pickup_date: formData.pickupDate || null,
@@ -3609,7 +3610,6 @@ export default function App() {
             phone: combinedPhone,
             address: formData.address || null,
             delivery_address: formData.locationUrl || null,
-            location_url: formData.locationUrl || null,
             visit_date: formData.visitDate || null,
             notes: formData.notes || null,
             pickup_date: formData.pickupDate || null,
@@ -3622,7 +3622,6 @@ export default function App() {
             phone: combinedPhone,
             address: formData.address || null,
             delivery_address: formData.locationUrl || null,
-            location_url: formData.locationUrl || null,
             visit_date: formData.visitDate || null,
             notes: formData.notes || null,
             pickup_date: formData.pickupDate || null,
