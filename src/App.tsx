@@ -4063,34 +4063,8 @@ export default function App() {
       <Toaster position="bottom-center" />
 
       
-      <Armchair
-        style={{
-          position: "fixed",
-          width: "500px",
-          height: "500px",
-          top: "-10%",
-          right: "-8%",
-          transform: "rotate(15deg)",
-          opacity: 0.12,
-          pointerEvents: "none",
-          zIndex: -1,
-          color: "#d4a373",
-        }}
-      />
-      <Armchair
-        style={{
-          position: "fixed",
-          width: "320px",
-          height: "320px",
-          top: "-5%",
-          left: "-5%",
-          transform: "rotate(-25deg)",
-          opacity: 0.08,
-          pointerEvents: "none",
-          zIndex: -1,
-          color: "#a5a58d",
-        }}
-      />
+      
+      
       <Armchair
         style={{
           position: "fixed",
