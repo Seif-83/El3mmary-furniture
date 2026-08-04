@@ -4062,21 +4062,7 @@ export default function App() {
     >
       <Toaster position="bottom-center" />
 
-      {/* Premium Background Decor */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none -z-10">
-        <div
-          className="bg-blob bg-[#d4a373]/20 top-[-10%] left-[-5%]"
-          style={{ animationDelay: "0s" }}
-        />
-        <div
-          className="bg-blob bg-[#a5a58d]/15 bottom-[5%] right-[-5%]"
-          style={{ animationDelay: "-5s" }}
-        />
-        <div
-          className="bg-blob bg-white/30 top-[30%] right-[15%]"
-          style={{ animationDelay: "-10s", width: "300px", height: "300px" }}
-        />
-      </div>
+      
       <Armchair
         style={{
           position: "fixed",
