@@ -1663,10 +1663,10 @@ export default function App() {
             setGovernorateFilter("all");
           }
 
-          if (navigator.onLine) {
-            await SyncManager.triggerSync({ force: true });
-          }
           await refreshLocalDataOnly();
+          if (navigator.onLine) {
+            void SyncManager.triggerSync({ force: true });
+          }
         } else {
           setUserProfile(null);
           localStorage.removeItem("el3mmary_user_profile");

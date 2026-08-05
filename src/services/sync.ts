@@ -231,136 +231,279 @@ export class SyncManager {
       app_settings: "key, value, updated_at",
     };
 
-    for (const tableName of tablesToPull) {
-      const pkColumn = tableName === "app_settings" ? "key" : "id";
-      const columns = TABLE_COLUMNS[tableName] || "*";
-      const { data, error } = await supabase.from(tableName).select(columns);
-      if (error) {
-        console.warn(`Failed to pull remote data for ${tableName}:`, error.message || error);
-        continue;
-      }
-      if (!Array.isArray(data)) continue;
-
-      this.lastPullTime[tableName] = Date.now();
-
-      const tombIds = remoteTombstones.byId.get(tableName);
-      const tombPhones = remoteTombstones.byPhone.get(tableName);
-
-      const remoteIds = new Set<string>();
-      for (const remoteRecord of data) {
-        const remoteKey = String(remoteRecord?.[pkColumn] ?? "").trim();
-        if (!remoteKey) continue;
-
-        const recordPhone = normalizePhone((remoteRecord as any).phone);
-        const isRemotelyDeleted =
-          (tombIds && tombIds.has(remoteKey)) ||
-          Boolean(recordPhone && tombPhones && tombPhones.has(recordPhone));
-
-        if (isRemotelyDeleted) {
-          // This record was deleted on another device. The row may still
-          // physically exist on Supabase (e.g. its DELETE hasn't landed yet,
-          // or was blocked by permissions) - either way, no device should
-          // ever show it again. Clean it up locally, remember why locally
-          // too, and retry the DELETE so the server eventually catches up.
-          await db.table(tableName).delete(remoteKey).catch(() => {});
-          await this.addTombstone(tableName, remoteKey);
-          if (recordPhone) await this.addPhoneTombstone(tableName, recordPhone);
-          const pendingDelete = await db.sync_queue
-            .where("tableName").equals(tableName)
-            .and((x) => x.recordId === remoteKey && x.operation === "DELETE")
-            .first();
-          if (!pendingDelete) {
-            await this.queueOperation("DELETE", tableName, remoteKey, null);
+    // Parallel processing across all tables to pull
+    await Promise.all(
+      tablesToPull.map(async (tableName) => {
+        const pkColumn = tableName === "app_settings" ? "key" : "id";
+        const columns = TABLE_COLUMNS[tableName] || "*";
+        const { data, error } = await supabase.from(tableName).select(columns);
+        if (error || !Array.isArray(data)) {
+          if (error) {
+            console.warn(`Failed to pull remote data for ${tableName}:`, error.message || error);
           }
-          continue;
+          return;
         }
 
-        remoteIds.add(remoteKey);
-        await this.resolveConflict(tableName, remoteRecord);
-      }
+        this.lastPullTime[tableName] = Date.now();
 
-      // Self-healing / reconciliation sync:
-      const localRecords = await db.table(tableName).toArray();
-      for (const localRecord of localRecords) {
-        const localKey = String(localRecord[pkColumn] ?? "").trim();
-        if (!localKey) continue;
+        // Batch pre-fetch table state to avoid thousands of individual async Dexie calls
+        const [localRecords, tableTombstones, pendingSyncItems] = await Promise.all([
+          db.table(tableName).toArray(),
+          db.tombstones.where("tableName").equals(tableName).toArray(),
+          db.sync_queue.where("tableName").equals(tableName).toArray(),
+        ]);
 
-        if (!remoteIds.has(localKey)) {
-          // Check if there is any pending operation for this record in the sync queue
-          const pendingOp = await db.sync_queue
-            .where("tableName").equals(tableName)
-            .and(x => x.recordId === localKey)
-            .first();
+        const localRecordsMap = new Map<string, any>();
+        for (const rec of localRecords) {
+          const k = String(rec[pkColumn] ?? "").trim();
+          if (k) localRecordsMap.set(k, rec);
+        }
 
-          if (!pendingOp) {
+        const localTombIds = new Set<string>();
+        const localTombPhones = new Set<string>();
+        for (const tomb of tableTombstones) {
+          if (tomb.recordId.startsWith("phone:")) {
+            localTombPhones.add(tomb.recordId.replace(/^phone:/, ""));
+          } else {
+            localTombIds.add(tomb.recordId);
+          }
+        }
+
+        const pendingOpRecordIds = new Set<string>();
+        const pendingPhoneDeletes = new Set<string>();
+        for (const item of pendingSyncItems) {
+          if (item.operation === "DELETE_BY_PHONE" && item.payload?.phone) {
+            pendingPhoneDeletes.add(normalizePhone(item.payload.phone));
+          } else if (item.recordId) {
+            pendingOpRecordIds.add(item.recordId);
+          }
+        }
+
+        const tombIds = remoteTombstones.byId.get(tableName);
+        const tombPhones = remoteTombstones.byPhone.get(tableName);
+
+        const remoteIds = new Set<string>();
+        const recordsToPut: any[] = [];
+        const recordsToDeleteLocally = new Set<string>();
+        const tombstonesToAddLocally: any[] = [];
+        const operationsToQueue: SyncQueueItem[] = [];
+
+        for (const remoteRecord of data) {
+          const remoteKey = String(remoteRecord?.[pkColumn] ?? "").trim();
+          if (!remoteKey) continue;
+          const recordPhone = normalizePhone((remoteRecord as any).phone);
+
+          // 1. Check if test record
+          if (CUSTOMER_FACING_TABLES.has(tableName) && isTestRecord(remoteRecord)) {
+            recordsToDeleteLocally.add(remoteKey);
+            if (recordPhone) {
+              tombstonesToAddLocally.push({
+                id: `${tableName}:phone:${recordPhone}`,
+                tableName,
+                recordId: `phone:${recordPhone}`,
+                deletedAt: Date.now(),
+              });
+              if (!pendingPhoneDeletes.has(recordPhone)) {
+                pendingPhoneDeletes.add(recordPhone);
+                operationsToQueue.push({
+                  operation: "DELETE_BY_PHONE",
+                  tableName,
+                  recordId: recordPhone,
+                  payload: { phone: recordPhone },
+                  createdAt: Date.now(),
+                  retryCount: 0,
+                  status: "pending",
+                });
+              }
+            }
+            if (!pendingOpRecordIds.has(remoteKey)) {
+              pendingOpRecordIds.add(remoteKey);
+              operationsToQueue.push({
+                operation: "DELETE",
+                tableName,
+                recordId: remoteKey,
+                payload: null,
+                createdAt: Date.now(),
+                retryCount: 0,
+                status: "pending",
+              });
+            }
+            continue;
+          }
+
+          // 2. Check if remotely deleted
+          const isRemotelyDeleted =
+            (tombIds && tombIds.has(remoteKey)) ||
+            Boolean(recordPhone && tombPhones && tombPhones.has(recordPhone));
+
+          if (isRemotelyDeleted) {
+            recordsToDeleteLocally.add(remoteKey);
+            tombstonesToAddLocally.push({
+              id: `${tableName}:${remoteKey}`,
+              tableName,
+              recordId: remoteKey,
+              deletedAt: Date.now(),
+            });
+            if (recordPhone) {
+              tombstonesToAddLocally.push({
+                id: `${tableName}:phone:${recordPhone}`,
+                tableName,
+                recordId: `phone:${recordPhone}`,
+                deletedAt: Date.now(),
+              });
+            }
+            if (!pendingOpRecordIds.has(remoteKey)) {
+              pendingOpRecordIds.add(remoteKey);
+              operationsToQueue.push({
+                operation: "DELETE",
+                tableName,
+                recordId: remoteKey,
+                payload: null,
+                createdAt: Date.now(),
+                retryCount: 0,
+                status: "pending",
+              });
+            }
+            continue;
+          }
+
+          remoteIds.add(remoteKey);
+
+          // 3. Check if locally tombstoned
+          const tombstonedById = localTombIds.has(remoteKey);
+          const tombstonedByPhone = Boolean(recordPhone && localTombPhones.has(recordPhone));
+
+          if (tombstonedById || tombstonedByPhone) {
+            recordsToDeleteLocally.add(remoteKey);
+            if (!pendingOpRecordIds.has(remoteKey)) {
+              pendingOpRecordIds.add(remoteKey);
+              operationsToQueue.push({
+                operation: "DELETE",
+                tableName,
+                recordId: remoteKey,
+                payload: null,
+                createdAt: Date.now(),
+                retryCount: 0,
+                status: "pending",
+              });
+            }
+            if (recordPhone && !pendingPhoneDeletes.has(recordPhone)) {
+              pendingPhoneDeletes.add(recordPhone);
+              operationsToQueue.push({
+                operation: "DELETE_BY_PHONE",
+                tableName,
+                recordId: recordPhone,
+                payload: { phone: recordPhone },
+                createdAt: Date.now(),
+                retryCount: 0,
+                status: "pending",
+              });
+            }
+            continue;
+          }
+
+          // 4. Check pending sync queue
+          if (pendingOpRecordIds.has(remoteKey)) {
+            continue;
+          }
+
+          // 5. Conflict resolution via timestamp comparison
+          const localRecord = localRecordsMap.get(remoteKey);
+          if (localRecord) {
+            const localTime = localRecord.last_modified || 0;
+            const remoteTime = remoteRecord.updated_at
+              ? new Date(remoteRecord.updated_at).getTime()
+              : remoteRecord.created_at
+              ? new Date(remoteRecord.created_at).getTime()
+              : remoteRecord.finalized_at
+              ? new Date(remoteRecord.finalized_at).getTime()
+              : 0;
+
+            if (localTime > remoteTime) {
+              continue;
+            }
+          }
+
+          recordsToPut.push({
+            ...remoteRecord,
+            last_modified: Date.now(),
+            synced: true,
+          });
+        }
+
+        // Self-healing / reconciliation sync
+        for (const localRecord of localRecords) {
+          const localKey = String(localRecord[pkColumn] ?? "").trim();
+          if (!localKey) continue;
+
+          if (!remoteIds.has(localKey)) {
+            if (pendingOpRecordIds.has(localKey)) continue;
+
             const localPhone = normalizePhone((localRecord as any).phone);
             const isKnownDeleted =
-              (await this.isTombstoned(tableName, localKey)) ||
-              (localPhone && (await this.isPhoneTombstoned(tableName, localPhone))) ||
+              localTombIds.has(localKey) ||
+              Boolean(localPhone && localTombPhones.has(localPhone)) ||
               Boolean(tombIds && tombIds.has(localKey)) ||
               Boolean(localPhone && tombPhones && tombPhones.has(localPhone));
 
-            // A record we just synced a moment ago can still be absent from
-            // THIS pull's remote snapshot (read-replica/eventual-consistency lag
-            // right after the INSERT, or a pull that started before it committed).
-            // Give freshly-touched records a grace period before trusting
-            // "missing from remote" as "deleted elsewhere" - otherwise a
-            // customer/inspection can vanish locally seconds after creation
-            // even though it is really sitting on the server.
             const recentlyModified =
               ((localRecord as any).last_modified || 0) > Date.now() - RECONCILE_GRACE_MS;
 
             if (isKnownDeleted) {
-              console.log(`Auto delete: local record ${localKey} in ${tableName} was deleted (locally or on another device). Deleting locally.`);
-              await db.table(tableName).delete(localKey);
+              recordsToDeleteLocally.add(localKey);
             } else if ((localRecord as any).synced) {
-              if (recentlyModified) {
-                // Likely a stale/incomplete remote read racing a just-finished
-                // sync, not a real deletion. Leave it alone; re-check next pull.
-                console.log(`Skipping reconciliation for recently-synced record ${localKey} in ${tableName}; will re-check next pull.`);
-              } else {
-                console.log(`Auto delete: local record ${localKey} in ${tableName} was deleted (locally or on another device). Deleting locally.`);
-                await db.table(tableName).delete(localKey);
+              if (!recentlyModified) {
+                recordsToDeleteLocally.add(localKey);
               }
             } else {
-              // Genuinely unsynced local record (created offline, never confirmed
-              // deleted anywhere). Queue an INSERT to push it to Supabase.
-              console.log(`Healing sync: local record ${localKey} in ${tableName} is missing from Supabase. Queuing INSERT.`);
-              await this.queueOperation("INSERT", tableName, localKey, localRecord);
+              pendingOpRecordIds.add(localKey);
+              operationsToQueue.push({
+                operation: "INSERT",
+                tableName,
+                recordId: localKey,
+                payload: localRecord,
+                createdAt: Date.now(),
+                retryCount: 0,
+                status: "pending",
+              });
             }
           }
         }
-      }
 
-      // Do not automatically delete local records when a remote row is missing.
-      // Remote reads can be incomplete due to permissions, row-level security, or
-      // eventual sync latency, and deleting local rows here can remove newly
-      // created records before they are confirmed on the server.
-
-      // Tombstone cleanup: once the remote table confirms a previously-deleted
-      // record is actually gone, we no longer need to guard against it, so
-      // drop the tombstone to keep the table small.
-      const tableTombstones = await db.tombstones
-        .where("tableName").equals(tableName)
-        .toArray();
-      for (const tomb of tableTombstones) {
-        if (tomb.recordId.startsWith("phone:")) {
-          const phone = tomb.recordId.replace(/^phone:/, "");
-          const anyMatch = (data as any[]).some(
-            (remoteRecord: any) => normalizePhone(remoteRecord.phone) === phone,
-          );
-          if (!anyMatch) {
-            await db.tombstones.delete(tomb.id);
-          }
-        } else if (!remoteIds.has(tomb.recordId)) {
-          await db.tombstones.delete(tomb.id);
+        // Execute bulk Dexie operations for high performance
+        if (recordsToDeleteLocally.size > 0) {
+          await db.table(tableName).bulkDelete(Array.from(recordsToDeleteLocally)).catch(() => {});
         }
-      }
-    }
+        if (recordsToPut.length > 0) {
+          await db.table(tableName).bulkPut(recordsToPut).catch(() => {});
+        }
+        if (tombstonesToAddLocally.length > 0) {
+          await db.tombstones.bulkPut(tombstonesToAddLocally).catch(() => {});
+        }
+        if (operationsToQueue.length > 0) {
+          await db.sync_queue.bulkAdd(operationsToQueue).catch(() => {});
+        }
+
+        // Tombstone cleanup
+        const tombstonesToDelete: string[] = [];
+        for (const tomb of tableTombstones) {
+          if (tomb.recordId.startsWith("phone:")) {
+            const phone = tomb.recordId.replace(/^phone:/, "");
+            const anyMatch = data.some(
+              (remoteRecord: any) => normalizePhone(remoteRecord.phone) === phone,
+            );
+            if (!anyMatch) tombstonesToDelete.push(tomb.id);
+          } else if (!remoteIds.has(tomb.recordId)) {
+            tombstonesToDelete.push(tomb.id);
+          }
+        }
+        if (tombstonesToDelete.length > 0) {
+          await db.tombstones.bulkDelete(tombstonesToDelete).catch(() => {});
+        }
+      })
+    );
 
     // Prune old shared tombstones so `deleted_records` doesn't grow forever.
-    // Best-effort and non-blocking: only admin write access can succeed here
-    // (see RLS policy), and a failure just means we try again next pull.
     try {
       const cutoff = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
       await supabase.from("deleted_records").delete().lt("deleted_at", cutoff);
