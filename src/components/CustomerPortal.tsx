@@ -66,7 +66,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
           </div>
           <div>
             <h1 className="text-2xl sm:text-3xl font-light tracking-wider text-zinc-900">
-              {isAr ? "بوابة العملاء | العمري للأثاث" : "Customer Portal | El3mmary Furniture"}
+              {isAr ? "بوابة العملاء | العماري للأثاث" : "Customer Portal | El3mmary Furniture"}
             </h1>
             <p className="text-zinc-500 text-sm mt-0.5">
               {isAr ? "تابع طلبك ومدفوعاتك مباشرة" : "Track your order and payments live"}
