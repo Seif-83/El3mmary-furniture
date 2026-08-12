@@ -5074,6 +5074,18 @@ export default function App() {
                                       </div>
                                     </div>
 
+                                    {isAdminUser && (
+                                      <button
+                                        onClick={getInspectionActionForCustomer(ins).onClick}
+                                        className="w-full flex items-center justify-center gap-2 bg-accent-tan text-white py-3 px-4 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-accent-tan/90 active:scale-95 transition-all shadow-md relative z-10"
+                                      >
+                                        <Eye className="w-4 h-4" />
+                                        <span>
+                                          {getInspectionActionForCustomer(ins).label}
+                                        </span>
+                                      </button>
+                                    )}
+
                                     {isAdminUser && userProfile?.username !== "ahmed" && (
                                       <div className="grid grid-cols-2 gap-3 relative z-10">
                                         <button
