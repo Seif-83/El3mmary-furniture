@@ -105,3 +105,18 @@ export type RoomDraft = {
   items: RoomDraftItem[];
   customLabel?: string | null;
 };
+
+export interface ProductionStageRecord {
+  id: string;
+  client_id?: string;
+  visit_id?: string;
+  stage: string;
+  status: "not_started" | "in_progress" | "done" | string;
+  completed_at?: string | null;
+  timer_days?: number; // Configurable duration: 3 to 20 days
+  timer_started_at?: string | null; // ISO string timestamp when phase timer started
+  payment_requested?: boolean; // Payment collection trigger milestone flag
+  payment_requested_at?: string | null; // When payment collection was triggered
+  created_at?: string;
+  client?: { phones: string[] };
+}

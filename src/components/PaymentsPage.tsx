@@ -18,12 +18,21 @@ export interface PaymentRecord {
 }
 export const PaymentsPage: React.FC<{
   contractedCustomers: Inspection[];
+  stages?: any[];
   lang: "en" | "ar";
   isAdmin: boolean;
   t: Record<string, string>;
   onRefresh: () => Promise<void>;
   onSendWhatsApp: (phone: string, msg: string) => void;
-}> = ({ contractedCustomers, lang, isAdmin, t, onRefresh, onSendWhatsApp }) => {
+}> = ({
+  contractedCustomers,
+  stages = [],
+  lang,
+  isAdmin,
+  t,
+  onRefresh,
+  onSendWhatsApp,
+}) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Inspection | null>(
     null,
@@ -35,15 +44,70 @@ export const PaymentsPage: React.FC<{
   const [loadingPayments, setLoadingPayments] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const stages = [
+  const paymentStages = [
     "عند التعاقد",
     "عند انتهاء النجارة واختيار اللون",
     "قبل الاستلام بـ 48 ساعة",
     "عند استلام الغرفة",
   ];
 
+  const getPendingCollectionTrigger = (customer: Inspection) => {
+    const customerPhone = customer.phone;
+    const matchingStage = customerPhone
+      ? stages.find((s: any) => s.client?.phones?.includes(customerPhone))
+      : null;
+    const clientId = matchingStage?.client_id || null;
+    const customerStages = clientId
+      ? stages.filter((s: any) => s.client_id === clientId)
+      : [];
+
+    const total = customer.totalAmount || 0;
+    const paid = getCustomerPayments(customer.id).reduce(
+      (sum, p) => sum + (Number(p.amount) || 0),
+      0,
+    );
+    const remaining = total - paid;
+    if (remaining <= 0) return null;
+
+    const deliveryStage = customerStages.find((s) => s.stage === "delivery");
+    const paintingStage = customerStages.find((s) => s.stage === "painting");
+    const carpentryStage = customerStages.find((s) => s.stage === "carpentry");
+
+    if (deliveryStage?.status === "done") {
+      return {
+        stageKey: "delivery",
+        title:
+          lang === "ar"
+            ? "مطلوب تحصيل دفعة التسليم النهائي"
+            : "Delivery Payment Due",
+        installment: "عند استلام الغرفة",
+      };
+    }
+    if (paintingStage?.status === "done") {
+      return {
+        stageKey: "painting",
+        title:
+          lang === "ar"
+            ? "مطلوب تحصيل دفعة بعد انتهاء الدهانات"
+            : "Post-Painting Payment Due",
+        installment: "قبل الاستلام بـ 48 ساعة",
+      };
+    }
+    if (carpentryStage?.status === "done") {
+      return {
+        stageKey: "carpentry",
+        title:
+          lang === "ar"
+            ? "مطلوب تحصيل دفعة بعد انتهاء النجارة"
+            : "Post-Carpentry Payment Due",
+        installment: "عند انتهاء النجارة واختيار اللون",
+      };
+    }
+    return null;
+  };
+
   const getCustomerPaymentBreakdown = (customerId: string) =>
-    stages
+    paymentStages
       .map((stage) => ({
         stage,
         amount: getCustomerPayments(customerId)
@@ -100,10 +164,10 @@ export const PaymentsPage: React.FC<{
     return isForContracted ? sum + (Number(p.amount) || 0) : sum;
   }, 0);
 
-  const handleOpenModal = (customer: Inspection) => {
+  const handleOpenModal = (customer: Inspection, prefillStage?: string) => {
     setSelectedCustomer(customer);
     setPaymentAmount("");
-    setPaymentStage(stages[0]);
+    setPaymentStage(prefillStage || paymentStages[0]);
     setIsModalOpen(true);
   };
 
@@ -170,8 +234,8 @@ export const PaymentsPage: React.FC<{
           </h1>
           <p className="text-zinc-500 mt-2">
             {lang === "ar"
-              ? "تابع حالة المدفوعات للعملاء المتعاقدين"
-              : "Track payment status for contracted customers"}
+              ? "تابع حالة المدفوعات للعملاء المتعاقدين ومطالبات التحصيل"
+              : "Track payment status and collection milestones for contracted customers"}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-4 w-full sm:w-auto">
@@ -256,13 +320,22 @@ export const PaymentsPage: React.FC<{
                       total > 0
                         ? Math.min(100, Math.round((paid / total) * 100))
                         : 0;
+                    const collectionTrigger = getPendingCollectionTrigger(customer);
+
                     return (
                       <tr
                         key={customer.id}
                         className="border-b border-black/5 hover:bg-black/5 transition-colors"
                       >
-                        <td className="px-6 py-4 font-bold text-zinc-900">
-                          {customer.customerName}
+                        <td className="px-6 py-4">
+                          <div className="font-bold text-zinc-900">
+                            {customer.customerName}
+                          </div>
+                          {collectionTrigger && (
+                            <span className="inline-flex items-center gap-1 mt-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-800 border border-amber-500/30">
+                              💰 {collectionTrigger.title}
+                            </span>
+                          )}
                         </td>
                         <td className="px-6 py-4 text-zinc-600 font-mono">
                           {customer.phone}
@@ -327,11 +400,22 @@ export const PaymentsPage: React.FC<{
                           </div>
                           {isAdmin && remaining > 0 && (
                             <button
-                              onClick={() => handleOpenModal(customer)}
+                              onClick={() =>
+                                handleOpenModal(
+                                  customer,
+                                  collectionTrigger?.installment,
+                                )
+                              }
                               className="mt-3 bg-zinc-900 hover:bg-zinc-800 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase transition-all shadow-md flex items-center gap-1"
                             >
                               <Plus className="w-3 h-3" />
-                              {lang === "ar" ? "إضافة دفعة" : "Add Payment"}
+                              {collectionTrigger
+                                ? lang === "ar"
+                                  ? `تحصيل (${collectionTrigger.installment})`
+                                  : `Collect (${collectionTrigger.installment})`
+                                : lang === "ar"
+                                  ? "إضافة دفعة"
+                                  : "Add Payment"}
                             </button>
                           )}
                         </td>
@@ -354,12 +438,14 @@ export const PaymentsPage: React.FC<{
               const remaining = total - paid;
               const pct =
                 total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
+              const collectionTrigger = getPendingCollectionTrigger(customer);
+
               return (
                 <div
                   key={customer.id}
                   className="bg-white/80 backdrop-blur-xl p-6 rounded-[2rem] border border-white/50 shadow-lg relative overflow-hidden group card-accent"
                 >
-                  <div className="flex justify-between items-start mb-4">
+                  <div className="flex justify-between items-start mb-2">
                     <div>
                       <h4 className="text-xl font-bold text-zinc-900 mb-1">
                         {customer.customerName}
@@ -372,6 +458,14 @@ export const PaymentsPage: React.FC<{
                       {pct}%
                     </span>
                   </div>
+
+                  {collectionTrigger && (
+                    <div className="mb-3 px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-900 text-xs font-bold flex items-center gap-1.5">
+                      <span>💰</span>
+                      <span>{collectionTrigger.title}</span>
+                    </div>
+                  )}
+
                   <div className="w-full h-2 bg-zinc-100 rounded-full mb-4">
                     <div
                       className="h-2 bg-emerald-500 rounded-full"
@@ -445,11 +539,22 @@ export const PaymentsPage: React.FC<{
                     {isAdmin && remaining > 0 && (
                       <div className="pt-3">
                         <button
-                          onClick={() => handleOpenModal(customer)}
+                          onClick={() =>
+                            handleOpenModal(
+                              customer,
+                              collectionTrigger?.installment,
+                            )
+                          }
                           className="w-full bg-zinc-900 text-white px-4 py-3 rounded-2xl text-xs font-bold uppercase transition-all shadow-md flex justify-center items-center gap-2"
                         >
                           <Plus className="w-4 h-4" />
-                          {lang === "ar" ? "إضافة دفعة" : "Add Payment"}
+                          {collectionTrigger
+                            ? lang === "ar"
+                              ? `تحصيل (${collectionTrigger.installment})`
+                              : `Collect (${collectionTrigger.installment})`
+                            : lang === "ar"
+                              ? "إضافة دفعة"
+                              : "Add Payment"}
                         </button>
                       </div>
                     )}
@@ -572,7 +677,7 @@ export const PaymentsPage: React.FC<{
                     onChange={(e) => setPaymentStage(e.target.value)}
                     className="w-full px-5 py-4 bg-white/80 border border-white rounded-2xl outline-none focus:ring-2 focus:ring-accent-tan transition-all"
                   >
-                    {stages.map((s) => (
+                    {paymentStages.map((s) => (
                       <option key={s} value={s}>
                         {s}
                       </option>

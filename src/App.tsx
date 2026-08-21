@@ -1506,7 +1506,11 @@ export default function App() {
     );
   };
 
-  const handleStageUpdate = async (stageId: string, status: string) => {
+  const handleStageUpdate = async (
+    stageId: string,
+    status: string,
+    timerDays?: number,
+  ) => {
     const canUserUpdateStage =
       isAdminUser ||
       userProfile?.role === "super_admin" ||
@@ -1523,31 +1527,47 @@ export default function App() {
       );
       return;
     }
+
+    const currentStage = stages.find((s) => s.id === stageId);
     const updates: any = { status };
+
     if (status === "done") {
       updates.completed_at = new Date().toISOString();
-    } else {
-      updates.completed_at = null;
-    }
-    // Optimistic UI: update locally & queue sync
-    await StageService.updateStatus(stageId, updates.status);
-    if (updates.completed_at !== undefined) {
-      const stageRecord = await db.production_stages.get(stageId);
-      if (stageRecord) {
-        await db.production_stages.put({
-          ...stageRecord,
-          completed_at: updates.completed_at || undefined,
-          last_modified: Date.now(),
-        });
-        await SyncManager.queueOperation(
-          "UPDATE",
-          "production_stages",
-          stageId,
-          { completed_at: updates.completed_at },
-        );
+      // Trigger payment collection milestone if completing carpentry, painting, or delivery
+      if (
+        currentStage &&
+        ["carpentry", "painting", "upholstery", "delivery"].includes(
+          currentStage.stage,
+        )
+      ) {
+        updates.payment_requested = true;
+        updates.payment_requested_at = new Date().toISOString();
       }
+    } else if (status === "in_progress") {
+      updates.completed_at = null;
+      // Configure countdown timer for timed phases (carpentry, painting, upholstery)
+      const validDays = timerDays
+        ? Math.max(3, Math.min(20, Math.round(timerDays)))
+        : currentStage?.timer_days || 7;
+      updates.timer_days = validDays;
+      updates.timer_started_at = new Date().toISOString();
+    } else {
+      // not_started / reset
+      updates.completed_at = null;
+      updates.timer_started_at = null;
     }
-    const currentStage = stages.find((s) => s.id === stageId);
+
+    // Optimistic UI: update locally & queue sync
+    await StageService.updateStatus(stageId, updates.status, updates);
+    const stageRecord = await db.production_stages.get(stageId);
+    if (stageRecord) {
+      await db.production_stages.put({
+        ...stageRecord,
+        ...updates,
+        last_modified: Date.now(),
+      });
+    }
+
     if (status === "done" && currentStage) {
       const currentIdx = STAGE_ORDER.findIndex(
         (s) => s.key === currentStage.stage,
@@ -1559,8 +1579,23 @@ export default function App() {
             s.client_id === currentStage.client_id && s.stage === nextStage.key,
         );
         if (nextStageRecord && nextStageRecord.status === "not_started") {
-          // Optimistic: update next stage locally & queue sync
-          await StageService.updateStatus(nextStageRecord.id, "in_progress");
+          // Auto start next stage with default 7 days timer if it's a timed phase
+          const nextIsTimed = ["carpentry", "painting", "upholstery"].includes(
+            nextStage.key,
+          );
+          const nextUpdates: any = {
+            status: "in_progress",
+            completed_at: null,
+          };
+          if (nextIsTimed) {
+            nextUpdates.timer_days = 7;
+            nextUpdates.timer_started_at = new Date().toISOString();
+          }
+          await StageService.updateStatus(
+            nextStageRecord.id,
+            "in_progress",
+            nextUpdates,
+          );
         }
       }
       // Read client data from local IndexedDB
@@ -5802,7 +5837,10 @@ export default function App() {
                         isAdmin={isAdminUser}
                         t={t}
                         stages={stages}
+                        payments={allPayments}
                         onStageUpdate={handleStageUpdate}
+                        onSendWhatsApp={sendWhatsAppMessage}
+                        onRefresh={refreshAllData}
                         userProfile={userProfile}
                         productionFilter={productionFilter}
                         onProductionFilterChange={setProductionFilter}
@@ -5810,6 +5848,7 @@ export default function App() {
                     ) : adminSubView === "payments" ? (
                       <PaymentsPage
                         contractedCustomers={filteredContractedCustomers}
+                        stages={stages}
                         lang={lang}
                         isAdmin={isAdminUser}
                         t={t}

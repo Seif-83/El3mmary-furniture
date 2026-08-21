@@ -257,13 +257,40 @@ export class StageService {
     }
   }
 
-  static async updateStatus(id: string, status: string) {
+  static async updateStatus(
+    id: string,
+    status: string,
+    extraUpdates?: {
+      completed_at?: string | null;
+      timer_days?: number | null;
+      timer_started_at?: string | null;
+      payment_requested?: boolean;
+      payment_requested_at?: string | null;
+    },
+  ) {
     const record = await db.production_stages.get(id);
     if (!record) return;
-    const updated = { ...record, status, last_modified: Date.now() };
-    await db.production_stages.put(updated);
+    const updated = {
+      ...record,
+      status,
+      ...(extraUpdates || {}),
+      last_modified: Date.now(),
+    };
+    await db.production_stages.put(updated as any);
     await SyncManager.queueOperation("UPDATE", "production_stages", id, {
       status,
+      completed_at: updated.completed_at,
+    });
+  }
+
+  static async updateStage(id: string, updates: Partial<LocalProductionStage>) {
+    const record = await db.production_stages.get(id);
+    if (!record) return;
+    const updated = { ...record, ...updates, last_modified: Date.now() };
+    await db.production_stages.put(updated as any);
+    await SyncManager.queueOperation("UPDATE", "production_stages", id, {
+      status: updated.status,
+      completed_at: updated.completed_at,
     });
   }
 }

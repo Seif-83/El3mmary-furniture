@@ -710,6 +710,10 @@ export class SyncManager {
       delete cleanedPayload.location_url;
       if (tableName === "production_stages") {
         delete cleanedPayload.client;
+        delete cleanedPayload.timer_days;
+        delete cleanedPayload.timer_started_at;
+        delete cleanedPayload.payment_requested;
+        delete cleanedPayload.payment_requested_at;
       }
     }
 

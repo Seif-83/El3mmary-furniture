@@ -121,6 +121,10 @@ export interface LocalProductionStage {
   stage: string;
   status: string;
   completed_at?: string;
+  timer_days?: number;
+  timer_started_at?: string;
+  payment_requested?: boolean;
+  payment_requested_at?: string;
   created_at: string;
   client?: { phones: string[] }; // locally cached relation details
   last_modified: number;
