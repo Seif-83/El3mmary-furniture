@@ -38,17 +38,16 @@ export const PaymentsPage: React.FC<{
     null,
   );
   const [paymentAmount, setPaymentAmount] = useState<number | "">("");
-  const [paymentStage, setPaymentStage] = useState<string>("عند التعاقد");
+  const [paymentStage, setPaymentStage] = useState<string>("بعد تمام الاستلام");
   const [isSaving, setIsSaving] = useState(false);
   const [allPayments, setAllPayments] = useState<PaymentRecord[]>([]);
   const [loadingPayments, setLoadingPayments] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
 
   const paymentStages = [
-    "عند التعاقد",
-    "عند انتهاء النجارة واختيار اللون",
-    "قبل الاستلام بـ 48 ساعة",
-    "عند استلام الغرفة",
+    "بعد تمام الاستلام",
+    "بعد تمام النجارة",
+    "بعد تمام التجهيزات",
   ];
 
   const getPendingCollectionTrigger = (customer: Inspection) => {
@@ -69,28 +68,18 @@ export const PaymentsPage: React.FC<{
     const remaining = total - paid;
     if (remaining <= 0) return null;
 
-    const deliveryStage = customerStages.find((s) => s.stage === "delivery");
-    const paintingStage = customerStages.find((s) => s.stage === "painting");
+    const fittingsStage = customerStages.find((s) => s.stage === "fittings");
     const carpentryStage = customerStages.find((s) => s.stage === "carpentry");
+    const receivedStage = customerStages.find((s) => s.stage === "received");
 
-    if (deliveryStage?.status === "done") {
+    if (fittingsStage?.status === "done") {
       return {
-        stageKey: "delivery",
+        stageKey: "fittings",
         title:
           lang === "ar"
-            ? "مطلوب تحصيل دفعة التسليم النهائي"
-            : "Delivery Payment Due",
-        installment: "عند استلام الغرفة",
-      };
-    }
-    if (paintingStage?.status === "done") {
-      return {
-        stageKey: "painting",
-        title:
-          lang === "ar"
-            ? "مطلوب تحصيل دفعة بعد انتهاء الدهانات"
-            : "Post-Painting Payment Due",
-        installment: "قبل الاستلام بـ 48 ساعة",
+            ? "مطلوب تحصيل دفعة بعد تمام التجهيزات"
+            : "Post-Fittings Payment Due",
+        installment: "بعد تمام التجهيزات",
       };
     }
     if (carpentryStage?.status === "done") {
@@ -98,9 +87,19 @@ export const PaymentsPage: React.FC<{
         stageKey: "carpentry",
         title:
           lang === "ar"
-            ? "مطلوب تحصيل دفعة بعد انتهاء النجارة"
+            ? "مطلوب تحصيل دفعة بعد تمام النجارة"
             : "Post-Carpentry Payment Due",
-        installment: "عند انتهاء النجارة واختيار اللون",
+        installment: "بعد تمام النجارة",
+      };
+    }
+    if (receivedStage?.status === "done") {
+      return {
+        stageKey: "received",
+        title:
+          lang === "ar"
+            ? "مطلوب تحصيل دفعة بعد تمام الاستلام"
+            : "Post-Intake Payment Due",
+        installment: "بعد تمام الاستلام",
       };
     }
     return null;
@@ -117,10 +116,9 @@ export const PaymentsPage: React.FC<{
       .filter((item) => item.amount > 0);
 
   const stageColor = (stage: string) => {
-    if (stage.includes("التعاقد")) return "bg-amber-400";
-    if (stage.includes("النجارة")) return "bg-indigo-500";
-    if (stage.includes("48")) return "bg-rose-500";
-    if (stage.includes("استلام")) return "bg-emerald-500";
+    if (stage.includes("الاستلام") || stage.includes("استلام") || stage.includes("التعاقد")) return "bg-amber-500";
+    if (stage.includes("النجارة") || stage.includes("نجارة")) return "bg-indigo-500";
+    if (stage.includes("التجهيزات") || stage.includes("تجهيزات")) return "bg-emerald-500";
     return "bg-zinc-400";
   };
 

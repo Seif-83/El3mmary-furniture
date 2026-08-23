@@ -80,10 +80,10 @@ export const ROOM_TYPES = [
 
 export const STAGE_ORDER = [
   { key: "received", ar: "استلام", en: "Received" },
+  { key: "inventory", ar: "مخزون", en: "Inventory" },
   { key: "carpentry", ar: "نجارة", en: "Carpentry" },
-  { key: "finishing", ar: "تشطيب", en: "Finishing" },
-  { key: "painting", ar: "دهان", en: "Painting" },
-  { key: "upholstery", ar: "تنجيد", en: "Upholstery" },
+  { key: "painting", ar: "دهانات", en: "Painting" },
+  { key: "fittings", ar: "تجهيزات", en: "Fittings" },
   { key: "delivery", ar: "تسليم", en: "Delivery" },
 ] as const;
 

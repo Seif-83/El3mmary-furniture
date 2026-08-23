@@ -56,6 +56,7 @@ import {
   StageService,
   SettingsService,
   ActivityLogService,
+  CustomerServiceLogsService,
 } from "./services/data";
 import { db } from "./services/db";
 
@@ -74,6 +75,7 @@ import type {
   Inspection,
   RoomDraftItem,
   RoomDraft,
+  CustomerServiceLog,
 } from "./types";
 import { toTimestamp, toSortableDateValue } from "./types";
 import {
@@ -184,7 +186,13 @@ export default function App() {
     | "settings"
     | "users"
   >("dashboard");
-  const [productionFilter, setProductionFilter] = useState<"all" | "completed">("all");
+  const [productionFilter, setProductionFilter] = useState<"all" | "in_production" | "completed">("all");
+  const [csLogs, setCsLogs] = useState<CustomerServiceLog[]>([]);
+  const [csName, setCsName] = useState("");
+  const [csPhone, setCsPhone] = useState("");
+  const [csNotes, setCsNotes] = useState("");
+  const [csSearchQuery, setCsSearchQuery] = useState("");
+  const [isSavingCsLog, setIsSavingCsLog] = useState(false);
   const [analysisStartDate, setAnalysisStartDate] = useState<string>(
     new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
   );
@@ -1290,6 +1298,9 @@ export default function App() {
     const localSettings = await SettingsService.getSettings();
     setSettings(localSettings);
 
+    const localCsLogs = await CustomerServiceLogsService.getAll();
+    setCsLogs(localCsLogs);
+
     const localPayments = await InvoiceService.getPayments();
     setAllPayments(
       localPayments.map((p: any) => ({
@@ -1300,6 +1311,58 @@ export default function App() {
         note: p.note ?? null,
       })),
     );
+  };
+
+  const handleAddCustomerServiceLog = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!csName.trim() && !csPhone.trim() && !csNotes.trim()) {
+      toast.error(
+        lang === "ar"
+          ? "يرجى كتابة اسم العميل ورقم هاتفه والملاحظة"
+          : "Please enter customer name, phone, and note",
+      );
+      return;
+    }
+    setIsSavingCsLog(true);
+    try {
+      const nowIso = new Date().toISOString();
+      const newLog: CustomerServiceLog = {
+        id: crypto.randomUUID(),
+        customerName: csName.trim(),
+        phone: csPhone.trim(),
+        notes: csNotes.trim(),
+        createdAt: nowIso,
+        createdBy: userProfile?.username || "Admin",
+      };
+      await CustomerServiceLogsService.insert(newLog);
+      setCsLogs((prev) => [newLog, ...prev]);
+      setCsName("");
+      setCsPhone("");
+      setCsNotes("");
+      const timeStr = new Date(nowIso).toLocaleTimeString(
+        lang === "ar" ? "ar-EG" : "en-US",
+        { hour: "2-digit", minute: "2-digit", second: "2-digit" },
+      );
+      toast.success(
+        lang === "ar"
+          ? `تم حفظ الملاحظة بنجاح (الساعة ${timeStr})`
+          : `Log saved successfully at ${timeStr}`,
+      );
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to save log");
+    } finally {
+      setIsSavingCsLog(false);
+    }
+  };
+
+  const handleDeleteCustomerServiceLog = async (id: string) => {
+    try {
+      await CustomerServiceLogsService.delete(id);
+      setCsLogs((prev) => prev.filter((l) => l.id !== id));
+      toast.success(lang === "ar" ? "تم حذف السجل" : "Log deleted");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to delete log");
+    }
   };
 
   const refreshAllData = async (preferredSheetId?: string | null) => {
@@ -1533,10 +1596,10 @@ export default function App() {
 
     if (status === "done") {
       updates.completed_at = new Date().toISOString();
-      // Trigger payment collection milestone if completing carpentry, painting, or delivery
+      // Trigger payment collection milestone if completing received, carpentry, or fittings
       if (
         currentStage &&
-        ["carpentry", "painting", "upholstery", "delivery"].includes(
+        ["received", "carpentry", "fittings"].includes(
           currentStage.stage,
         )
       ) {
@@ -1545,9 +1608,9 @@ export default function App() {
       }
     } else if (status === "in_progress") {
       updates.completed_at = null;
-      // Configure countdown timer for timed phases (carpentry, painting, upholstery)
+      // Configure countdown timer for timed phases (carpentry, painting, fittings: 3 to 7 days)
       const validDays = timerDays
-        ? Math.max(3, Math.min(20, Math.round(timerDays)))
+        ? Math.max(3, Math.min(7, Math.round(timerDays)))
         : currentStage?.timer_days || 7;
       updates.timer_days = validDays;
       updates.timer_started_at = new Date().toISOString();
@@ -1579,8 +1642,8 @@ export default function App() {
             s.client_id === currentStage.client_id && s.stage === nextStage.key,
         );
         if (nextStageRecord && nextStageRecord.status === "not_started") {
-          // Auto start next stage with default 7 days timer if it's a timed phase
-          const nextIsTimed = ["carpentry", "painting", "upholstery"].includes(
+          // Auto start next stage with default 7 days timer if it's a timed phase (carpentry, painting, fittings)
+          const nextIsTimed = ["carpentry", "painting", "fittings"].includes(
             nextStage.key,
           );
           const nextUpdates: any = {
@@ -5633,7 +5696,7 @@ export default function App() {
                           </div>
 
                           {/* Stats Grid */}
-                          <div className="grid gap-3 md:gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+                          <div className="grid gap-3 md:gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                             {[
                               {
                                 label:
@@ -5646,7 +5709,7 @@ export default function App() {
                                 bg: "bg-blue-100",
                                 hover: "rgba(37,99,235,0.06)",
                                 borderHover: "hover:border-blue-200/50",
-                                targetView: "customers" as const,
+                                onClick: () => setAdminSubView("customers"),
                               },
                               {
                                 label:
@@ -5661,7 +5724,7 @@ export default function App() {
                                 bg: "bg-amber-100",
                                 hover: "rgba(217,119,6,0.06)",
                                 borderHover: "hover:border-amber-200/50",
-                                targetView: "inspections" as const,
+                                onClick: () => setAdminSubView("inspections"),
                               },
                               {
                                 label:
@@ -5674,7 +5737,7 @@ export default function App() {
                                 bg: "bg-emerald-100",
                                 hover: "rgba(5,150,105,0.06)",
                                 borderHover: "hover:border-emerald-200/50",
-                                targetView: "contracted" as const,
+                                onClick: () => setAdminSubView("contracted"),
                               },
                               {
                                 label:
@@ -5687,96 +5750,339 @@ export default function App() {
                                 bg: "bg-rose-100",
                                 hover: "rgba(225,29,72,0.06)",
                                 borderHover: "hover:border-rose-200/50",
-                                targetView: "not-contracted" as const,
+                                onClick: () => setAdminSubView("not-contracted"),
                               },
                               {
                                 label:
                                   lang === "ar"
-                                    ? "أرقام الدليل"
-                                    : "Phonebook Numbers",
-                                value: new Set(
-                                  [
-                                    ...customerRecords,
-                                    ...inspections,
-                                    ...contractedCustomers,
-                                    ...notContractedCustomers,
-                                  ]
-                                    .map((r) => r.phone)
-                                    .filter(Boolean),
-                                ).size,
-                                icon: "PhoneCall",
-                                color: "text-violet-600",
-                                bg: "bg-violet-100",
-                                hover: "rgba(124,58,237,0.06)",
-                                borderHover: "hover:border-violet-200/50",
-                                targetView: "phonebook" as const,
+                                    ? "إنتاج فعلي"
+                                    : "In Production",
+                                value: contractedCustomers.filter((order) => {
+                                  const orderPhone = order.phone;
+                                  const matchingStage = orderPhone
+                                    ? stages.find((s: any) => s.client?.phones?.includes(orderPhone))
+                                    : null;
+                                  const orderClientId = matchingStage?.client_id || null;
+                                  const orderStages = orderClientId
+                                    ? stages.filter((s: any) => s.client_id === orderClientId)
+                                    : [];
+                                  return !STAGE_ORDER.every((stageDef) => {
+                                    const stageRecord = orderStages.find((s: any) => s.stage === stageDef.key);
+                                    return stageRecord?.status === "done";
+                                  });
+                                }).length,
+                                icon: "Wrench",
+                                color: "text-indigo-600",
+                                bg: "bg-indigo-100",
+                                hover: "rgba(79,70,229,0.06)",
+                                borderHover: "hover:border-indigo-200/50",
+                                onClick: () => {
+                                  setProductionFilter("in_production");
+                                  setAdminSubView("production");
+                                },
                               },
                               {
                                 label:
                                   lang === "ar"
-                                    ? "الملفات المنشورة"
-                                    : "Published Sheets",
-                                value: catalogs.length,
-                                icon: "FileSpreadsheet",
+                                    ? "خدمة العملاء"
+                                    : "Customer Service",
+                                value: csLogs.length,
+                                icon: "MessageCircle",
                                 color: "text-teal-600",
                                 bg: "bg-teal-100",
                                 hover: "rgba(13,148,136,0.06)",
                                 borderHover: "hover:border-teal-200/50",
-                                targetView: "catalogs" as const,
+                                onClick: () => {
+                                  const csEl = document.getElementById("customer-service-section");
+                                  if (csEl) {
+                                    csEl.scrollIntoView({ behavior: "smooth" });
+                                  }
+                                },
                               },
-                            ].filter((card) => {
-                              if (!canAccessTab(card.targetView)) return false;
-                              const username = userProfile?.username || "";
-                              if (username.startsWith("cs") && card.targetView === "phonebook") {
-                                return false;
-                              }
-                              return true;
-                            }).map((card) => (
+                            ].map((card) => (
                               <div
                                 key={card.label}
-                                onClick={() => setAdminSubView(card.targetView)}
-                                className={`group relative glass rounded-xl md:rounded-2xl lg:rounded-[2rem] p-4 md:p-6 lg:p-10 shadow-md md:shadow-lg lg:shadow-xl border border-white/40 ${card.borderHover} hover:shadow-lg md:hover:shadow-xl lg:hover:shadow-2xl hover:-translate-y-0.5 md:hover:-translate-y-1 transition-all duration-300 overflow-hidden cursor-pointer`}
+                                onClick={card.onClick}
+                                className={`group relative glass rounded-xl md:rounded-2xl p-4 md:p-5 shadow-md border border-white/40 ${card.borderHover} hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 overflow-hidden cursor-pointer`}
                               >
                                 <div
-                                  className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl md:rounded-2xl lg:rounded-[2rem]"
+                                  className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl md:rounded-2xl"
                                   style={{
                                     background: `linear-gradient(135deg, transparent, ${card.hover})`,
                                   }}
                                 />
-                                <div className="relative flex items-center gap-4 md:gap-5 lg:gap-8">
+                                <div className="relative flex items-center gap-3.5">
                                   <div
-                                    className={`w-12 h-12 md:w-16 md:h-16 lg:w-20 lg:h-20 rounded-xl md:rounded-2xl lg:rounded-3xl ${card.bg} ${card.color} flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-300`}
+                                    className={`w-11 h-11 md:w-13 md:h-13 rounded-xl md:rounded-2xl ${card.bg} ${card.color} flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-300`}
                                   >
                                     {card.icon === "Users" && (
-                                      <Users className="w-5 h-5 md:w-7 md:h-7 lg:w-9 lg:h-9" />
+                                      <Users className="w-5 h-5 md:w-6 md:h-6" />
                                     )}
                                     {card.icon === "Calendar" && (
-                                      <Calendar className="w-5 h-5 md:w-7 md:h-7 lg:w-9 lg:h-9" />
+                                      <Calendar className="w-5 h-5 md:w-6 md:h-6" />
                                     )}
                                     {card.icon === "CheckCircle2" && (
-                                      <CheckCircle2 className="w-5 h-5 md:w-7 md:h-7 lg:w-9 lg:h-9" />
+                                      <CheckCircle2 className="w-5 h-5 md:w-6 md:h-6" />
                                     )}
                                     {card.icon === "X" && (
-                                      <X className="w-5 h-5 md:w-7 md:h-7 lg:w-9 lg:h-9" />
+                                      <X className="w-5 h-5 md:w-6 md:h-6" />
                                     )}
-                                    {card.icon === "PhoneCall" && (
-                                      <PhoneCall className="w-5 h-5 md:w-7 md:h-7 lg:w-9 lg:h-9" />
+                                    {card.icon === "Wrench" && (
+                                      <Wrench className="w-5 h-5 md:w-6 md:h-6" />
                                     )}
-                                    {card.icon === "FileSpreadsheet" && (
-                                      <FileSpreadsheet className="w-5 h-5 md:w-7 md:h-7 lg:w-9 lg:h-9" />
+                                    {card.icon === "MessageCircle" && (
+                                      <MessageCircle className="w-5 h-5 md:w-6 md:h-6" />
                                     )}
                                   </div>
                                   <div>
-                                    <div className="relative text-2xl md:text-4xl lg:text-5xl font-bold text-zinc-900 mb-0.5 md:mb-1">
+                                    <div className="relative text-xl md:text-2xl lg:text-3xl font-bold text-zinc-900 mb-0.5">
                                       {card.value}
                                     </div>
-                                    <div className="relative text-[11px] md:text-base lg:text-lg text-zinc-500">
+                                    <div className="relative text-[11px] md:text-xs text-zinc-500 font-medium">
                                       {card.label}
                                     </div>
                                   </div>
                                 </div>
                               </div>
                             ))}
+                          </div>
+
+                          {/* Customer Service Live Section */}
+                          <div
+                            id="customer-service-section"
+                            className="glass rounded-2xl md:rounded-[2.5rem] p-5 md:p-8 lg:p-10 shadow-2xl border border-white/50 space-y-6 bg-gradient-to-br from-white via-zinc-50/50 to-teal-500/5 relative overflow-hidden"
+                          >
+                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-zinc-100">
+                              <div className="flex items-center gap-3">
+                                <div className="w-12 h-12 rounded-2xl bg-teal-500/10 text-teal-600 flex items-center justify-center">
+                                  <MessageCircle className="w-6 h-6" />
+                                </div>
+                                <div>
+                                  <h3 className="text-xl md:text-2xl font-bold text-zinc-900 flex items-center gap-2">
+                                    {lang === "ar" ? "خدمة العملاء والمتابعة الفورية" : "Customer Service & Follow-up"}
+                                    <span className="text-xs px-2.5 py-0.5 rounded-full bg-teal-100 text-teal-800 font-bold">
+                                      {csLogs.length} {lang === "ar" ? "سجل" : "records"}
+                                    </span>
+                                  </h3>
+                                  <p className="text-xs md:text-sm text-zinc-500 mt-0.5">
+                                    {lang === "ar"
+                                      ? "تسجيل ملاحظات واستفسارات العملاء بالساعة والتاريخ والرد الفوري"
+                                      : "Log customer inquiries and notes with timestamp & follow-up"}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="w-full md:w-64 relative">
+                                <Search className="w-4 h-4 text-zinc-400 absolute top-1/2 -translate-y-1/2 right-3 pointer-events-none" />
+                                <input
+                                  type="text"
+                                  placeholder={lang === "ar" ? "بحث في السجلات..." : "Search logs..."}
+                                  value={csSearchQuery}
+                                  onChange={(e) => setCsSearchQuery(e.target.value)}
+                                  className="w-full bg-white/80 border border-zinc-200 rounded-xl pr-9 pl-4 py-2 text-xs font-medium outline-none focus:border-teal-500"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Add Log Form */}
+                            <form
+                              onSubmit={handleAddCustomerServiceLog}
+                              className="bg-white/70 backdrop-blur-md rounded-2xl p-4 md:p-6 border border-white/80 shadow-sm space-y-4"
+                            >
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+                                <div>
+                                  <label className="block text-xs font-bold text-zinc-600 mb-1">
+                                    {lang === "ar" ? "اسم العميل" : "Customer Name"}
+                                  </label>
+                                  <input
+                                    type="text"
+                                    required
+                                    placeholder={lang === "ar" ? "أدخل اسم العميل..." : "Enter name..."}
+                                    value={csName}
+                                    onChange={(e) => setCsName(e.target.value)}
+                                    className="w-full bg-white border border-zinc-200 rounded-xl px-4 py-2.5 text-sm font-medium outline-none focus:border-teal-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-bold text-zinc-600 mb-1">
+                                    {lang === "ar" ? "رقم التليفون" : "Phone Number"}
+                                  </label>
+                                  <input
+                                    type="tel"
+                                    required
+                                    placeholder={lang === "ar" ? "01xxxxxxxxx" : "Phone..."}
+                                    value={csPhone}
+                                    onChange={(e) => setCsPhone(e.target.value)}
+                                    className="w-full bg-white border border-zinc-200 rounded-xl px-4 py-2.5 text-sm font-medium outline-none focus:border-teal-500 font-mono"
+                                  />
+                                </div>
+                              </div>
+                              <div>
+                                <label className="block text-xs font-bold text-zinc-600 mb-1">
+                                  {lang === "ar" ? "الملاحظة / تفاصيل الاستفسار" : "Notes / Inquiries"}
+                                </label>
+                                <textarea
+                                  required
+                                  rows={2}
+                                  placeholder={lang === "ar" ? "اكتب ملاحظة أو استفسار العميل هنا..." : "Enter note or request..."}
+                                  value={csNotes}
+                                  onChange={(e) => setCsNotes(e.target.value)}
+                                  className="w-full bg-white border border-zinc-200 rounded-xl px-4 py-2.5 text-sm font-medium outline-none focus:border-teal-500"
+                                />
+                              </div>
+                              <div className="flex flex-col sm:flex-row justify-between items-center gap-3 pt-2">
+                                <div className="text-[11px] text-zinc-400 font-medium">
+                                  {lang === "ar" ? "⏱️ يتم تسجيل الوقت والتاريخ تلقائياً بالثانية عند الحفظ" : "⏱️ Automatically timestamped upon submission"}
+                                </div>
+                                <button
+                                  type="submit"
+                                  disabled={isSavingCsLog}
+                                  className="w-full sm:w-auto bg-teal-600 hover:bg-teal-700 text-white font-bold px-6 py-2.5 rounded-xl text-xs md:text-sm shadow-md hover:shadow-teal-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+                                >
+                                  <Plus className="w-4 h-4" />
+                                  {isSavingCsLog
+                                    ? lang === "ar"
+                                      ? "جاري الحفظ..."
+                                      : "Saving..."
+                                    : lang === "ar"
+                                      ? "حفظ في خدمة العملاء"
+                                      : "Save Log"}
+                                </button>
+                              </div>
+                            </form>
+
+                            {/* Logs List Table */}
+                            <div className="space-y-3">
+                              {csLogs
+                                .filter((item) => {
+                                  if (!csSearchQuery) return true;
+                                  const q = csSearchQuery.toLowerCase();
+                                  return (
+                                    (item.customerName || "").toLowerCase().includes(q) ||
+                                    (item.phone || "").includes(q) ||
+                                    (item.notes || "").toLowerCase().includes(q)
+                                  );
+                                })
+                                .length > 0 ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
+                                  {csLogs
+                                    .filter((item) => {
+                                      if (!csSearchQuery) return true;
+                                      const q = csSearchQuery.toLowerCase();
+                                      return (
+                                        (item.customerName || "").toLowerCase().includes(q) ||
+                                        (item.phone || "").includes(q) ||
+                                        (item.notes || "").toLowerCase().includes(q)
+                                      );
+                                    })
+                                    .map((log) => {
+                                      const dateObj = new Date(log.createdAt);
+                                      const dateFormatted = Number.isNaN(dateObj.getTime())
+                                        ? log.createdAt
+                                        : dateObj.toLocaleDateString(lang === "ar" ? "ar-EG" : "en-US", {
+                                            year: "numeric",
+                                            month: "short",
+                                            day: "numeric",
+                                          });
+                                      const timeFormatted = Number.isNaN(dateObj.getTime())
+                                        ? ""
+                                        : dateObj.toLocaleTimeString(lang === "ar" ? "ar-EG" : "en-US", {
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                          });
+
+                                      return (
+                                        <div
+                                          key={log.id}
+                                          className="bg-white/80 rounded-2xl p-4 border border-zinc-200/80 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-3 relative group"
+                                        >
+                                          <div>
+                                            <div className="flex justify-between items-start mb-2">
+                                              <div>
+                                                <h4 className="font-bold text-zinc-900 text-sm md:text-base">
+                                                  {log.customerName || (lang === "ar" ? "بدون اسم" : "Unnamed")}
+                                                </h4>
+                                                <p className="text-xs text-zinc-500 font-mono mt-0.5">
+                                                  {log.phone}
+                                                </p>
+                                              </div>
+                                              <div className="text-left rtl:text-right bg-zinc-100 px-2 py-1 rounded-lg">
+                                                <div className="text-[10px] font-bold text-zinc-600">{dateFormatted}</div>
+                                                <div className="text-[9px] text-teal-600 font-bold">{timeFormatted}</div>
+                                              </div>
+                                            </div>
+                                            <p className="text-xs text-zinc-700 bg-zinc-50 p-2.5 rounded-xl border border-zinc-100 leading-relaxed break-words">
+                                              {log.notes}
+                                            </p>
+                                          </div>
+
+                                          <div className="flex items-center justify-between pt-2 border-t border-zinc-100 gap-1.5">
+                                            <div className="flex items-center gap-1">
+                                              {log.phone && (
+                                                <>
+                                                  <a
+                                                    href={`tel:${log.phone}`}
+                                                    className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                                                    title={lang === "ar" ? "اتصال" : "Call"}
+                                                  >
+                                                    <PhoneCall className="w-3.5 h-3.5" />
+                                                  </a>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                      sendWhatsAppMessage(
+                                                        log.phone,
+                                                        lang === "ar"
+                                                          ? `مرحباً ${log.customerName || ""}، بخصوص استفساركم لدى مصنع العماري للأثاث...`
+                                                          : `Hello ${log.customerName || ""}, regarding your inquiry with El-Amary Furniture...`,
+                                                      )
+                                                    }
+                                                    className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors"
+                                                    title={lang === "ar" ? "مراسلة واتساب" : "WhatsApp"}
+                                                  >
+                                                    <MessageCircle className="w-3.5 h-3.5" />
+                                                  </button>
+                                                </>
+                                              )}
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  navigator.clipboard.writeText(`${log.customerName} (${log.phone}): ${log.notes}`);
+                                                  toast.success(lang === "ar" ? "تم نسخ الملاحظة" : "Note copied");
+                                                }}
+                                                className="p-1.5 rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 transition-colors text-[10px] font-bold"
+                                                title={lang === "ar" ? "نسخ" : "Copy"}
+                                              >
+                                                <ClipboardList className="w-3.5 h-3.5" />
+                                              </button>
+                                            </div>
+
+                                            {isAdminUser && (
+                                              <button
+                                                type="button"
+                                                onClick={() => handleDeleteCustomerServiceLog(log.id)}
+                                                className="p-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+                                                title={lang === "ar" ? "حذف السجل" : "Delete"}
+                                              >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                              </button>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                </div>
+                              ) : (
+                                <div className="py-8 text-center bg-white/40 rounded-2xl border border-dashed border-zinc-200">
+                                  <MessageCircle className="w-8 h-8 text-zinc-300 mx-auto mb-2" />
+                                  <p className="text-xs text-zinc-400 font-medium">
+                                    {lang === "ar"
+                                      ? "لا توجد ملاحظات مسجلة في خدمة العملاء حالياً"
+                                      : "No customer service notes recorded yet"}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
                           </div>
 
                           {isAdminUser && renderAnalysisDashboard()}

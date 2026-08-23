@@ -328,3 +328,119 @@ export class ActivityLogService {
     await SyncManager.queueOperation("INSERT", "activity_logs", log.id, log);
   }
 }
+
+export class CustomerServiceLogsService {
+  private static STORAGE_KEY = "el3mmary_cs_logs_backup";
+
+  private static getLocalBackup(): any[] {
+    try {
+      const data = localStorage.getItem(this.STORAGE_KEY);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private static setLocalBackup(logs: any[]) {
+    try {
+      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(logs));
+    } catch (e) {
+      console.error("Local storage error:", e);
+    }
+  }
+
+  static async getAll() {
+    try {
+      if (db.customer_service_logs) {
+        const records = await db.customer_service_logs.orderBy("created_at").reverse().toArray();
+        if (records && records.length > 0) {
+          this.setLocalBackup(records);
+          return records.map((r) => ({
+            id: r.id,
+            customerName: r.customer_name,
+            phone: r.phone,
+            notes: r.notes,
+            createdAt: r.created_at,
+            createdBy: r.created_by,
+            last_modified: r.last_modified,
+          }));
+        }
+      }
+    } catch (err) {
+      console.warn("Dexie CS logs read error, falling back to storage:", err);
+    }
+    const backup = this.getLocalBackup();
+    return backup.map((r) => ({
+      id: r.id,
+      customerName: r.customer_name || r.customerName,
+      phone: r.phone,
+      notes: r.notes,
+      createdAt: r.created_at || r.createdAt,
+      createdBy: r.created_by || r.createdBy,
+      last_modified: r.last_modified,
+    }));
+  }
+
+  static async insert(item: {
+    id: string;
+    customerName: string;
+    phone: string;
+    notes: string;
+    createdAt: string;
+    createdBy?: string;
+  }) {
+    const record = {
+      id: item.id,
+      customer_name: item.customerName,
+      phone: item.phone,
+      notes: item.notes,
+      created_at: item.createdAt,
+      created_by: item.createdBy,
+      last_modified: Date.now(),
+    };
+
+    // Update localStorage backup
+    const backup = this.getLocalBackup();
+    const existingIdx = backup.findIndex((b) => b.id === item.id);
+    if (existingIdx >= 0) {
+      backup[existingIdx] = record;
+    } else {
+      backup.unshift(record);
+    }
+    this.setLocalBackup(backup);
+
+    // Save in Dexie
+    try {
+      if (db.customer_service_logs) {
+        await db.customer_service_logs.put(record);
+      }
+    } catch (err) {
+      console.warn("Dexie CS logs write error:", err);
+    }
+
+    // Also queue sync / activity log
+    try {
+      await SyncManager.queueOperation("INSERT", "activity_logs", item.id, {
+        id: item.id,
+        type: "customer_service",
+        message: `ملاحظة خدمة عملاء: ${item.customerName} - ${item.phone}`,
+        details: record,
+        created_at: item.createdAt,
+      });
+    } catch (e) {
+      console.error("Queue sync error for CS log:", e);
+    }
+  }
+
+  static async delete(id: string) {
+    const backup = this.getLocalBackup().filter((b) => b.id !== id);
+    this.setLocalBackup(backup);
+    try {
+      if (db.customer_service_logs) {
+        await db.customer_service_logs.delete(id);
+      }
+    } catch (err) {
+      console.warn("Dexie CS log delete error:", err);
+    }
+  }
+}

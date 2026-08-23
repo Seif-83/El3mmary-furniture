@@ -18,9 +18,9 @@ import type { Inspection } from "../types";
 import { STAGE_ORDER } from "../constants";
 import { InvoiceService } from "../services/data";
 
-// Helper to determine if a stage key requires / supports the 3-20 day timer
+// Helper to determine if a stage key requires / supports the 3-7 day timer
 const isTimedStage = (stageKey: string): boolean => {
-  return ["carpentry", "painting", "upholstery"].includes(stageKey);
+  return ["carpentry", "painting", "fittings"].includes(stageKey);
 };
 
 // Format remaining time in a human-readable format
@@ -33,7 +33,7 @@ const formatRemainingTime = (
   const startedAt = new Date(startedAtStr).getTime();
   if (Number.isNaN(startedAt)) return null;
 
-  const totalDurationMs = Math.max(3, Math.min(20, daysAllocated)) * 86400000;
+  const totalDurationMs = Math.max(3, Math.min(7, daysAllocated)) * 86400000;
   const targetTime = startedAt + totalDurationMs;
   const now = Date.now();
   const diffMs = targetTime - now;
@@ -106,8 +106,8 @@ export const ProductionPage: React.FC<{
   onSendWhatsApp?: (phone: string, msg: string) => void;
   onRefresh?: () => Promise<void>;
   userProfile?: { username?: string; role: string; permissions: string[] } | null;
-  productionFilter: "all" | "completed";
-  onProductionFilterChange: (filter: "all" | "completed") => void;
+  productionFilter: "all" | "in_production" | "completed";
+  onProductionFilterChange: (filter: "all" | "in_production" | "completed") => void;
 }> = ({
   contractedCustomers,
   inspections,
@@ -124,6 +124,7 @@ export const ProductionPage: React.FC<{
   onProductionFilterChange,
 }) => {
   const [govFilter, setGovFilter] = useState<"all" | "القاهرة" | "الاسكندرية">("all");
+  const [timeFilter, setTimeFilter] = useState<"all" | "overdue" | "urgent" | "active">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [, setNowTick] = useState(Date.now());
 
@@ -159,14 +160,13 @@ export const ProductionPage: React.FC<{
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentTargetOrder, setPaymentTargetOrder] = useState<Inspection | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<number | "">("");
-  const [paymentStage, setPaymentStage] = useState<string>("عند التعاقد");
+  const [paymentStage, setPaymentStage] = useState<string>("بعد تمام الاستلام");
   const [isSavingPayment, setIsSavingPayment] = useState(false);
 
   const paymentStages = [
-    "عند التعاقد",
-    "عند انتهاء النجارة واختيار اللون",
-    "قبل الاستلام بـ 48 ساعة",
-    "عند استلام الغرفة",
+    "بعد تمام الاستلام",
+    "بعد تمام النجارة",
+    "بعد تمام التجهيزات",
   ];
 
   const getCustomerPayments = (customerId: string) =>
@@ -235,12 +235,46 @@ export const ProductionPage: React.FC<{
     userProfile?.role !== "super_admin";
 
   const filteredProductionData = allProductionData.filter((order) => {
+    const isCompleted = isOrderCompleted(order);
     if (govFilter !== "all" && order.governorate !== govFilter) {
       return false;
     }
-    if (productionFilter === "completed" && !isOrderCompleted(order)) {
+    if (productionFilter === "completed" && !isCompleted) {
       return false;
     }
+    if (productionFilter === "in_production" && isCompleted) {
+      return false;
+    }
+
+    if (timeFilter !== "all") {
+      const orderPhone = order.phone;
+      const matchingStage = orderPhone
+        ? stages.find((s: any) => s.client?.phones?.includes(orderPhone))
+        : null;
+      const orderClientId = matchingStage?.client_id || null;
+      const orderStages = orderClientId
+        ? stages.filter((s: any) => s.client_id === orderClientId)
+        : [];
+      const activeInProgressStage = orderStages.find(
+        (s: any) => s.status === "in_progress",
+      );
+      const timerInfo = activeInProgressStage?.timer_started_at
+        ? formatRemainingTime(
+            activeInProgressStage.timer_started_at,
+            activeInProgressStage.timer_days || 7,
+            lang,
+          )
+        : null;
+
+      if (timeFilter === "overdue") {
+        if (!timerInfo || !timerInfo.isOverdue) return false;
+      } else if (timeFilter === "urgent") {
+        if (!timerInfo || timerInfo.isOverdue || !timerInfo.isUrgent) return false;
+      } else if (timeFilter === "active") {
+        if (!timerInfo || timerInfo.isOverdue) return false;
+      }
+    }
+
     return (
       !searchQuery ||
       (order.customerName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -248,7 +282,7 @@ export const ProductionPage: React.FC<{
     );
   });
 
-  // Open Timer Duration Selection Modal (3 to 20 days)
+  // Open Timer Duration Selection Modal (3 to 7 days only)
   const handleOpenTimerModal = (
     stageRecord: any,
     stageDef: (typeof STAGE_ORDER)[number],
@@ -256,7 +290,7 @@ export const ProductionPage: React.FC<{
     isEditOnly: boolean = false,
   ) => {
     const existingDays = stageRecord?.timer_days || 7;
-    setSelectedDuration(Math.max(3, Math.min(20, existingDays)));
+    setSelectedDuration(Math.max(3, Math.min(7, existingDays)));
     setTimerStageData({
       stageRecord,
       stageDef,
@@ -270,7 +304,7 @@ export const ProductionPage: React.FC<{
   // Confirm Timer duration & trigger stage transition to "in_progress"
   const handleConfirmTimer = () => {
     if (!timerStageData) return;
-    const days = Math.max(3, Math.min(20, Math.round(selectedDuration)));
+    const days = Math.max(3, Math.min(7, Math.round(selectedDuration)));
     onStageUpdate(timerStageData.stageRecord.id, "in_progress", days);
     setTimerModalOpen(false);
     toast.success(
@@ -296,15 +330,13 @@ export const ProductionPage: React.FC<{
         // Admin untoggles: done -> not_started
         onStageUpdate(stageRecord.id, "not_started");
       } else {
-        // Marking as DONE: trigger payment collection if completing carpentry, painting, or delivery
+        // Marking as DONE: trigger payment collection ONLY if completing received, carpentry, or fittings
         onStageUpdate(stageRecord.id, "done");
 
-        if (["carpentry", "painting", "upholstery", "delivery"].includes(stageDef.key)) {
-          let installmentName = "عند التعاقد";
-          if (stageDef.key === "carpentry") installmentName = "عند انتهاء النجارة واختيار اللون";
-          else if (stageDef.key === "painting") installmentName = "قبل الاستلام بـ 48 ساعة";
-          else if (stageDef.key === "delivery" || stageDef.key === "upholstery")
-            installmentName = "عند استلام الغرفة";
+        if (["received", "carpentry", "fittings"].includes(stageDef.key)) {
+          let installmentName = "بعد تمام الاستلام";
+          if (stageDef.key === "carpentry") installmentName = "بعد تمام النجارة";
+          else if (stageDef.key === "fittings") installmentName = "بعد تمام التجهيزات";
 
           const totalPaid = getCustomerPayments(order.id).reduce(
             (sum, p) => sum + (Number(p.amount) || 0),
@@ -358,21 +390,21 @@ export const ProductionPage: React.FC<{
     const remaining = (order.totalAmount || 0) - totalPaid;
 
     let msg = "";
-    if (stageKey === "carpentry") {
+    if (stageKey === "fittings") {
+      msg =
+        lang === "ar"
+          ? `مرحباً ${order.customerName || ""}،\nيسعدنا إبلاغكم بانتهاء مرحلة التجهيزات لطلبكم في مصنع العماري للأثاث.\nنرجو التكرم بسداد دفعة التجهيزات لتأكيد مواعيد التسليم النهائي.\nالمبلغ المتبقي: ${remaining.toLocaleString()} ج.م.\nشكراً لثقتكم واختياركم لنا!`
+          : `Hello ${order.customerName || ""},\nWe are pleased to inform you that the Fittings phase for your order at El-Amary Furniture is completed.\nPlease proceed with the payment to confirm delivery schedule.\nRemaining balance: ${remaining.toLocaleString()} EGP.\nThank you!`;
+    } else if (stageKey === "carpentry") {
       msg =
         lang === "ar"
           ? `مرحباً ${order.customerName || ""}،\nيسعدنا إبلاغكم بانتهاء مرحلة النجارة لطلبكم في مصنع العماري للأثاث.\nنرجو التكرم بسداد دفعة المرحلة واختيار الألوان للبدء في مرحلة الدهانات.\nالمبلغ المتبقي: ${remaining.toLocaleString()} ج.م.\nشكراً لثقتكم واختياركم لنا!`
           : `Hello ${order.customerName || ""},\nWe are pleased to inform you that the Carpentry phase for your order at El-Amary Furniture is completed.\nPlease proceed with the installment payment and color selection to begin the Painting phase.\nRemaining balance: ${remaining.toLocaleString()} EGP.\nThank you!`;
-    } else if (stageKey === "painting") {
-      msg =
-        lang === "ar"
-          ? `مرحباً ${order.customerName || ""}،\nيسعدنا إبلاغكم بانتهاء مرحلة الدهانات لطلبكم في مصنع العماري للأثاث.\nيرجى التكرم بسداد دفعة المرحلة لمتابعة تجهيز الطلب للتسليم النهائي.\nالمبلغ المتبقي: ${remaining.toLocaleString()} ج.م.\nشكراً لتعاملكم معنا!`
-          : `Hello ${order.customerName || ""},\nWe are pleased to inform you that the Painting phase for your order at El-Amary Furniture is completed.\nPlease settle the phase payment to continue with final delivery preparation.\nRemaining balance: ${remaining.toLocaleString()} EGP.\nThank you!`;
     } else {
       msg =
         lang === "ar"
-          ? `مرحباً ${order.customerName || ""}،\nنود إعلامكم بأن طلبكم في مصنع العماري للأثاث جاهز بالكامل للتسليم.\nيرجى سداد المبلغ المتبقي (${remaining.toLocaleString()} ج.م) لتأكيد وترتيب موعد الشحن والتسليم.\nشكراً لثقتكم الغالية!`
-          : `Hello ${order.customerName || ""},\nYour order at El-Amary Furniture is now fully ready for delivery.\nPlease settle the remaining balance (${remaining.toLocaleString()} EGP) to confirm shipment.\nThank you for choosing us!`;
+          ? `مرحباً ${order.customerName || ""}،\nتم استلام وتأكيد طلبكم في مصنع العماري للأثاث.\nيرجى التكرم بسداد دفعة التعاقد / الاستلام لتأكيد بدء مراحل العمل بالورشة.\nالمبلغ المتبقي: ${remaining.toLocaleString()} ج.م.\nشكراً لتعاملكم معنا!`
+          : `Hello ${order.customerName || ""},\nYour order at El-Amary Furniture has been received and confirmed.\nPlease settle the intake deposit to commence production.\nRemaining balance: ${remaining.toLocaleString()} EGP.\nThank you for choosing us!`;
     }
 
     onSendWhatsApp(order.phone, msg);
@@ -408,39 +440,41 @@ export const ProductionPage: React.FC<{
 
       const newPayment = {
         id: crypto.randomUUID(),
-        client_id: null,
-        visit_id: null,
         amount: Number(paymentAmount),
         paid_at: new Date().toISOString(),
         installment: paymentStage,
-        note: `cc:${paymentTargetOrder.id}:${paymentTargetOrder.customerName}`,
+        note: `cc:${paymentTargetOrder.id}:${paymentStage}`,
         created_at: new Date().toISOString(),
       };
 
-      await InvoiceService.insert(newPayment);
+      await InvoiceService.savePayment(newPayment);
+
       if (onRefresh) await onRefresh();
 
-      if (paymentTargetOrder.phone && onSendWhatsApp) {
+      toast.success(
+        lang === "ar"
+          ? `تم تسجيل دفعة بقيمة ${paymentAmount} ج.م بنجاح`
+          : `Payment of ${paymentAmount} EGP recorded successfully`,
+      );
+
+      if (onSendWhatsApp && paymentTargetOrder.phone) {
         const msg =
           lang === "ar"
             ? `مرحباً ${paymentTargetOrder.customerName || ""},\nتم استلام دفعة بقيمة ${paymentAmount} جنيه (مرحلة: ${paymentStage}).\nالمتبقي من إجمالي الحساب: ${remaining} جنيه.\nشكراً لك!`
-            : `Hello ${paymentTargetOrder.customerName || ""},\nA payment of ${paymentAmount} EGP has been received (Stage: ${paymentStage}).\nRemaining balance: ${remaining} EGP.\nThank you!`;
+            : `Hello ${paymentTargetOrder.customerName || ""},\nPayment of ${paymentAmount} EGP received (Stage: ${paymentStage}).\nRemaining balance: ${remaining} EGP.\nThank you!`;
         onSendWhatsApp(paymentTargetOrder.phone, msg);
       }
 
-      toast.success(
-        lang === "ar" ? "تم تسجيل الدفعة بنجاح" : "Payment recorded successfully",
-      );
       setPaymentModalOpen(false);
       setCollectionModalOpen(false);
     } catch (err: any) {
-      toast.error(err.message || "Error saving payment");
+      toast.error(err?.message || "Failed to save payment");
     } finally {
       setIsSavingPayment(false);
     }
   };
 
-  // Detect pending payment collection milestone for an order
+  // Detect pending payment collection milestone for an order (only received, carpentry, fittings)
   const getOrderCollectionMilestone = (order: Inspection, orderStages: any[]) => {
     const totalPaid = getCustomerPayments(order.id).reduce(
       (sum, p) => sum + (Number(p.amount) || 0),
@@ -449,31 +483,31 @@ export const ProductionPage: React.FC<{
     const remaining = (order.totalAmount || 0) - totalPaid;
     if (remaining <= 0) return null;
 
-    const deliveryStage = orderStages.find((s) => s.stage === "delivery");
-    const paintingStage = orderStages.find((s) => s.stage === "painting");
+    const fittingsStage = orderStages.find((s) => s.stage === "fittings");
     const carpentryStage = orderStages.find((s) => s.stage === "carpentry");
+    const receivedStage = orderStages.find((s) => s.stage === "received");
 
-    if (deliveryStage?.status === "done") {
+    if (fittingsStage?.status === "done") {
       return {
-        key: "delivery",
-        stageName: lang === "ar" ? "التسليم النهائي" : "Final Delivery",
-        installmentName: "عند استلام الغرفة",
-        remaining,
-      };
-    }
-    if (paintingStage?.status === "done") {
-      return {
-        key: "painting",
-        stageName: lang === "ar" ? "انتهاء الدهانات" : "Painting Completed",
-        installmentName: "قبل الاستلام بـ 48 ساعة",
+        key: "fittings",
+        stageName: lang === "ar" ? "تمام التجهيزات" : "Fittings Completed",
+        installmentName: "بعد تمام التجهيزات",
         remaining,
       };
     }
     if (carpentryStage?.status === "done") {
       return {
         key: "carpentry",
-        stageName: lang === "ar" ? "انتهاء النجارة" : "Carpentry Completed",
-        installmentName: "عند انتهاء النجارة واختيار اللون",
+        stageName: lang === "ar" ? "تمام النجارة" : "Carpentry Completed",
+        installmentName: "بعد تمام النجارة",
+        remaining,
+      };
+    }
+    if (receivedStage?.status === "done") {
+      return {
+        key: "received",
+        stageName: lang === "ar" ? "تمام الاستلام" : "Intake Completed",
+        installmentName: "بعد تمام الاستلام",
         remaining,
       };
     }
@@ -491,12 +525,12 @@ export const ProductionPage: React.FC<{
             </h1>
             <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 text-amber-600 border border-amber-500/20 rounded-full text-xs font-bold">
               <Timer className="w-3.5 h-3.5 animate-spin" style={{ animationDuration: "12s" }} />
-              {lang === "ar" ? "مؤقتات المراحل (3-20 يوم)" : "Phase Timers (3-20d)"}
+              {lang === "ar" ? "مؤقتات المراحل (3-7 أيام)" : "Phase Timers (3-7d)"}
             </span>
           </div>
           <p className="text-zinc-500 mt-2">
             {lang === "ar"
-              ? "تابع مراحل الإنتاج ومؤقتات النجارة والدهانات والتنجيد ومطالبات الدفعات"
+              ? "تابع مراحل الإنتاج ومؤقتات النجارة والدهانات والتجهيزات ومطالبات الدفعات"
               : "Track production stages, countdown timers, and payment collection milestones"}
           </p>
         </div>
@@ -520,6 +554,7 @@ export const ProductionPage: React.FC<{
             )}
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">
+            {/* Status Filters: All, Actual Production (In-Progress), Completed */}
             <div className="flex items-center gap-1.5 flex-wrap">
               <button
                 onClick={() => onProductionFilterChange("all")}
@@ -528,14 +563,22 @@ export const ProductionPage: React.FC<{
                 {lang === "ar" ? "الكل" : "All"}
               </button>
               <button
+                onClick={() => onProductionFilterChange("in_production")}
+                className={`filter-chip ${productionFilter === "in_production" ? "filter-chip-active" : "filter-chip-inactive"}`}
+              >
+                {lang === "ar" ? "إنتاج فعلي" : "In Production"}
+              </button>
+              <button
                 onClick={() => onProductionFilterChange("completed")}
                 className={`filter-chip ${productionFilter === "completed" ? "filter-chip-active" : "filter-chip-inactive"}`}
               >
-                {lang === "ar" ? "الطلبات الجاهزة والمكتملة" : "Ready & Completed Orders"}
+                {lang === "ar" ? "مكتمل" : "Completed"}
               </button>
             </div>
+
+            {/* City Filters */}
             {showCityFilter ? (
-              <>
+              <div className="flex items-center gap-1.5 flex-wrap border-r rtl:border-r-0 rtl:border-l border-zinc-200/80 pr-1.5 rtl:pr-0 rtl:pl-1.5">
                 <button
                   onClick={() => setGovFilter("all")}
                   className={`filter-chip ${govFilter === "all" ? "filter-chip-active" : "filter-chip-inactive"}`}
@@ -546,15 +589,15 @@ export const ProductionPage: React.FC<{
                   onClick={() => setGovFilter("القاهرة")}
                   className={`filter-chip ${govFilter === "القاهرة" ? "filter-chip-active" : "filter-chip-inactive"}`}
                 >
-                  {lang === "ar" ? "القاهرة" : "Cairo"}
+                  {lang === "ar" ? "قاهرة" : "Cairo"}
                 </button>
                 <button
                   onClick={() => setGovFilter("الاسكندرية")}
                   className={`filter-chip ${govFilter === "الاسكندرية" ? "filter-chip-active" : "filter-chip-inactive"}`}
                 >
-                  {lang === "ar" ? "الاسكندرية" : "Alexandria"}
+                  {lang === "ar" ? "أسكندرية" : "Alexandria"}
                 </button>
-              </>
+              </div>
             ) : (
               <span className="text-xs font-bold text-zinc-400 bg-white/40 px-3 py-1.5 rounded-full border border-white/60">
                 {hasAlex
@@ -566,6 +609,37 @@ export const ProductionPage: React.FC<{
                     : "Cairo Branch"}
               </span>
             )}
+
+            {/* Time Filter */}
+            <div className="flex items-center gap-1.5 flex-wrap border-r rtl:border-r-0 rtl:border-l border-zinc-200/80 pr-1.5 rtl:pr-0 rtl:pl-1.5">
+              <button
+                onClick={() => setTimeFilter("all")}
+                className={`filter-chip ${timeFilter === "all" ? "filter-chip-active" : "filter-chip-inactive"}`}
+                title={lang === "ar" ? "فلتر الوقت: الكل" : "Time filter: All"}
+              >
+                <Clock className="w-3 h-3 inline-block mr-1 rtl:mr-0 rtl:ml-1" />
+                {lang === "ar" ? "الوقت" : "Time"}
+              </button>
+              {timeFilter !== "all" && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">
+                  {timeFilter === "overdue" && (lang === "ar" ? "متأخر 🔴" : "Overdue 🔴")}
+                  {timeFilter === "urgent" && (lang === "ar" ? "عاجل 🟡" : "Urgent 🟡")}
+                  {timeFilter === "active" && (lang === "ar" ? "ساري 🟢" : "Active 🟢")}
+                </span>
+              )}
+              <button
+                onClick={() => setTimeFilter("overdue")}
+                className={`filter-chip text-rose-600 ${timeFilter === "overdue" ? "bg-rose-500 text-white shadow-md" : "filter-chip-inactive hover:text-rose-700"}`}
+              >
+                {lang === "ar" ? "متأخر" : "Overdue"}
+              </button>
+              <button
+                onClick={() => setTimeFilter("urgent")}
+                className={`filter-chip text-amber-600 ${timeFilter === "urgent" ? "bg-amber-500 text-white shadow-md" : "filter-chip-inactive hover:text-amber-700"}`}
+              >
+                {lang === "ar" ? "عاجل" : "Urgent"}
+              </button>
+            </div>
           </div>
           <div className="glass px-4 py-3 rounded-2xl min-w-[90px]">
             <div className="text-[10px] uppercase font-bold text-zinc-400">
@@ -917,7 +991,7 @@ export const ProductionPage: React.FC<{
         </div>
       )}
 
-      {/* ===================== TIMER DURATION CONFIGURATION MODAL (3 - 20 DAYS) ===================== */}
+      {/* ===================== TIMER DURATION CONFIGURATION MODAL (3 - 7 DAYS) ===================== */}
       <AnimatePresence>
         {timerModalOpen && timerStageData && (
           <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
@@ -964,7 +1038,7 @@ export const ProductionPage: React.FC<{
                     {lang === "ar" ? "المدة المحددة (بالأيام)" : "Duration (Days)"}
                   </span>
                   <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
-                    {lang === "ar" ? "الحد المسموح: 3 - 20 يوماً" : "Allowed: 3 - 20 days"}
+                    {lang === "ar" ? "الحد المسموح: 3 - 7 أيام فقط" : "Allowed: 3 - 7 days only"}
                   </span>
                 </div>
 
@@ -982,12 +1056,12 @@ export const ProductionPage: React.FC<{
                   <input
                     type="number"
                     min="3"
-                    max="20"
+                    max="7"
                     value={selectedDuration}
                     onChange={(e) => {
                       const val = Number(e.target.value);
                       if (!Number.isNaN(val)) {
-                        setSelectedDuration(Math.max(3, Math.min(20, val)));
+                        setSelectedDuration(Math.max(3, Math.min(7, val)));
                       }
                     }}
                     className="flex-1 text-center py-3 text-2xl font-bold bg-white rounded-2xl border border-zinc-200 outline-none focus:border-indigo-500 font-mono"
@@ -995,7 +1069,7 @@ export const ProductionPage: React.FC<{
                   <button
                     type="button"
                     onClick={() =>
-                      setSelectedDuration((prev) => Math.min(20, prev + 1))
+                      setSelectedDuration((prev) => Math.min(7, prev + 1))
                     }
                     className="w-12 h-12 rounded-2xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xl font-bold flex items-center justify-center transition-colors"
                   >
@@ -1006,15 +1080,15 @@ export const ProductionPage: React.FC<{
                 {/* Quick Presets */}
                 <div className="space-y-1.5">
                   <span className="text-[11px] font-semibold text-zinc-400">
-                    {lang === "ar" ? "خيارات سريعة:" : "Quick presets:"}
+                    {lang === "ar" ? "خيارات سريعة (من 3 لـ 7 أيام):" : "Quick presets (3 - 7 days):"}
                   </span>
                   <div className="flex flex-wrap gap-2">
-                    {[3, 5, 7, 10, 14, 20].map((days) => (
+                    {[3, 4, 5, 6, 7].map((days) => (
                       <button
                         key={days}
                         type="button"
                         onClick={() => setSelectedDuration(days)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
                           selectedDuration === days
                             ? "bg-indigo-600 text-white shadow-md scale-105"
                             : "bg-white/80 text-zinc-600 hover:bg-white border border-zinc-200"

@@ -171,6 +171,16 @@ export interface SyncQueueItem {
   errorMessage?: string;
 }
 
+export interface LocalCustomerServiceLog {
+  id: string;
+  customer_name: string;
+  phone: string;
+  notes: string;
+  created_at: string;
+  created_by?: string;
+  last_modified: number;
+}
+
 // A tombstone marks a record as "deleted locally, waiting for (or confirming)
 // remote deletion". While a tombstone exists for a (tableName, recordId) pair,
 // resolveConflict() must never resurrect that record locally, even if a stale
@@ -193,6 +203,7 @@ export class FurnitureDB extends Dexie {
   production_stages!: Table<LocalProductionStage>;
   clients!: Table<LocalClient>;
   activity_logs!: Table<LocalActivityLog>;
+  customer_service_logs!: Table<LocalCustomerServiceLog>;
   app_settings!: Table<LocalAppSetting>;
   sync_queue!: Table<SyncQueueItem>;
   tombstones!: Table<LocalTombstone>;
@@ -216,6 +227,10 @@ export class FurnitureDB extends Dexie {
     // race between the DELETE sync and refreshAllData()'s direct remote read.
     this.version(2).stores({
       tombstones: "id, tableName, recordId, deletedAt",
+    });
+    // v3: add customer_service_logs table for direct home logging
+    this.version(3).stores({
+      customer_service_logs: "id, phone, created_at, last_modified",
     });
   }
 }

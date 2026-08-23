@@ -113,10 +113,20 @@ export interface ProductionStageRecord {
   stage: string;
   status: "not_started" | "in_progress" | "done" | string;
   completed_at?: string | null;
-  timer_days?: number; // Configurable duration: 3 to 20 days
+  timer_days?: number; // Configurable duration: 3 to 7 days
   timer_started_at?: string | null; // ISO string timestamp when phase timer started
   payment_requested?: boolean; // Payment collection trigger milestone flag
   payment_requested_at?: string | null; // When payment collection was triggered
   created_at?: string;
   client?: { phones: string[] };
+}
+
+export interface CustomerServiceLog {
+  id: string;
+  customerName: string;
+  phone: string;
+  notes: string;
+  createdAt: string; // ISO string timestamp
+  createdBy?: string;
+  last_modified?: number;
 }
