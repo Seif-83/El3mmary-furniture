@@ -113,10 +113,13 @@ export interface ProductionStageRecord {
   stage: string;
   status: "not_started" | "in_progress" | "done" | string;
   completed_at?: string | null;
-  timer_days?: number; // Configurable duration: 3 to 7 days
+  timer_days?: number; // Configurable duration in days
+  customer_days?: number; // Duration communicated to customer (+5 days buffer)
   timer_started_at?: string | null; // ISO string timestamp when phase timer started
   payment_requested?: boolean; // Payment collection trigger milestone flag
   payment_requested_at?: string | null; // When payment collection was triggered
+  storage_warning_dismissed_at?: string | null; // Admin dismissal timestamp for storage overdue warnings (repeats every 7 days)
+  images?: string[]; // Stage photo attachments (e.g. carpentry, painting photos)
   created_at?: string;
   client?: { phones: string[] };
 }

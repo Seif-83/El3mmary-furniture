@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { motion } from "motion/react";
 import { 
   Armchair, 
@@ -15,9 +15,17 @@ import {
   Timer,
   Clock,
   Sparkles,
-  AlertTriangle
+  AlertTriangle,
+  MessageSquare,
+  Send,
+  Camera,
+  Eye,
+  X,
 } from "lucide-react";
+import { AnimatePresence } from "motion/react";
+import toast from "react-hot-toast";
 import { STAGE_ORDER } from "../constants";
+import { CustomerServiceLogsService } from "../services/data";
 
 // Helper to format remaining timer for customer
 const formatCustomerRemainingTime = (
@@ -79,6 +87,45 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
   onLogout,
 }) => {
   const isAr = lang === "ar";
+  const [feedbackText, setFeedbackText] = useState("");
+  const [feedbackType, setFeedbackType] = useState<"شكوى" | "مقترح" | "استفسار">("مقترح");
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const [feedbackSuccess, setFeedbackSuccess] = useState(false);
+  const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
+
+  // Submit Feedback / Complaint to Customer Service
+  const handleSubmitFeedback = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!feedbackText.trim()) return;
+
+    setIsSubmittingFeedback(true);
+    try {
+      const newLog = {
+        id: crypto.randomUUID(),
+        customerName:
+          customerRecord.customerName ||
+          customerRecord.customer_name ||
+          "عميل البوابة",
+        phone: customerRecord.phone || "",
+        notes: `[${feedbackType} من العميل عبر البوابة]: ${feedbackText.trim()}`,
+        createdAt: new Date().toISOString(),
+        createdBy: "بوابة العميل",
+      };
+
+      await CustomerServiceLogsService.insert(newLog);
+      setFeedbackText("");
+      setFeedbackSuccess(true);
+      toast.success(
+        isAr
+          ? "تم إرسال رسالتكم لخدمة العملاء بنجاح وسيتم الرد عليكم فوراً"
+          : "Your message has been sent to Customer Service successfully",
+      );
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to send message");
+    } finally {
+      setIsSubmittingFeedback(false);
+    }
+  };
 
   // Filter payments belonging to this customer
   const customerPhone = customerRecord.phone;
@@ -488,6 +535,35 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                               ? (isAr ? "هذه المرحلة قيد العمل حالياً بالمصنع" : "This stage is currently in progress") 
                               : (isAr ? "مرحلة معلقة لم تبدأ بعد" : "Pending start")}
                         </p>
+
+                        {/* Stage Photos Gallery (Carpentry & Painting photos) */}
+                        {stageRecord?.images && stageRecord.images.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-zinc-200/60">
+                            <span className="text-[11px] font-bold text-zinc-700 mb-2 flex items-center gap-1.5">
+                              <Camera className="w-3.5 h-3.5 text-indigo-600" />
+                              {isAr ? "📸 صور تنفيذ هذه المرحلة بالمصنع:" : "📸 Stage progress photos:"}
+                            </span>
+                            <div className="flex gap-2 flex-wrap mt-1.5">
+                              {stageRecord.images.map((img: string, imgIdx: number) => (
+                                <button
+                                  key={imgIdx}
+                                  type="button"
+                                  onClick={() => setPreviewPhoto(img)}
+                                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border border-zinc-200 shadow-sm hover:scale-105 hover:shadow-md transition-all group relative cursor-pointer"
+                                >
+                                  <img
+                                    src={img}
+                                    alt={`Stage photo ${imgIdx + 1}`}
+                                    className="w-full h-full object-cover"
+                                  />
+                                  <div className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
+                                    <Eye className="w-5 h-5" />
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                       <span className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold ${
                         isDone 
@@ -554,8 +630,136 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
               </div>
             )}
           </motion.div>
+
+          {/* Complaints & Suggestions Card */}
+          <motion.div 
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="glass rounded-[2.5rem] p-8 md:p-10 shadow-xl border border-white/40 relative overflow-hidden"
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 bg-amber-500/10 rounded-2xl flex items-center justify-center text-amber-600">
+                <MessageSquare className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-2xl font-bold text-zinc-900">
+                  {isAr ? "الشكاوى والمقترحات" : "Complaints & Suggestions"}
+                </h3>
+                <p className="text-zinc-500 text-xs mt-0.5">
+                  {isAr
+                    ? "صوتك يهمنا - اكتب مقترحك أو ملاحظتك وستصل مباشرة لفريق خدمة العملاء"
+                    : "Your feedback matters - write your suggestions or complaints directly to CS"}
+                </p>
+              </div>
+            </div>
+
+            {feedbackSuccess && (
+              <div className="mb-6 p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm flex items-center gap-3">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                <span>
+                  {isAr
+                    ? "تم استلام رسالتك بنجاح وسيتواصل معك فريق خدمة العملاء في أقرب وقت."
+                    : "Your feedback has been received. Our customer care team will review it promptly."}
+                </span>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitFeedback} className="space-y-4">
+              {/* Type Selector */}
+              <div>
+                <label className="text-xs font-bold text-zinc-600 block mb-2">
+                  {isAr ? "نوع الرسالة:" : "Message Type:"}
+                </label>
+                <div className="flex gap-2 flex-wrap">
+                  {(["مقترح", "شكوى", "استفسار"] as const).map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => setFeedbackType(type)}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        feedbackType === type
+                          ? "bg-zinc-900 text-white shadow-md scale-105"
+                          : "bg-white/80 text-zinc-600 hover:bg-white border border-zinc-200"
+                      }`}
+                    >
+                      {type === "مقترح"
+                        ? isAr ? "💡 مقترح" : "💡 Suggestion"
+                        : type === "شكوى"
+                          ? isAr ? "⚠️ شكوى" : "⚠️ Complaint"
+                          : isAr ? "❓ استفسار" : "❓ Inquiry"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Message Textarea */}
+              <div>
+                <label className="text-xs font-bold text-zinc-600 block mb-2">
+                  {isAr ? "تفاصيل المقترح أو الشكوى:" : "Details:"}
+                </label>
+                <textarea
+                  rows={4}
+                  value={feedbackText}
+                  onChange={(e) => setFeedbackText(e.target.value)}
+                  placeholder={
+                    isAr
+                      ? "اكتب تفاصيل مقترحك أو شكواك هنا بكل وضوح وسنقوم بمتابعتها فوراً..."
+                      : "Type your message or complaint here..."
+                  }
+                  required
+                  className="w-full bg-white/80 border border-zinc-200 rounded-2xl p-4 text-sm font-medium text-zinc-800 outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-sm resize-none"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmittingFeedback || !feedbackText.trim()}
+                className="w-full bg-zinc-900 hover:bg-zinc-800 text-white py-3.5 px-6 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 disabled:opacity-50 cursor-pointer"
+              >
+                <Send className="w-4 h-4" />
+                {isSubmittingFeedback
+                  ? isAr ? "جاري الإرسال..." : "Sending..."
+                  : isAr ? "إرسال إلى خدمة العملاء" : "Send to Customer Service"}
+              </button>
+            </form>
+          </motion.div>
         </div>
       </main>
+
+      {/* Fullscreen Photo Lightbox Modal */}
+      <AnimatePresence>
+        {previewPhoto && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+            onClick={() => setPreviewPhoto(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative max-w-4xl max-h-[90vh] bg-zinc-900 rounded-3xl overflow-hidden shadow-2xl border border-zinc-800"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() => setPreviewPhoto(null)}
+                className="absolute top-4 right-4 z-10 w-10 h-10 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/90 transition-all cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <img
+                src={previewPhoto}
+                alt="Stage photo full view"
+                className="max-h-[85vh] w-auto object-contain mx-auto"
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

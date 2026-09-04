@@ -12,13 +12,18 @@ import {
   Send,
   Plus,
   Sparkles,
+  Camera,
+  Image as ImageIcon,
+  Trash2,
+  Upload,
+  Eye,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import type { Inspection } from "../types";
 import { STAGE_ORDER } from "../constants";
-import { InvoiceService } from "../services/data";
+import { InvoiceService, StageService } from "../services/data";
 
-// Helper to determine if a stage key requires / supports the 3-7 day timer
+// Helper to determine if a stage key requires / supports the duration timer
 const isTimedStage = (stageKey: string): boolean => {
   return ["carpentry", "painting", "fittings"].includes(stageKey);
 };
@@ -33,7 +38,7 @@ const formatRemainingTime = (
   const startedAt = new Date(startedAtStr).getTime();
   if (Number.isNaN(startedAt)) return null;
 
-  const totalDurationMs = Math.max(3, Math.min(7, daysAllocated)) * 86400000;
+  const totalDurationMs = Math.max(1, Math.min(60, daysAllocated)) * 86400000;
   const targetTime = startedAt + totalDurationMs;
   const now = Date.now();
   const diffMs = targetTime - now;
@@ -94,6 +99,58 @@ const formatRemainingTime = (
   };
 };
 
+// Calculate Storage Overdue Warning (Exceeding 7 days, repeating every 7 days unless dismissed by admin)
+const getStorageOverdueInfo = (order: Inspection, orderStages: any[]) => {
+  const deliveryStage = orderStages.find((s: any) => s.stage === "delivery");
+  if (deliveryStage?.status === "done") return null;
+
+  const inventoryStage = orderStages.find((s: any) => s.stage === "inventory");
+  const fittingsStage = orderStages.find((s: any) => s.stage === "fittings");
+
+  // If inventory stage exists or fittings completed waiting for delivery
+  const isStored =
+    inventoryStage?.status === "in_progress" ||
+    inventoryStage?.status === "done" ||
+    (fittingsStage?.status === "done" && deliveryStage?.status !== "done");
+
+  if (!isStored && !inventoryStage) return null;
+
+  const startRef =
+    inventoryStage?.timer_started_at ||
+    inventoryStage?.created_at ||
+    fittingsStage?.completed_at ||
+    order.contractDate;
+
+  if (!startRef) return null;
+
+  const startMs = new Date(startRef).getTime();
+  if (Number.isNaN(startMs)) return null;
+
+  const now = Date.now();
+  const daysInStorage = Math.floor((now - startMs) / 86400000);
+
+  if (daysInStorage >= 7) {
+    const dismissedAt = inventoryStage?.storage_warning_dismissed_at;
+    if (dismissedAt) {
+      const dismissedMs = new Date(dismissedAt).getTime();
+      if (!Number.isNaN(dismissedMs)) {
+        const daysSinceDismissal = Math.floor((now - dismissedMs) / 86400000);
+        if (daysSinceDismissal < 7) {
+          return null; // Dismissed within last 7 days
+        }
+      }
+    }
+    return {
+      isOverdue: true,
+      daysInStorage,
+      stageRecord: inventoryStage || fittingsStage,
+      lastDismissedAt: dismissedAt,
+    };
+  }
+
+  return null;
+};
+
 export const ProductionPage: React.FC<{
   contractedCustomers: Inspection[];
   inspections: Inspection[];
@@ -124,7 +181,7 @@ export const ProductionPage: React.FC<{
   onProductionFilterChange,
 }) => {
   const [govFilter, setGovFilter] = useState<"all" | "القاهرة" | "الاسكندرية">("all");
-  const [timeFilter, setTimeFilter] = useState<"all" | "overdue" | "urgent" | "active">("all");
+  const [timeFilter, setTimeFilter] = useState<"all" | "overdue" | "urgent" | "active" | "storage">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [, setNowTick] = useState(Date.now());
 
@@ -162,6 +219,73 @@ export const ProductionPage: React.FC<{
   const [paymentAmount, setPaymentAmount] = useState<number | "">("");
   const [paymentStage, setPaymentStage] = useState<string>("بعد تمام الاستلام");
   const [isSavingPayment, setIsSavingPayment] = useState(false);
+
+  // Stage Photos Modal State (Carpentry & Painting photos)
+  const [photoModalOpen, setPhotoModalOpen] = useState(false);
+  const [photoStageData, setPhotoStageData] = useState<{
+    stageRecord: any;
+    stageDef: (typeof STAGE_ORDER)[number];
+    order: Inspection;
+  } | null>(null);
+  const [stageImages, setStageImages] = useState<string[]>([]);
+  const [isSavingPhotos, setIsSavingPhotos] = useState(false);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  const handleOpenPhotoModal = (
+    stageRecord: any,
+    stageDef: (typeof STAGE_ORDER)[number],
+    order: Inspection,
+  ) => {
+    setPhotoStageData({ stageRecord, stageDef, order });
+    setStageImages(stageRecord?.images || []);
+    setPhotoModalOpen(true);
+  };
+
+  const handleUploadPhotoFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (uploadEvent) => {
+        const result = uploadEvent.target?.result as string;
+        if (result) {
+          setStageImages((prev) => [...prev, result]);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = "";
+  };
+
+  const handleRemovePhoto = (index: number) => {
+    setStageImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSaveStagePhotos = async () => {
+    if (!photoStageData?.stageRecord?.id) return;
+    setIsSavingPhotos(true);
+    try {
+      await StageService.updateStatus(
+        photoStageData.stageRecord.id,
+        photoStageData.stageRecord.status || "in_progress",
+        {
+          images: stageImages,
+        },
+      );
+      if (onRefresh) await onRefresh();
+      toast.success(
+        lang === "ar"
+          ? "تم حفظ صور المرحلة بنجاح وتظهر للعميل في بوابته"
+          : "Stage photos saved successfully and are now visible to customer",
+      );
+      setPhotoModalOpen(false);
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to save photos");
+    } finally {
+      setIsSavingPhotos(false);
+    }
+  };
 
   const paymentStages = [
     "بعد تمام الاستلام",
@@ -205,10 +329,16 @@ export const ProductionPage: React.FC<{
       ? stages.filter((s: any) => s.client_id === orderClientId)
       : [];
 
-    return STAGE_ORDER.every((stageDef) => {
-      const stageRecord = orderStages.find((s: any) => s.stage === stageDef.key);
-      return stageRecord?.status === "done";
-    });
+    if (orderStages.length === 0) return false;
+
+    // Delivery is the final stage
+    const deliveryStage = orderStages.find((s: any) => s.stage === "delivery");
+    if (deliveryStage && deliveryStage.status === "done") {
+      return true;
+    }
+
+    // Check if all existing stages for this client are marked done
+    return orderStages.every((s: any) => s.status === "done");
   };
 
   // CS accounts (production.view without production.edit) should NOT see prices
@@ -246,32 +376,38 @@ export const ProductionPage: React.FC<{
       return false;
     }
 
-    if (timeFilter !== "all") {
-      const orderPhone = order.phone;
-      const matchingStage = orderPhone
-        ? stages.find((s: any) => s.client?.phones?.includes(orderPhone))
-        : null;
-      const orderClientId = matchingStage?.client_id || null;
-      const orderStages = orderClientId
-        ? stages.filter((s: any) => s.client_id === orderClientId)
-        : [];
-      const activeInProgressStage = orderStages.find(
-        (s: any) => s.status === "in_progress",
-      );
-      const timerInfo = activeInProgressStage?.timer_started_at
-        ? formatRemainingTime(
-            activeInProgressStage.timer_started_at,
-            activeInProgressStage.timer_days || 7,
-            lang,
-          )
-        : null;
+    const orderPhone = order.phone;
+    const matchingStage = orderPhone
+      ? stages.find((s: any) => s.client?.phones?.includes(orderPhone))
+      : null;
+    const orderClientId = matchingStage?.client_id || null;
+    const orderStages = orderClientId
+      ? stages.filter((s: any) => s.client_id === orderClientId)
+      : [];
 
-      if (timeFilter === "overdue") {
-        if (!timerInfo || !timerInfo.isOverdue) return false;
-      } else if (timeFilter === "urgent") {
-        if (!timerInfo || timerInfo.isOverdue || !timerInfo.isUrgent) return false;
-      } else if (timeFilter === "active") {
-        if (!timerInfo || timerInfo.isOverdue) return false;
+    if (timeFilter !== "all") {
+      if (timeFilter === "storage") {
+        const storageInfo = getStorageOverdueInfo(order, orderStages);
+        if (!storageInfo || !storageInfo.isOverdue) return false;
+      } else {
+        const activeInProgressStage = orderStages.find(
+          (s: any) => s.status === "in_progress",
+        );
+        const timerInfo = activeInProgressStage?.timer_started_at
+          ? formatRemainingTime(
+              activeInProgressStage.timer_started_at,
+              activeInProgressStage.timer_days || 7,
+              lang,
+            )
+          : null;
+
+        if (timeFilter === "overdue") {
+          if (!timerInfo || !timerInfo.isOverdue) return false;
+        } else if (timeFilter === "urgent") {
+          if (!timerInfo || timerInfo.isOverdue || !timerInfo.isUrgent) return false;
+        } else if (timeFilter === "active") {
+          if (!timerInfo || timerInfo.isOverdue) return false;
+        }
       }
     }
 
@@ -282,15 +418,15 @@ export const ProductionPage: React.FC<{
     );
   });
 
-  // Open Timer Duration Selection Modal (3 to 7 days only)
+  // Open Timer Duration Selection Modal (1 to 60 days)
   const handleOpenTimerModal = (
     stageRecord: any,
     stageDef: (typeof STAGE_ORDER)[number],
     order: Inspection,
     isEditOnly: boolean = false,
   ) => {
-    const existingDays = stageRecord?.timer_days || 7;
-    setSelectedDuration(Math.max(3, Math.min(7, existingDays)));
+    const existingDays = stageRecord?.timer_days || (stageDef.key === "carpentry" ? 10 : 7);
+    setSelectedDuration(Math.max(1, Math.min(60, existingDays)));
     setTimerStageData({
       stageRecord,
       stageDef,
@@ -301,17 +437,79 @@ export const ProductionPage: React.FC<{
     setTimerModalOpen(true);
   };
 
+  // Helper to generate stage start WhatsApp message with +5 buffer days
+  const getStageStartWhatsAppMessage = (
+    customerName: string,
+    stageKey: string,
+    customerDays: number,
+  ) => {
+    if (stageKey === "carpentry") {
+      return lang === "ar"
+        ? `مرحباً ${customerName}،\nيسعدنا إبلاغكم ببدء أعمال النجارة لطلبكم في مصنع العماري للأثاث.\nالمدة المقدرة للانتهاء: ${customerDays} يوم.\nشكراً لثقتكم واختياركم لنا!`
+        : `Hello ${customerName},\nWe are pleased to inform you that the Carpentry work has started for your order at El-Amary Furniture.\nEstimated completion: ${customerDays} days.\nThank you!`;
+    }
+    if (stageKey === "painting") {
+      return lang === "ar"
+        ? `مرحباً ${customerName}،\nيسعدنا إبلاغكم ببدء مرحلة الدهانات واختيار الألوان لطلبكم في مصنع العماري للأثاث.\nالمدة المقدرة للانتهاء: ${customerDays} يوم.\nشكراً لثقتكم واختياركم لنا!`
+        : `Hello ${customerName},\nWe are pleased to inform you that the Painting phase has started for your order at El-Amary Furniture.\nEstimated completion: ${customerDays} days.\nThank you!`;
+    }
+    if (stageKey === "fittings") {
+      return lang === "ar"
+        ? `مرحباً ${customerName}،\nيسعدنا إبلاغكم ببدء مرحلة التجهيزات والتشطيب النهائي لطلبكم في مصنع العماري للأثاث.\nالمدة المقدرة للانتهاء: ${customerDays} يوم.\nشكراً لثقتكم واختياركم لنا!`
+        : `Hello ${customerName},\nWe are pleased to inform you that the Fittings and Final Finishing phase has started for your order at El-Amary Furniture.\nEstimated completion: ${customerDays} days.\nThank you!`;
+    }
+    return lang === "ar"
+      ? `مرحباً ${customerName}،\nيسعدنا إبلاغكم ببدء مرحلة العمل لطلبكم في مصنع العماري للأثاث.\nالمدة المقدرة للانتهاء: ${customerDays} يوم.\nشكراً لثقتكم واختياركم لنا!`
+      : `Hello ${customerName},\nWe are pleased to inform you that production has started for your order.\nEstimated completion: ${customerDays} days.\nThank you!`;
+  };
+
   // Confirm Timer duration & trigger stage transition to "in_progress"
   const handleConfirmTimer = () => {
     if (!timerStageData) return;
-    const days = Math.max(3, Math.min(7, Math.round(selectedDuration)));
-    onStageUpdate(timerStageData.stageRecord.id, "in_progress", days);
+    const technicianDays = Math.max(1, Math.min(60, Math.round(selectedDuration)));
+    const customerDays = technicianDays + 5; // Automatic +5 days buffer for customer message
+
+    onStageUpdate(timerStageData.stageRecord.id, "in_progress", technicianDays);
+
+    // Send WhatsApp start message if starting stage fresh
+    if (!timerStageData.isEditOnly && timerStageData.order.phone && onSendWhatsApp) {
+      const msg = getStageStartWhatsAppMessage(
+        timerStageData.order.customerName || "",
+        timerStageData.stageDef.key,
+        customerDays,
+      );
+      onSendWhatsApp(timerStageData.order.phone, msg);
+    }
+
     setTimerModalOpen(false);
     toast.success(
       lang === "ar"
-        ? `تم تفعيل مؤقت ${days} أيام لمرحلة ${timerStageData.stageDef.ar}`
-        : `Timer activated for ${days} days for ${timerStageData.stageDef.en}`,
+        ? `تم تفعيل مؤقت ${technicianDays} أيام (وإرسال ${customerDays} أيام للعميل)`
+        : `Timer activated for ${technicianDays}d (${customerDays}d sent to customer)`,
     );
+  };
+
+  // Admin dismiss / acknowledge storage overdue warning (repeats every 7 days)
+  const handleDismissStorageWarning = async (stageRecord: any) => {
+    if (!stageRecord?.id) return;
+    const nowIso = new Date().toISOString();
+    try {
+      await StageService.updateStatus(
+        stageRecord.id,
+        stageRecord.status || "in_progress",
+        {
+          storage_warning_dismissed_at: nowIso,
+        },
+      );
+      if (onRefresh) await onRefresh();
+      toast.success(
+        lang === "ar"
+          ? "تم تأكيد وإلغاء تنبيه التخزين لمدة 7 أيام إضافية"
+          : "Storage alert dismissed for 7 additional days",
+      );
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to dismiss warning");
+    }
   };
 
   // Check stage click behavior
@@ -330,9 +528,10 @@ export const ProductionPage: React.FC<{
         // Admin untoggles: done -> not_started
         onStageUpdate(stageRecord.id, "not_started");
       } else {
-        // Marking as DONE: trigger payment collection ONLY if completing received, carpentry, or fittings
+        // Marking as DONE
         onStageUpdate(stageRecord.id, "done");
 
+        // Trigger milestone notifications / payments
         if (["received", "carpentry", "fittings"].includes(stageDef.key)) {
           let installmentName = "بعد تمام الاستلام";
           if (stageDef.key === "carpentry") installmentName = "بعد تمام النجارة";
@@ -353,6 +552,13 @@ export const ProductionPage: React.FC<{
             });
             setCollectionModalOpen(true);
           }
+        } else if (stageDef.key === "painting" && onSendWhatsApp && order.phone) {
+          // Painting completion WhatsApp
+          const msg =
+            lang === "ar"
+              ? `مرحباً ${order.customerName || ""}،\nيسعدنا إبلاغكم بانتهاء مرحلة الدهانات لطلبكم في مصنع العماري للأثاث وجاري الانتقال لمرحلة التجهيزات.\nشكراً لثقتكم واختياركم لنا!`
+              : `Hello ${order.customerName || ""},\nWe are pleased to inform you that the Painting phase for your order is completed.\nThank you!`;
+          onSendWhatsApp(order.phone, msg);
         }
       }
     } else {
@@ -375,7 +581,7 @@ export const ProductionPage: React.FC<{
     }
   };
 
-  // WhatsApp Collection Reminder Dispatcher
+  // WhatsApp Collection / Completion Reminder Dispatcher
   const handleSendCollectionWhatsApp = (
     order: Inspection,
     stageKey: string,
@@ -391,10 +597,11 @@ export const ProductionPage: React.FC<{
 
     let msg = "";
     if (stageKey === "fittings") {
+      // Upon full completion of fittings -> request contract completion and final delivery arrangement
       msg =
         lang === "ar"
-          ? `مرحباً ${order.customerName || ""}،\nيسعدنا إبلاغكم بانتهاء مرحلة التجهيزات لطلبكم في مصنع العماري للأثاث.\nنرجو التكرم بسداد دفعة التجهيزات لتأكيد مواعيد التسليم النهائي.\nالمبلغ المتبقي: ${remaining.toLocaleString()} ج.م.\nشكراً لثقتكم واختياركم لنا!`
-          : `Hello ${order.customerName || ""},\nWe are pleased to inform you that the Fittings phase for your order at El-Amary Furniture is completed.\nPlease proceed with the payment to confirm delivery schedule.\nRemaining balance: ${remaining.toLocaleString()} EGP.\nThank you!`;
+          ? `مرحباً ${order.customerName || ""}،\nيسعدنا إبلاغكم بتمام تجهيز طلبكم بالكامل في مصنع العماري للأثاث وجاهزيته للتسليم.\nنرجو التكرم بإنهاء التعاقد وسداد الدفعة النهائية لترتيب موعد الشحن والتسليم.\nالمبلغ المتبقي: ${remaining.toLocaleString()} ج.م.\nشكراً لثقتكم واختياركم لنا!`
+          : `Hello ${order.customerName || ""},\nWe are pleased to inform you that your order is completely ready for delivery.\nPlease conclude the contract settlement and final payment to schedule delivery.\nRemaining balance: ${remaining.toLocaleString()} EGP.\nThank you!`;
     } else if (stageKey === "carpentry") {
       msg =
         lang === "ar"
@@ -554,7 +761,7 @@ export const ProductionPage: React.FC<{
             )}
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">
-            {/* Status Filters: All, Actual Production (In-Progress), Completed */}
+            {/* Status Filters: All, Incomplete (In-Progress), Completed */}
             <div className="flex items-center gap-1.5 flex-wrap">
               <button
                 onClick={() => onProductionFilterChange("all")}
@@ -566,7 +773,7 @@ export const ProductionPage: React.FC<{
                 onClick={() => onProductionFilterChange("in_production")}
                 className={`filter-chip ${productionFilter === "in_production" ? "filter-chip-active" : "filter-chip-inactive"}`}
               >
-                {lang === "ar" ? "إنتاج فعلي" : "In Production"}
+                {lang === "ar" ? "غير مكتمل" : "Incomplete"}
               </button>
               <button
                 onClick={() => onProductionFilterChange("completed")}
@@ -610,7 +817,7 @@ export const ProductionPage: React.FC<{
               </span>
             )}
 
-            {/* Time Filter */}
+            {/* Time & Storage Filters */}
             <div className="flex items-center gap-1.5 flex-wrap border-r rtl:border-r-0 rtl:border-l border-zinc-200/80 pr-1.5 rtl:pr-0 rtl:pl-1.5">
               <button
                 onClick={() => setTimeFilter("all")}
@@ -625,6 +832,7 @@ export const ProductionPage: React.FC<{
                   {timeFilter === "overdue" && (lang === "ar" ? "متأخر 🔴" : "Overdue 🔴")}
                   {timeFilter === "urgent" && (lang === "ar" ? "عاجل 🟡" : "Urgent 🟡")}
                   {timeFilter === "active" && (lang === "ar" ? "ساري 🟢" : "Active 🟢")}
+                  {timeFilter === "storage" && (lang === "ar" ? "تخزين ⚠️" : "Storage ⚠️")}
                 </span>
               )}
               <button
@@ -638,6 +846,12 @@ export const ProductionPage: React.FC<{
                 className={`filter-chip text-amber-600 ${timeFilter === "urgent" ? "bg-amber-500 text-white shadow-md" : "filter-chip-inactive hover:text-amber-700"}`}
               >
                 {lang === "ar" ? "عاجل" : "Urgent"}
+              </button>
+              <button
+                onClick={() => setTimeFilter(timeFilter === "storage" ? "all" : "storage")}
+                className={`filter-chip text-amber-700 border-amber-300/80 ${timeFilter === "storage" ? "bg-amber-500 text-white shadow-md" : "filter-chip-inactive hover:text-amber-800"}`}
+              >
+                ⚠️ {lang === "ar" ? "تخزين" : "Storage"}
               </button>
             </div>
           </div>
@@ -680,6 +894,9 @@ export const ProductionPage: React.FC<{
                   lang,
                 )
               : null;
+
+            // Storage Overdue Warning
+            const storageInfo = getStorageOverdueInfo(order, orderStages);
 
             // Collection Milestone
             const collectionMilestone = getOrderCollectionMilestone(order, orderStages);
@@ -742,6 +959,36 @@ export const ProductionPage: React.FC<{
                     </div>
                   </div>
 
+                  {/* STORAGE OVERDUE WARNING BANNER */}
+                  {storageInfo && storageInfo.isOverdue && (
+                    <div className="mb-4 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 shadow-sm">
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-1.5">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 animate-bounce" />
+                          <span className="text-xs font-bold text-amber-900">
+                            {lang === "ar"
+                              ? `⚠️ تحذير: تجاوز مدة التخزين (${storageInfo.daysInStorage} يوم)`
+                              : `⚠️ Storage Exceeded (${storageInfo.daysInStorage}d)`}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-800">
+                          {lang === "ar" ? "تكرار كل 7 أيام" : "Every 7d"}
+                        </span>
+                      </div>
+                      {isAdmin && (
+                        <button
+                          onClick={() => handleDismissStorageWarning(storageInfo.stageRecord)}
+                          className="w-full bg-amber-600 hover:bg-amber-700 text-white py-1.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          {lang === "ar"
+                            ? "إلغاء التحذير وتأجيله (7 أيام إضافية)"
+                            : "Dismiss Warning (7 extra days)"}
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                   {/* ACTIVE TIMER WIDGET (Carpentry / Painting / Upholstery in progress) */}
                   {activeInProgressStage && activeStageDef && timerInfo && (
                     <div
@@ -775,7 +1022,7 @@ export const ProductionPage: React.FC<{
                             }`}
                           >
                             {lang === "ar"
-                              ? `مؤقت مرحلة ${activeStageDef.ar} (${activeInProgressStage.timer_days || 7} أيام)`
+                              ? `مؤقت مرحلة ${activeStageDef.ar} (${activeInProgressStage.timer_days || 7} أيام بالورشة)`
                               : `${activeStageDef.en} Timer (${activeInProgressStage.timer_days || 7}d)`}
                           </span>
                         </div>
@@ -809,12 +1056,12 @@ export const ProductionPage: React.FC<{
                       <div className="flex justify-between items-center text-[10px] text-zinc-500 font-medium">
                         <span>
                           {lang === "ar"
-                            ? `الموعد المحدد: ${timerInfo.targetDateFormatted}`
+                            ? `الموعد المحدد للورشة: ${timerInfo.targetDateFormatted}`
                             : `Target: ${timerInfo.targetDateFormatted}`}
                         </span>
                         {canEditStages && isTimedStage(activeStageDef.key) && (
                           <span className="text-zinc-400 group-hover:text-zinc-700 underline">
-                            {lang === "ar" ? "تعديل المدة (3-20 يوم)" : "Edit duration (3-20d)"}
+                            {lang === "ar" ? "تعديل المدة" : "Edit duration"}
                           </span>
                         )}
                       </div>
@@ -847,7 +1094,7 @@ export const ProductionPage: React.FC<{
                                 collectionMilestone.installmentName,
                               )
                             }
-                            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-1.5 px-2.5 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1 shadow-sm"
+                            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-1.5 px-2.5 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1 shadow-sm cursor-pointer"
                           >
                             <Send className="w-3 h-3" />
                             {lang === "ar" ? "مطالبة واتساب" : "WhatsApp"}
@@ -861,7 +1108,7 @@ export const ProductionPage: React.FC<{
                                 collectionMilestone.installmentName,
                               )
                             }
-                            className="flex-1 bg-zinc-900 hover:bg-zinc-800 text-white py-1.5 px-2.5 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1 shadow-sm"
+                            className="flex-1 bg-zinc-900 hover:bg-zinc-800 text-white py-1.5 px-2.5 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1 shadow-sm cursor-pointer"
                           >
                             <Plus className="w-3 h-3" />
                             {lang === "ar" ? "تسجيل دفعة" : "Pay"}
@@ -920,7 +1167,7 @@ export const ProductionPage: React.FC<{
                         : isInProgress
                           ? isTimed
                             ? lang === "ar"
-                              ? "تعديل مدة المؤقت (3-20 يوم) ⏱️"
+                              ? "تعديل مدة المؤقت ⏱️"
                               : "Edit Timer Duration ⏱️"
                             : lang === "ar"
                               ? "إلغاء (لم تنته بعد)"
@@ -929,13 +1176,13 @@ export const ProductionPage: React.FC<{
                             ? lang === "ar"
                               ? "تم التأكيد من المسؤول"
                               : "Confirmed by admin"
-                            : isTimed
-                              ? lang === "ar"
-                                ? "بدء وتحديد المؤقت (3-20 يوم) ⏱️"
-                                : "Start & Set Timer ⏱️"
-                              : lang === "ar"
-                                ? "جاهز في المصنع 🟡"
-                                : "Ready in factory 🟡";
+                          : isTimed
+                            ? lang === "ar"
+                              ? "بدء وتحديد المؤقت ⏱️"
+                              : "Start & Set Timer ⏱️"
+                            : lang === "ar"
+                              ? "جاهز في المصنع 🟡"
+                              : "Ready in factory 🟡";
 
                       return (
                         <div
@@ -947,33 +1194,59 @@ export const ProductionPage: React.FC<{
                               handleStageClick(stageRecord, stageDef, order)
                             }
                             disabled={!clickable}
-                            title={
-                              isStoreOnly && isDone
-                                ? lang === "ar"
-                                  ? "تم التأكيد من المسؤول"
-                                  : "Confirmed by admin"
-                                : undefined
-                            }
-                            className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${circleColor} ${
-                              clickable
-                                ? "cursor-pointer hover:scale-110 active:scale-95 shadow-sm"
-                                : "cursor-default opacity-80"
-                            }`}
+                            title={tooltipText}
+                            className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs shadow-md transition-all duration-200 cursor-pointer ${circleColor} ${clickable ? "hover:scale-110 active:scale-95" : "cursor-default opacity-80"}`}
                           >
-                            {isDone ? "✓" : isInProgress ? (isTimed ? "⏱" : "●") : idx + 1}
+                            {isDone ? "✓" : isInProgress ? "⏱" : idx + 1}
                           </button>
-                          <span className="text-[9px] text-zinc-500 flex items-center gap-0.5">
+                          <span className="text-[11px] font-semibold text-zinc-600 text-center">
                             {lang === "ar" ? stageDef.ar : stageDef.en}
-                            {isTimed && <span className="text-[7px] text-indigo-500 font-bold">⏱</span>}
                           </span>
-                          {canEditStages && stageRecord && (
-                            <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 bg-zinc-900 text-white text-[8px] rounded-xl px-2 py-1 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-lg text-center max-w-[120px] leading-tight">
-                              {tooltipText}
-                            </div>
-                          )}
                         </div>
                       );
                     })}
+                  </div>
+
+                  {/* Stage Photos Row (Carpentry & Painting) */}
+                  <div className="mt-3 pt-3 border-t border-zinc-100/80 flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-[10px] font-bold text-zinc-400 flex items-center gap-1">
+                      <Camera className="w-3.5 h-3.5 text-zinc-500" />
+                      {lang === "ar" ? "صور التنفيذ:" : "Stage Photos:"}
+                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {["carpentry", "painting"].map((stKey) => {
+                        const stDef = STAGE_ORDER.find((s) => s.key === stKey);
+                        const stRec = orderStages.find((s: any) => s.stage === stKey);
+                        const imgCount = stRec?.images?.length || 0;
+                        if (!stDef || !stRec) return null;
+
+                        return (
+                          <button
+                            key={stKey}
+                            type="button"
+                            onClick={() => handleOpenPhotoModal(stRec, stDef, order)}
+                            className={`px-2.5 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                              imgCount > 0
+                                ? "bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 shadow-sm"
+                                : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 border border-zinc-200/60"
+                            }`}
+                            title={lang === "ar" ? `إرفاق / عرض صور مرحلة ${stDef.ar}` : `Photos for ${stDef.en}`}
+                          >
+                            <ImageIcon className="w-3 h-3" />
+                            <span>{stDef.ar}</span>
+                            {imgCount > 0 ? (
+                              <span className="w-4 h-4 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[9px] font-bold font-mono">
+                                {imgCount}
+                              </span>
+                            ) : (
+                              canEditStages && (
+                                <span className="text-[9px] text-zinc-400 font-bold">+</span>
+                              )
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -985,13 +1258,13 @@ export const ProductionPage: React.FC<{
           <Wrench className="w-12 h-12 text-zinc-200 mx-auto mb-4" />
           <p className="text-zinc-400 font-semibold">
             {lang === "ar"
-              ? "لا توجد طلبات إنتاج حالياً"
-              : "No production orders at the moment"}
+              ? "لا توجد طلبات إنتاج مطابقة للفلتر المحدد"
+              : "No production orders matching the selected filter"}
           </p>
         </div>
       )}
 
-      {/* ===================== TIMER DURATION CONFIGURATION MODAL (3 - 7 DAYS) ===================== */}
+      {/* ===================== TIMER DURATION CONFIGURATION MODAL (WITH +5 DAYS BUFFER) ===================== */}
       <AnimatePresence>
         {timerModalOpen && timerStageData && (
           <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
@@ -1006,12 +1279,12 @@ export const ProductionPage: React.FC<{
               initial={{ scale: 0.95, opacity: 0, y: 10 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 10 }}
-              className="relative bg-[#f6f2ec] rounded-[2.5rem] p-8 max-w-lg w-full shadow-2xl border border-white/60"
+              className="relative bg-[#f6f2ec] rounded-[2.5rem] p-8 max-w-lg w-full shadow-2xl border border-white/60 max-h-[90vh] overflow-y-auto"
               dir={lang === "ar" ? "rtl" : "ltr"}
             >
               <button
                 onClick={() => setTimerModalOpen(false)}
-                className="absolute top-6 right-6 rtl:left-6 rtl:right-auto p-2 bg-white/60 hover:bg-white rounded-full transition-colors"
+                className="absolute top-6 right-6 rtl:left-6 rtl:right-auto p-2 bg-white/60 hover:bg-white rounded-full transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5 text-zinc-500" />
               </button>
@@ -1023,22 +1296,22 @@ export const ProductionPage: React.FC<{
                 <div>
                   <h2 className="text-2xl font-bold text-zinc-900">
                     {lang === "ar"
-                      ? `مؤقت مرحلة: ${timerStageData.stageDef.ar}`
-                      : `Stage Timer: ${timerStageData.stageDef.en}`}
+                      ? `بدء مرحلة: ${timerStageData.stageDef.ar}`
+                      : `Start Stage: ${timerStageData.stageDef.en}`}
                   </h2>
-                  <p className="text-xs text-zinc-500">
+                  <p className="text-xs text-zinc-500 font-semibold">
                     {timerStageData.order.customerName}
                   </p>
                 </div>
               </div>
 
-              <div className="p-4 bg-white/70 rounded-2xl border border-white/80 mb-6">
+              <div className="p-4 bg-white/70 rounded-2xl border border-white/80 mb-5">
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs font-bold text-zinc-500 uppercase">
-                    {lang === "ar" ? "المدة المحددة (بالأيام)" : "Duration (Days)"}
+                  <span className="text-xs font-bold text-zinc-700 uppercase">
+                    {lang === "ar" ? "المدة الفعلية للورشة / الفني" : "Technician Duration (Days)"}
                   </span>
                   <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
-                    {lang === "ar" ? "الحد المسموح: 3 - 7 أيام فقط" : "Allowed: 3 - 7 days only"}
+                    {lang === "ar" ? "حدد الأيام الفعلية للعمل" : "Select actual work days"}
                   </span>
                 </div>
 
@@ -1047,21 +1320,21 @@ export const ProductionPage: React.FC<{
                   <button
                     type="button"
                     onClick={() =>
-                      setSelectedDuration((prev) => Math.max(3, prev - 1))
+                      setSelectedDuration((prev) => Math.max(1, prev - 1))
                     }
-                    className="w-12 h-12 rounded-2xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xl font-bold flex items-center justify-center transition-colors"
+                    className="w-12 h-12 rounded-2xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xl font-bold flex items-center justify-center transition-colors cursor-pointer"
                   >
                     -
                   </button>
                   <input
                     type="number"
-                    min="3"
-                    max="7"
+                    min="1"
+                    max="60"
                     value={selectedDuration}
                     onChange={(e) => {
                       const val = Number(e.target.value);
                       if (!Number.isNaN(val)) {
-                        setSelectedDuration(Math.max(3, Math.min(7, val)));
+                        setSelectedDuration(Math.max(1, Math.min(60, val)));
                       }
                     }}
                     className="flex-1 text-center py-3 text-2xl font-bold bg-white rounded-2xl border border-zinc-200 outline-none focus:border-indigo-500 font-mono"
@@ -1069,9 +1342,9 @@ export const ProductionPage: React.FC<{
                   <button
                     type="button"
                     onClick={() =>
-                      setSelectedDuration((prev) => Math.min(7, prev + 1))
+                      setSelectedDuration((prev) => Math.min(60, prev + 1))
                     }
-                    className="w-12 h-12 rounded-2xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xl font-bold flex items-center justify-center transition-colors"
+                    className="w-12 h-12 rounded-2xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xl font-bold flex items-center justify-center transition-colors cursor-pointer"
                   >
                     +
                   </button>
@@ -1080,15 +1353,15 @@ export const ProductionPage: React.FC<{
                 {/* Quick Presets */}
                 <div className="space-y-1.5">
                   <span className="text-[11px] font-semibold text-zinc-400">
-                    {lang === "ar" ? "خيارات سريعة (من 3 لـ 7 أيام):" : "Quick presets (3 - 7 days):"}
+                    {lang === "ar" ? "خيارات سريعة:" : "Quick presets:"}
                   </span>
                   <div className="flex flex-wrap gap-2">
-                    {[3, 4, 5, 6, 7].map((days) => (
+                    {[5, 7, 10, 15, 20, 30].map((days) => (
                       <button
                         key={days}
                         type="button"
                         onClick={() => setSelectedDuration(days)}
-                        className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                           selectedDuration === days
                             ? "bg-indigo-600 text-white shadow-md scale-105"
                             : "bg-white/80 text-zinc-600 hover:bg-white border border-zinc-200"
@@ -1101,13 +1374,43 @@ export const ProductionPage: React.FC<{
                 </div>
               </div>
 
+              {/* Automatic +5 Days Buffer Banner */}
+              <div className="p-4 bg-amber-500/10 border border-amber-500/25 rounded-2xl mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Sparkles className="w-4 h-4 text-amber-600" />
+                  <span className="text-xs font-bold text-amber-900">
+                    {lang === "ar"
+                      ? "إضافة 5 أيام تلقائياً لرسالة العميل"
+                      : "Automatic +5 days buffer for customer message"}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div className="bg-white/60 p-2.5 rounded-xl">
+                    <span className="text-[10px] text-zinc-500 block font-bold">
+                      {lang === "ar" ? "مدة الفني الفعلية:" : "Tech Duration:"}
+                    </span>
+                    <span className="font-bold text-zinc-900 font-mono text-sm">
+                      {selectedDuration} {lang === "ar" ? "أيام" : "days"}
+                    </span>
+                  </div>
+                  <div className="bg-white/60 p-2.5 rounded-xl border border-amber-300">
+                    <span className="text-[10px] text-amber-800 block font-bold">
+                      {lang === "ar" ? "المدة لرسالة العميل:" : "Client Message:"}
+                    </span>
+                    <span className="font-bold text-amber-700 font-mono text-sm">
+                      {selectedDuration + 5} {lang === "ar" ? "أيام (+5 أيام)" : "days (+5d)"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               {/* Target Calculation Preview */}
-              <div className="p-4 bg-indigo-50/70 border border-indigo-100 rounded-2xl mb-6">
+              <div className="p-4 bg-indigo-50/70 border border-indigo-100 rounded-2xl mb-4">
                 <div className="flex justify-between items-center text-xs text-indigo-900">
                   <span className="font-medium">
-                    {lang === "ar" ? "تاريخ البدء:" : "Start Date:"}
+                    {lang === "ar" ? "تاريخ بدء المرحلة:" : "Stage Start Date:"}
                   </span>
-                  <span className="font-bold">
+                  <span className="font-bold font-mono">
                     {new Date().toLocaleDateString(
                       lang === "ar" ? "ar-EG" : "en-US",
                       { weekday: "short", month: "short", day: "numeric" },
@@ -1116,11 +1419,11 @@ export const ProductionPage: React.FC<{
                 </div>
                 <div className="flex justify-between items-center text-xs text-indigo-900 mt-1.5 pt-1.5 border-t border-indigo-100">
                   <span className="font-medium">
-                    {lang === "ar" ? "تاريخ الانتهاء المتوقع:" : "Expected Target Date:"}
+                    {lang === "ar" ? "تاريخ الانتهاء للعميل (+5 أيام):" : "Expected Client Date:"}
                   </span>
-                  <span className="font-bold text-sm text-indigo-700">
+                  <span className="font-bold text-sm text-indigo-700 font-mono">
                     {new Date(
-                      Date.now() + selectedDuration * 86400000,
+                      Date.now() + (selectedDuration + 5) * 86400000,
                     ).toLocaleDateString(
                       lang === "ar" ? "ar-EG" : "en-US",
                       { weekday: "short", month: "short", day: "numeric", year: "numeric" },
@@ -1129,18 +1432,33 @@ export const ProductionPage: React.FC<{
                 </div>
               </div>
 
+              {/* Live WhatsApp Message Preview */}
+              <div className="p-4 bg-emerald-50/70 border border-emerald-200/80 rounded-2xl mb-6">
+                <div className="flex items-center gap-1.5 mb-2 text-emerald-800 text-xs font-bold">
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{lang === "ar" ? "معاينة رسالة الواتساب للعميل:" : "WhatsApp Message Preview:"}</span>
+                </div>
+                <p className="text-xs text-zinc-700 whitespace-pre-line leading-relaxed bg-white/70 p-3 rounded-xl border border-emerald-100 font-sans">
+                  {getStageStartWhatsAppMessage(
+                    timerStageData.order.customerName || "",
+                    timerStageData.stageDef.key,
+                    selectedDuration + 5,
+                  )}
+                </p>
+              </div>
+
               <div className="flex gap-3">
                 <button
                   type="button"
                   onClick={() => setTimerModalOpen(false)}
-                  className="flex-1 bg-zinc-200 hover:bg-zinc-300 text-zinc-700 py-3.5 rounded-2xl font-bold transition-all"
+                  className="flex-1 bg-zinc-200 hover:bg-zinc-300 text-zinc-700 py-3.5 rounded-2xl font-bold transition-all cursor-pointer"
                 >
                   {lang === "ar" ? "إلغاء" : "Cancel"}
                 </button>
                 <button
                   type="button"
                   onClick={handleConfirmTimer}
-                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-2xl font-bold shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95"
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-2xl font-bold shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer"
                 >
                   <Timer className="w-4 h-4" />
                   {timerStageData.isEditOnly
@@ -1148,8 +1466,8 @@ export const ProductionPage: React.FC<{
                       ? "تحديث المؤقت"
                       : "Update Timer"
                     : lang === "ar"
-                      ? "بدء المرحلة والمؤقت"
-                      : "Start Phase & Timer"}
+                      ? `بدء المرحلة وإرسال (${selectedDuration + 5} يوم للعميل)`
+                      : `Start & Send (${selectedDuration + 5}d)`}
                 </button>
               </div>
             </motion.div>
@@ -1382,6 +1700,175 @@ export const ProductionPage: React.FC<{
                 </button>
               </form>
             </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ===================== STAGE PHOTOS MODAL (CARPENTRY & PAINTING) ===================== */}
+      <AnimatePresence>
+        {photoModalOpen && photoStageData && (
+          <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setPhotoModalOpen(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}
+              className="relative bg-[#f6f2ec] rounded-[2.5rem] p-8 max-w-2xl w-full shadow-2xl border border-white/60 max-h-[90vh] overflow-y-auto"
+              dir={lang === "ar" ? "rtl" : "ltr"}
+            >
+              <button
+                onClick={() => setPhotoModalOpen(false)}
+                className="absolute top-6 right-6 rtl:left-6 rtl:right-auto p-2 bg-white/60 hover:bg-white rounded-full transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5 text-zinc-500" />
+              </button>
+
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 flex items-center justify-center text-indigo-600">
+                  <Camera className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-zinc-900">
+                    {lang === "ar"
+                      ? `صور مرحلة: ${photoStageData.stageDef.ar}`
+                      : `Stage Photos: ${photoStageData.stageDef.en}`}
+                  </h2>
+                  <p className="text-xs text-zinc-500 font-semibold">
+                    {photoStageData.order.customerName} ({stageImages.length}{" "}
+                    {lang === "ar" ? "صورة مرفوعة" : "photos attached"})
+                  </p>
+                </div>
+              </div>
+
+              {/* Upload Drop Area */}
+              {canEditStages && (
+                <div className="mb-6">
+                  <label className="border-2 border-dashed border-zinc-300 hover:border-indigo-400 bg-white/60 hover:bg-white/90 rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer transition-all group">
+                    <Upload className="w-8 h-8 text-zinc-400 group-hover:text-indigo-600 group-hover:scale-110 transition-all mb-2" />
+                    <span className="text-sm font-bold text-zinc-700">
+                      {lang === "ar"
+                        ? "اضغط لإضافة صور جديدة للمرحلة (من الكاميرا أو الاستوديو)"
+                        : "Click to upload stage photos (camera or gallery)"}
+                    </span>
+                    <span className="text-[11px] text-zinc-400 mt-1">
+                      {lang === "ar"
+                        ? "يمكنك اختيار عدة صور في نفس الوقت"
+                        : "Multiple photos supported"}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handleUploadPhotoFiles}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              )}
+
+              {/* Photo Gallery Grid */}
+              {stageImages.length > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
+                  {stageImages.map((imgUrl, idx) => (
+                    <div
+                      key={idx}
+                      className="relative rounded-2xl overflow-hidden aspect-square bg-black/5 group border border-white/80 shadow-sm"
+                    >
+                      <img
+                        src={imgUrl}
+                        alt={`Stage ${idx + 1}`}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 cursor-pointer"
+                        onClick={() => setPreviewImage(imgUrl)}
+                      />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewImage(imgUrl)}
+                          className="p-2 rounded-xl bg-white/80 hover:bg-white text-zinc-800 shadow-sm cursor-pointer"
+                          title={lang === "ar" ? "تكبير الصورة" : "Preview"}
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        {canEditStages && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePhoto(idx)}
+                            className="p-2 rounded-xl bg-red-600 hover:bg-red-700 text-white shadow-sm cursor-pointer"
+                            title={lang === "ar" ? "حذف الصورة" : "Delete"}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-12 text-center bg-white/40 rounded-2xl border border-dashed border-zinc-200 mb-6">
+                  <ImageIcon className="w-10 h-10 text-zinc-300 mx-auto mb-2" />
+                  <p className="text-xs text-zinc-400 font-semibold">
+                    {lang === "ar"
+                      ? "لا توجد صور مرفوعة لهذه المرحلة حتى الآن"
+                      : "No photos uploaded for this stage yet"}
+                  </p>
+                </div>
+              )}
+
+              {canEditStages && (
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setPhotoModalOpen(false)}
+                    className="flex-1 bg-zinc-200 hover:bg-zinc-300 text-zinc-700 py-3.5 rounded-2xl font-bold transition-all cursor-pointer"
+                  >
+                    {lang === "ar" ? "إلغاء" : "Cancel"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSavingPhotos}
+                    onClick={handleSaveStagePhotos}
+                    className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-2xl font-bold shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                  >
+                    <Camera className="w-4 h-4" />
+                    {isSavingPhotos
+                      ? lang === "ar"
+                        ? "جاري الحفظ..."
+                        : "Saving..."
+                      : lang === "ar"
+                        ? "حفظ ونشر الصور للعميل"
+                        : "Save & Publish to Customer"}
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ===================== FULLSCREEN IMAGE LIGHTBOX ===================== */}
+      <AnimatePresence>
+        {previewImage && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+            <button
+              onClick={() => setPreviewImage(null)}
+              className="absolute top-6 right-6 p-3 bg-white/20 hover:bg-white/40 text-white rounded-full transition-all cursor-pointer"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            <motion.img
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              src={previewImage}
+              alt="Enlarged stage preview"
+              className="max-h-[85vh] max-w-[90vw] object-contain rounded-2xl shadow-2xl"
+            />
           </div>
         )}
       </AnimatePresence>

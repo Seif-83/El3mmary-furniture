@@ -263,9 +263,12 @@ export class StageService {
     extraUpdates?: {
       completed_at?: string | null;
       timer_days?: number | null;
+      customer_days?: number | null;
       timer_started_at?: string | null;
       payment_requested?: boolean;
       payment_requested_at?: string | null;
+      storage_warning_dismissed_at?: string | null;
+      images?: string[] | null;
     },
   ) {
     const record = await db.production_stages.get(id);

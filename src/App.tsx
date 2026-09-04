@@ -1608,11 +1608,12 @@ export default function App() {
       }
     } else if (status === "in_progress") {
       updates.completed_at = null;
-      // Configure countdown timer for timed phases (carpentry, painting, fittings: 3 to 7 days)
+      // Configure countdown timer for timed phases (carpentry, painting, fittings: 1 to 60 days)
       const validDays = timerDays
-        ? Math.max(3, Math.min(7, Math.round(timerDays)))
-        : currentStage?.timer_days || 7;
+        ? Math.max(1, Math.min(60, Math.round(timerDays)))
+        : currentStage?.timer_days || (currentStage?.stage === "carpentry" ? 10 : 7);
       updates.timer_days = validDays;
+      updates.customer_days = validDays + 5;
       updates.timer_started_at = new Date().toISOString();
     } else {
       // not_started / reset
@@ -1642,7 +1643,7 @@ export default function App() {
             s.client_id === currentStage.client_id && s.stage === nextStage.key,
         );
         if (nextStageRecord && nextStageRecord.status === "not_started") {
-          // Auto start next stage with default 7 days timer if it's a timed phase (carpentry, painting, fittings)
+          // Auto start next stage if it's a timed phase (carpentry, painting, fittings)
           const nextIsTimed = ["carpentry", "painting", "fittings"].includes(
             nextStage.key,
           );
@@ -1651,7 +1652,8 @@ export default function App() {
             completed_at: null,
           };
           if (nextIsTimed) {
-            nextUpdates.timer_days = 7;
+            nextUpdates.timer_days = nextStage.key === "carpentry" ? 10 : 7;
+            nextUpdates.customer_days = (nextStage.key === "carpentry" ? 10 : 7) + 5;
             nextUpdates.timer_started_at = new Date().toISOString();
           }
           await StageService.updateStatus(
@@ -1666,14 +1668,27 @@ export default function App() {
         ? await db.clients.get(currentStage.client_id)
         : null;
       if (clientData) {
-        const stageName =
-          lang === "ar"
-            ? STAGE_ORDER.find((s) => s.key === currentStage.stage)?.ar
-            : STAGE_ORDER.find((s) => s.key === currentStage.stage)?.en;
-        const message =
-          lang === "ar"
-            ? `تم الانتهاء من مرحلة "${stageName}" في مصنع العماري للأثاث. شكراً لثقتكم.`
-            : `The "${stageName}" stage has been completed at El-Amary Furniture. Thank you for your trust.`;
+        let message = "";
+        if (currentStage.stage === "fittings") {
+          message =
+            lang === "ar"
+              ? `مرحباً ${clientData.name || ""}،\nيسعدنا إبلاغكم بتمام تجهيز طلبكم بالكامل في مصنع العماري للأثاث وجاهزيته للتسليم.\nنرجو التكرم بإنهاء التعاقد وسداد الدفعة النهائية لترتيب موعد الشحن والتسليم.\nشكراً لثقتكم واختياركم لنا!`
+              : `Hello ${clientData.name || ""},\nYour order at El-Amary Furniture is completely finished.\nPlease proceed with final contract settlement to schedule delivery.\nThank you!`;
+        } else if (currentStage.stage === "painting") {
+          message =
+            lang === "ar"
+              ? `مرحباً ${clientData.name || ""}،\nيسعدنا إبلاغكم بانتهاء مرحلة الدهانات لطلبكم في مصنع العماري للأثاث وجاري الانتقال لمرحلة التجهيزات.\nشكراً لثقتكم واختياركم لنا!`
+              : `Hello ${clientData.name || ""},\nPainting phase has been completed for your order at El-Amary Furniture.\nThank you!`;
+        } else {
+          const stageName =
+            lang === "ar"
+              ? STAGE_ORDER.find((s) => s.key === currentStage.stage)?.ar
+              : STAGE_ORDER.find((s) => s.key === currentStage.stage)?.en;
+          message =
+            lang === "ar"
+              ? `تم الانتهاء من مرحلة "${stageName}" في مصنع العماري للأثاث. شكراً لثقتكم.`
+              : `The "${stageName}" stage has been completed at El-Amary Furniture. Thank you for your trust.`;
+        }
         const phone = clientData.phones?.[0];
         if (phone) await sendWhatsAppMessage(phone, message);
       }
@@ -5997,6 +6012,11 @@ export default function App() {
                                           className="bg-white/80 rounded-2xl p-4 border border-zinc-200/80 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-3 relative group"
                                         >
                                           <div>
+                                            {(log.notes?.includes("من العميل") || log.createdBy === "بوابة العميل") && (
+                                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-800 border border-amber-500/30 mb-2">
+                                                💡 {lang === "ar" ? "شكوى / مقترح من بوابة العميل" : "Portal Feedback"}
+                                              </span>
+                                            )}
                                             <div className="flex justify-between items-start mb-2">
                                               <div>
                                                 <h4 className="font-bold text-zinc-900 text-sm md:text-base">
@@ -6029,18 +6049,29 @@ export default function App() {
                                                   </a>
                                                   <button
                                                     type="button"
-                                                    onClick={() =>
-                                                      sendWhatsAppMessage(
-                                                        log.phone,
-                                                        lang === "ar"
-                                                          ? `مرحباً ${log.customerName || ""}، بخصوص استفساركم لدى مصنع العماري للأثاث...`
-                                                          : `Hello ${log.customerName || ""}, regarding your inquiry with El-Amary Furniture...`,
-                                                      )
-                                                    }
-                                                    className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors"
-                                                    title={lang === "ar" ? "مراسلة واتساب" : "WhatsApp"}
+                                                    onClick={() => {
+                                                      const isFeedback =
+                                                        log.notes?.includes("من العميل") ||
+                                                        log.createdBy === "بوابة العميل";
+                                                      const cleanNoteText =
+                                                        log.notes?.replace(/^\[.*?\]:\s*/, "") ||
+                                                        log.notes ||
+                                                        "";
+                                                      const replyMsg = isFeedback
+                                                        ? lang === "ar"
+                                                          ? `مرحباً بك أستاذ ${log.customerName || ""}،\nتحية طيبة من مصنع العماري للأثاث 🛋️\nبخصوص رسالتكم الكريمة:\n"${cleanNoteText}"\n\nنود إفادتكم بالتالي: `
+                                                          : `Hello ${log.customerName || ""},\nRegarding your feedback with El-Amary Furniture:\n"${cleanNoteText}"\n\nWe would like to inform you: `
+                                                        : lang === "ar"
+                                                          ? `مرحباً أستاذ ${log.customerName || ""}،\nتحية طيبة من مصنع العماري للأثاث 🛋️\nبخصوص تواصلكم وملاحظتكم:\n"${cleanNoteText}"`
+                                                          : `Hello ${log.customerName || ""}, regarding your inquiry with El-Amary Furniture:\n"${cleanNoteText}"`;
+
+                                                      sendWhatsAppMessage(log.phone, replyMsg);
+                                                    }}
+                                                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white transition-all text-[11px] font-bold shadow-xs cursor-pointer"
+                                                    title={lang === "ar" ? "الرد عبر واتساب" : "Reply via WhatsApp"}
                                                   >
                                                     <MessageCircle className="w-3.5 h-3.5" />
+                                                    <span>{lang === "ar" ? "الرد بواتساب" : "Reply WA"}</span>
                                                   </button>
                                                 </>
                                               )}
@@ -6050,7 +6081,7 @@ export default function App() {
                                                   navigator.clipboard.writeText(`${log.customerName} (${log.phone}): ${log.notes}`);
                                                   toast.success(lang === "ar" ? "تم نسخ الملاحظة" : "Note copied");
                                                 }}
-                                                className="p-1.5 rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 transition-colors text-[10px] font-bold"
+                                                className="p-1.5 rounded-lg bg-zinc-100 text-zinc-600 hover:bg-zinc-200 transition-colors text-[10px] font-bold cursor-pointer"
                                                 title={lang === "ar" ? "نسخ" : "Copy"}
                                               >
                                                 <ClipboardList className="w-3.5 h-3.5" />
@@ -6281,14 +6312,29 @@ export default function App() {
                                         </span>
                                       </td>
                                       <td className="px-4 py-4">
-                                        <div className="flex gap-1.5 xl:gap-3 justify-between items-center w-full">
+                                        <div className="flex gap-1.5 xl:gap-2 justify-between items-center w-full">
                                           {isAdminUser && (
                                             <>
+                                              <button
+                                                onClick={() => {
+                                                  setSelectedRecord(r.raw || r);
+                                                  setIsDetailModalOpen(true);
+                                                }}
+                                                className="flex items-center gap-1.5 bg-zinc-100 text-zinc-700 hover:bg-zinc-200 border border-zinc-200 px-3 xl:px-4 py-2.5 xl:py-3 rounded-2xl text-xs font-bold uppercase tracking-wider active:scale-95 transition-all duration-200 shadow-sm cursor-pointer"
+                                                title={lang === "ar" ? "عرض الملف بدون تعديل" : "View Details (Read-only)"}
+                                              >
+                                                <Eye className="w-4 h-4 text-zinc-600" />
+                                                <span className="hidden xl:inline">
+                                                  {lang === "ar"
+                                                    ? "عرض"
+                                                    : "View"}
+                                                </span>
+                                              </button>
                                               <button
                                                 onClick={() =>
                                                   handleOpenEditModal(r)
                                                 }
-                                                className="flex items-center gap-2 bg-zinc-800 text-white px-3 xl:px-5 py-2.5 xl:py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-zinc-700 active:scale-95 transition-all duration-200 shadow-md shadow-zinc-200 hover:shadow-lg"
+                                                className="flex items-center gap-2 bg-zinc-800 text-white px-3 xl:px-5 py-2.5 xl:py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-zinc-700 active:scale-95 transition-all duration-200 shadow-md shadow-zinc-200 hover:shadow-lg cursor-pointer"
                                               >
                                                 <Edit2 className="w-4 h-4" />
                                                 <span className="hidden xl:inline">
@@ -6299,9 +6345,9 @@ export default function App() {
                                               </button>
                                               <button
                                                 onClick={getInspectionActionForCustomer(r).onClick}
-                                                className="flex items-center gap-2 bg-accent-tan text-white px-3 xl:px-5 py-2.5 xl:py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-accent-tan/90 active:scale-95 transition-all duration-200 shadow-md"
+                                                className="flex items-center gap-2 bg-accent-tan text-white px-3 xl:px-5 py-2.5 xl:py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-accent-tan/90 active:scale-95 transition-all duration-200 shadow-md cursor-pointer"
                                               >
-                                                <Eye className="w-4 h-4" />
+                                                <Calendar className="w-4 h-4" />
                                                 <span className="hidden xl:inline">
                                                   {getInspectionActionForCustomer(r).label}
                                                 </span>
@@ -6317,7 +6363,7 @@ export default function App() {
                                                     handleDeleteCustomer(id || "", phone);
                                                   }
                                                 }}
-                                                className="btn-3d btn-3d-danger flex items-center gap-2 bg-white-50 text-white-500 border border-white-100 px-3 xl:px-5 py-2.5 xl:py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-white-500 hover:text-white active:scale-95 transition-all duration-200 hover:shadow-lg hover:shadow-white-100"
+                                                className="btn-3d btn-3d-danger flex items-center gap-2 bg-white-50 text-white-500 border border-white-100 px-3 xl:px-5 py-2.5 xl:py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-white-500 hover:text-white active:scale-95 transition-all duration-200 hover:shadow-lg hover:shadow-white-100 cursor-pointer"
                                               >
                                                 <Trash2 className="w-4 h-4" />
                                                 <span className="hidden xl:inline">{t.delete}</span>
@@ -6377,10 +6423,21 @@ export default function App() {
                                 {isAdminUser && (
                                   <div className="flex gap-2 pt-4 border-t border-zinc-100 flex-wrap">
                                     <button
+                                      onClick={() => {
+                                        setSelectedRecord(r.raw || r);
+                                        setIsDetailModalOpen(true);
+                                      }}
+                                      className="flex-1 min-w-[70px] flex items-center justify-center gap-1.5 bg-zinc-100 text-zinc-800 border border-zinc-200 hover:bg-zinc-200 px-3 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider active:scale-95 transition-all shadow-sm cursor-pointer"
+                                      title={lang === "ar" ? "عرض الملف بدون تعديل" : "View Details"}
+                                    >
+                                      <Eye className="w-4 h-4 text-zinc-700" />
+                                      <span>{lang === "ar" ? "عرض" : "View"}</span>
+                                    </button>
+                                    <button
                                       onClick={() =>
                                         handleOpenEditModal(r)
                                       }
-                                      className="flex-1 min-w-[80px] flex items-center justify-center gap-2 bg-zinc-900 text-white px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-zinc-700 active:scale-95 transition-all shadow-md"
+                                      className="flex-1 min-w-[70px] flex items-center justify-center gap-1.5 bg-zinc-900 text-white px-3 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-zinc-700 active:scale-95 transition-all shadow-md cursor-pointer"
                                     >
                                       <Edit2 className="w-4 h-4" />
                                       <span>
@@ -6389,9 +6446,9 @@ export default function App() {
                                     </button>
                                     <button
                                       onClick={getInspectionActionForCustomer(r).onClick}
-                                      className="flex-1 min-w-[100px] flex items-center justify-center gap-2 bg-accent-tan text-white px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-accent-tan/90 active:scale-95 transition-all shadow-md"
+                                      className="flex-1 min-w-[95px] flex items-center justify-center gap-1.5 bg-accent-tan text-white px-3 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-accent-tan/90 active:scale-95 transition-all shadow-md cursor-pointer"
                                     >
-                                      <Eye className="w-4 h-4" />
+                                      <Calendar className="w-4 h-4" />
                                       <span>
                                         {getInspectionActionForCustomer(r).label}
                                       </span>
@@ -6407,7 +6464,7 @@ export default function App() {
                                           handleDeleteCustomer(id, phone);
                                         }
                                       }}
-                                      className="flex items-center justify-center gap-2 bg-red-50 text-red-500 border border-red-100 px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-red-500 hover:text-white active:scale-95 transition-all shadow-md"
+                                      className="flex items-center justify-center gap-2 bg-red-50 text-red-500 border border-red-100 px-4 py-3 rounded-2xl text-xs font-bold uppercase tracking-wider hover:bg-red-500 hover:text-white active:scale-95 transition-all shadow-md cursor-pointer"
                                     >
                                       <Trash2 className="w-4 h-4" />
                                     </button>

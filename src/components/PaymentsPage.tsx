@@ -161,6 +161,7 @@ export const PaymentsPage: React.FC<{
     );
     return isForContracted ? sum + (Number(p.amount) || 0) : sum;
   }, 0);
+  const totalRemainingValue = Math.max(0, totalContractValue - totalPaidValue);
 
   const handleOpenModal = (customer: Inspection, prefillStage?: string) => {
     setSelectedCustomer(customer);
@@ -225,50 +226,67 @@ export const PaymentsPage: React.FC<{
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-end gap-6">
         <div>
           <h1 className="text-3xl md:text-4xl font-light">
-            {lang === "ar" ? "كشف الحساب" : "Statement of Account"}
+            {lang === "ar" ? "كشف الحساب والمدفوعات" : "Statement of Account & Payments"}
           </h1>
           <p className="text-zinc-500 mt-2">
             {lang === "ar"
-              ? "تابع حالة المدفوعات للعملاء المتعاقدين ومطالبات التحصيل"
-              : "Track payment status and collection milestones for contracted customers"}
+              ? "تابع المدفوع فعلياً، المطلوب تحصيله، وإجمالي حصيلة الإنتاج الفعلي للعملاء"
+              : "Track actual paid, pending collections, and total production value"}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-4 w-full sm:w-auto">
-          <div className="relative group w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+          <div className="relative group flex-1 sm:flex-initial">
             <Search className="absolute top-1/2 -translate-y-1/2 right-3 w-3.5 h-3.5 text-zinc-400 group-focus-within:text-zinc-700 transition-colors pointer-events-none z-10" />
             <input
               type="text"
-              placeholder={lang === "ar" ? "بحث..." : "Search..."}
+              placeholder={lang === "ar" ? "بحث بالعميل أو الهاتف..." : "Search customer or phone..."}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-white/70 backdrop-blur-md border border-white/80 shadow-sm pr-9 pl-8 py-3 rounded-2xl text-sm font-medium outline-none w-full sm:w-40 sm:focus:w-52 focus:shadow-md focus:border-zinc-300 transition-all duration-300 placeholder:text-zinc-400 text-zinc-800"
+              className="bg-white/70 backdrop-blur-md border border-white/80 shadow-sm pr-9 pl-8 py-3 rounded-2xl text-sm font-medium outline-none w-full sm:w-48 sm:focus:w-60 focus:shadow-md focus:border-zinc-300 transition-all duration-300 placeholder:text-zinc-400 text-zinc-800"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery("")}
-                className="absolute top-1/2 -translate-y-1/2 left-2 w-4 h-4 flex items-center justify-center rounded-full bg-zinc-200 hover:bg-zinc-300 text-zinc-500 transition-all"
+                className="absolute top-1/2 -translate-y-1/2 left-2 w-4 h-4 flex items-center justify-center rounded-full bg-zinc-200 hover:bg-zinc-300 text-zinc-500 transition-all cursor-pointer"
               >
                 <X className="w-2.5 h-2.5" />
               </button>
             )}
           </div>
-          <div className="glass px-4 py-3 rounded-2xl min-w-[120px]">
-            <div className="text-[10px] uppercase font-bold text-zinc-400">
-              {lang === "ar" ? "إجمالي العقود" : "Total Contracts"}
+
+          {/* 1st Card: Actual Paid */}
+          <div className="glass px-4 py-3 rounded-2xl min-w-[130px] border-emerald-500/20 bg-emerald-50/30">
+            <div className="text-[10px] uppercase font-bold text-emerald-700 flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+              {lang === "ar" ? "المدفوع فعلي" : "Actual Paid"}
             </div>
-            <div className="text-2xl font-semibold">
-              {totalContractValue.toLocaleString()}
+            <div className="text-xl font-bold text-emerald-600 font-mono mt-0.5">
+              {totalPaidValue.toLocaleString()} <span className="text-xs font-normal">EGP</span>
             </div>
           </div>
-          <div className="glass px-4 py-3 rounded-2xl min-w-[120px]">
-            <div className="text-[10px] uppercase font-bold text-emerald-500">
-              {lang === "ar" ? "إجمالي المحصل" : "Total Paid"}
+
+          {/* 2nd Card: Required to Collect */}
+          <div className="glass px-4 py-3 rounded-2xl min-w-[130px] border-amber-500/20 bg-amber-50/30">
+            <div className="text-[10px] uppercase font-bold text-amber-700 flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />
+              {lang === "ar" ? "المطلوب تحصيله" : "To Collect"}
             </div>
-            <div className="text-2xl font-semibold text-emerald-600">
-              {totalPaidValue.toLocaleString()}
+            <div className="text-xl font-bold text-amber-600 font-mono mt-0.5">
+              {totalRemainingValue.toLocaleString()} <span className="text-xs font-normal">EGP</span>
+            </div>
+          </div>
+
+          {/* 3rd Card: Total Actual Production Output (Paid + Required) */}
+          <div className="glass px-4 py-3 rounded-2xl min-w-[140px] border-indigo-500/20 bg-indigo-50/30 shadow-sm">
+            <div className="text-[10px] uppercase font-bold text-indigo-700 flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-indigo-500 inline-block" />
+              {lang === "ar" ? "حصيلة الإنتاج الفعلي" : "Total Production"}
+            </div>
+            <div className="text-xl font-bold text-indigo-700 font-mono mt-0.5">
+              {totalContractValue.toLocaleString()} <span className="text-xs font-normal">EGP</span>
             </div>
           </div>
         </div>
