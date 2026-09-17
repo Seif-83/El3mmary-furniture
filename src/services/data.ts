@@ -1,4 +1,4 @@
-import { db } from "./db";
+import { db, type LocalProductionStage } from "./db";
 import { SyncManager } from "./sync";
 import { supabase } from "../lib/supabase";
 
@@ -222,6 +222,10 @@ export class InvoiceService {
     await SyncManager.queueOperation("INSERT", "payments", payment.id, payment);
   }
 
+  static async savePayment(payment: any) {
+    return this.insert(payment);
+  }
+
   static async delete(id: string) {
     await db.payments.delete(id);
     await SyncManager.addTombstone("payments", id);
@@ -269,6 +273,7 @@ export class StageService {
       payment_requested_at?: string | null;
       storage_warning_dismissed_at?: string | null;
       images?: string[] | null;
+      expenses?: { destination: string; amount: number }[] | null;
     },
   ) {
     const record = await db.production_stages.get(id);
@@ -282,6 +287,21 @@ export class StageService {
     await db.production_stages.put(updated as any);
     await SyncManager.queueOperation("UPDATE", "production_stages", id, {
       status,
+      completed_at: updated.completed_at,
+    });
+  }
+
+  static async updateStageExpenses(id: string, expenses: { destination: string; amount: number }[]) {
+    const record = await db.production_stages.get(id);
+    if (!record) return;
+    const updated = {
+      ...record,
+      expenses,
+      last_modified: Date.now(),
+    };
+    await db.production_stages.put(updated as any);
+    await SyncManager.queueOperation("UPDATE", "production_stages", id, {
+      status: updated.status,
       completed_at: updated.completed_at,
     });
   }
@@ -365,6 +385,10 @@ export class CustomerServiceLogsService {
             notes: r.notes,
             createdAt: r.created_at,
             createdBy: r.created_by,
+            reply: r.reply,
+            repliedAt: r.replied_at,
+            repliedBy: r.replied_by,
+            status: (r.status as "pending" | "resolved") || (r.reply ? "resolved" : "pending"),
             last_modified: r.last_modified,
           }));
         }
@@ -380,6 +404,10 @@ export class CustomerServiceLogsService {
       notes: r.notes,
       createdAt: r.created_at || r.createdAt,
       createdBy: r.created_by || r.createdBy,
+      reply: r.reply,
+      repliedAt: r.replied_at || r.repliedAt,
+      repliedBy: r.replied_by || r.repliedBy,
+      status: (r.status as "pending" | "resolved") || (r.reply ? "resolved" : "pending"),
       last_modified: r.last_modified,
     }));
   }
@@ -391,6 +419,10 @@ export class CustomerServiceLogsService {
     notes: string;
     createdAt: string;
     createdBy?: string;
+    reply?: string;
+    repliedAt?: string;
+    repliedBy?: string;
+    status?: "pending" | "resolved";
   }) {
     const record = {
       id: item.id,
@@ -399,6 +431,10 @@ export class CustomerServiceLogsService {
       notes: item.notes,
       created_at: item.createdAt,
       created_by: item.createdBy,
+      reply: item.reply || null,
+      replied_at: item.repliedAt || null,
+      replied_by: item.repliedBy || null,
+      status: item.status || "pending",
       last_modified: Date.now(),
     };
 
@@ -432,6 +468,41 @@ export class CustomerServiceLogsService {
       });
     } catch (e) {
       console.error("Queue sync error for CS log:", e);
+    }
+  }
+
+  static async saveReply(id: string, reply: string, repliedBy: string) {
+    const nowIso = new Date().toISOString();
+    // Update local backup
+    const backup = this.getLocalBackup();
+    const item = backup.find((b) => b.id === id);
+    if (item) {
+      item.reply = reply;
+      item.replied_at = nowIso;
+      item.replied_by = repliedBy;
+      item.status = "resolved";
+      item.last_modified = Date.now();
+      this.setLocalBackup(backup);
+    }
+
+    // Update Dexie
+    try {
+      if (db.customer_service_logs) {
+        const record = await db.customer_service_logs.get(id);
+        if (record) {
+          const updated = {
+            ...record,
+            reply,
+            replied_at: nowIso,
+            replied_by: repliedBy,
+            status: "resolved",
+            last_modified: Date.now(),
+          };
+          await db.customer_service_logs.put(updated);
+        }
+      }
+    } catch (err) {
+      console.warn("Dexie CS logs reply save error:", err);
     }
   }
 

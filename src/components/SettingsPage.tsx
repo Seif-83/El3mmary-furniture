@@ -1,10 +1,10 @@
-// Settings page (sync status, language, admin tools). Extracted from App.tsx.
 import React, { useState, useEffect } from "react";
-import { Activity, Languages, Users } from "lucide-react";
+import { Activity, Languages, Users, MessageCircle, CheckCircle, AlertCircle, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 import { supabase, SUPABASE_CONFIGURED } from "../lib/supabase";
 import { SyncManager } from "../services/sync";
 import { db } from "../services/db";
+import { WhatsAppGatewayService } from "../services/whatsappGateway";
 
 export const SettingsPage: React.FC<{
   lang: "en" | "ar";
@@ -28,6 +28,31 @@ export const SettingsPage: React.FC<{
   const [saving, setSaving] = useState(false);
   const [queueCount, setQueueCount] = useState<number>(0);
   const [syncing, setSyncing] = useState(false);
+  const [waConfig, setWaConfig] = useState(() => WhatsAppGatewayService.getConfig());
+  const [testingWa, setTestingWa] = useState(false);
+  const [waTestResult, setWaTestResult] = useState<{ ok: boolean; message: string; status?: string } | null>(null);
+
+  const handleTestWa = async () => {
+    setTestingWa(true);
+    setWaTestResult(null);
+    WhatsAppGatewayService.saveConfig(waConfig);
+    const res = await WhatsAppGatewayService.testConnection();
+    setWaTestResult({
+      ok: res.ok,
+      message: res.message || (res.ok ? "الاتصال ناجح" : "فشل الاتصال"),
+      status: res.status,
+    });
+    setTestingWa(false);
+  };
+
+  const handleSaveWaConfig = () => {
+    WhatsAppGatewayService.saveConfig(waConfig);
+    toast.success(
+      lang === "ar"
+        ? "تم حفظ إعدادات خادم واتساب (OpenWA) بنجاح"
+        : "WhatsApp gateway settings saved",
+    );
+  };
 
   const checkQueueCount = async () => {
     try {
@@ -235,6 +260,142 @@ export const SettingsPage: React.FC<{
                   </span>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* WhatsApp Gateway (OpenWA) Settings */}
+        <div className="w-full glass rounded-[3rem] p-10 md:p-14 shadow-2xl border border-white/40">
+          <div className="flex items-center gap-5 mb-8">
+            <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 flex items-center justify-center">
+              <MessageCircle className="w-8 h-8 text-emerald-600" />
+            </div>
+            <div>
+              <h3 className="text-2xl md:text-3xl font-bold text-zinc-900">
+                {lang === "ar" ? "خادم واتساب التلقائي (OpenWA)" : "WhatsApp Gateway (OpenWA)"}
+              </h3>
+              <p className="text-base text-zinc-500">
+                {lang === "ar"
+                  ? "إرسال إشعارات ومراحل التصنيع تلقائياً إلى هواتف العملاء من رقم مفروشات العماري"
+                  : "Send production notifications automatically to customer phones via El-Ammari number"}
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Server URL */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-zinc-600 px-1 block">
+                  {lang === "ar" ? "عنوان خادم OpenWA (Server URL)" : "OpenWA Server URL"}
+                </label>
+                <input
+                  type="url"
+                  value={waConfig.apiUrl}
+                  onChange={(e) => setWaConfig({ ...waConfig, apiUrl: e.target.value })}
+                  placeholder="http://localhost:2785"
+                  className="w-full px-5 py-3.5 bg-white/80 border border-black/10 rounded-2xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <p className="text-[11px] text-zinc-400 px-1">
+                  {lang === "ar"
+                    ? "الرابط المحلي أو عنوان السيرفر الذي يعمل عليه OpenWA (افتراضياً: http://localhost:2785)"
+                    : "Default local address is http://localhost:2785"}
+                </p>
+              </div>
+
+              {/* Session ID */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-zinc-600 px-1 block">
+                  {lang === "ar" ? "اسم الجلسة (Session ID)" : "Session ID"}
+                </label>
+                <input
+                  type="text"
+                  value={waConfig.sessionId}
+                  onChange={(e) => setWaConfig({ ...waConfig, sessionId: e.target.value })}
+                  placeholder="default"
+                  className="w-full px-5 py-3.5 bg-white/80 border border-black/10 rounded-2xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <p className="text-[11px] text-zinc-400 px-1">
+                  {lang === "ar"
+                    ? "اسم الجلسة المسجلة برقم هاتف العماري في خادم OpenWA (افتراضياً: default)"
+                    : "The session name connected in OpenWA (default: default)"}
+                </p>
+              </div>
+
+              {/* API Key */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-zinc-600 px-1 block">
+                  {lang === "ar" ? "مفتاح الـ API (API Key - اختياري)" : "API Key (Optional)"}
+                </label>
+                <input
+                  type="password"
+                  value={waConfig.apiKey}
+                  onChange={(e) => setWaConfig({ ...waConfig, apiKey: e.target.value })}
+                  placeholder="X-API-Key"
+                  className="w-full px-5 py-3.5 bg-white/80 border border-black/10 rounded-2xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              {/* Toggle Enable */}
+              <div className="flex items-center gap-3 pt-6">
+                <input
+                  type="checkbox"
+                  id="wa-enabled"
+                  checked={waConfig.enabled}
+                  onChange={(e) => setWaConfig({ ...waConfig, enabled: e.target.checked })}
+                  className="w-5 h-5 rounded-lg text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                />
+                <label htmlFor="wa-enabled" className="text-sm font-bold text-zinc-800 cursor-pointer">
+                  {lang === "ar" ? "تفعيل الإرسال التلقائي عبر خادم OpenWA" : "Enable automated dispatch via OpenWA"}
+                </label>
+              </div>
+            </div>
+
+            {/* Test Result Box */}
+            {waTestResult && (
+              <div
+                className={`p-4 rounded-2xl flex items-center gap-3 border ${
+                  waTestResult.ok
+                    ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                    : "bg-red-50 border-red-200 text-red-800"
+                }`}
+              >
+                {waTestResult.ok ? (
+                  <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />
+                )}
+                <div className="text-sm">
+                  <p className="font-bold">{waTestResult.message}</p>
+                  {waTestResult.status && (
+                    <p className="text-xs opacity-75 font-mono mt-0.5">
+                      Session Status: {waTestResult.status}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex flex-wrap items-center gap-4 pt-2">
+              <button
+                type="button"
+                disabled={testingWa}
+                onClick={handleTestWa}
+                className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-bold text-sm transition-all cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${testingWa ? "animate-spin" : ""}`} />
+                <span>{lang === "ar" ? (testingWa ? "جاري الفحص..." : "فحص الاتصال بالخادم") : (testingWa ? "Testing..." : "Test Connection")}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveWaConfig}
+                className="flex items-center gap-2 px-8 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-lg shadow-emerald-600/20 transition-all cursor-pointer"
+              >
+                <CheckCircle className="w-4 h-4" />
+                <span>{lang === "ar" ? "حفظ الإعدادات" : "Save Settings"}</span>
+              </button>
             </div>
           </div>
         </div>

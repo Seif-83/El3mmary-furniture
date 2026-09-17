@@ -45,6 +45,7 @@ const AVAILABLE_PERMISSIONS = [
 const ROLES = [
   { key: "super_admin", ar: "مسؤول خارق (Super Admin)", en: "Super Admin" },
   { key: "contract_admin", ar: "مسؤول تعاقدات (Contract Admin)", en: "Contract Admin" },
+  { key: "factory_supervisor", ar: "مشرفة مصنع (Factory Supervisor)", en: "Factory Supervisor" },
   { key: "moderator", ar: "مراقب عام (Moderator)", en: "General Moderator" },
   { key: "production_alexandria", ar: "إنتاج الإسكندرية (Alexandria Production)", en: "Alexandria Production" },
   { key: "production_cairo", ar: "إنتاج القاهرة (Cairo Production)", en: "Cairo Production" },
@@ -112,6 +113,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ lang, currentUse
       setSelectedPermissions(AVAILABLE_PERMISSIONS.map((p) => p.key));
     } else if (roleKey === "contract_admin") {
       setSelectedPermissions(["contracts.upload", "production.view"]);
+    } else if (roleKey === "factory_supervisor") {
+      setSelectedPermissions(["production.view", "production.edit"]);
     } else if (roleKey === "moderator") {
       setSelectedPermissions(["production.view", "production.alexandria", "production.cairo"]);
     } else if (roleKey === "production_alexandria") {
@@ -585,6 +588,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ lang, currentUse
                         newPerms = AVAILABLE_PERMISSIONS.map((p) => p.key);
                       } else if (newRole === "contract_admin") {
                         newPerms = ["contracts.upload", "production.view"];
+                      } else if (newRole === "factory_supervisor") {
+                        newPerms = ["production.view", "production.edit"];
                       }
                       setEditingUser({
                         ...editingUser,

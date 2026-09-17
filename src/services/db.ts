@@ -128,6 +128,7 @@ export interface LocalProductionStage {
   payment_requested_at?: string;
   storage_warning_dismissed_at?: string | null;
   images?: string[];
+  expenses?: { destination: string; amount: number }[];
   created_at: string;
   client?: { phones: string[] }; // locally cached relation details
   last_modified: number;
@@ -181,6 +182,10 @@ export interface LocalCustomerServiceLog {
   notes: string;
   created_at: string;
   created_by?: string;
+  reply?: string;
+  replied_at?: string;
+  replied_by?: string;
+  status?: string;
   last_modified: number;
 }
 

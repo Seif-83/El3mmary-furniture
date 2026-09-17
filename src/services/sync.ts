@@ -714,6 +714,15 @@ export class SyncManager {
         delete cleanedPayload.timer_started_at;
         delete cleanedPayload.payment_requested;
         delete cleanedPayload.payment_requested_at;
+        delete cleanedPayload.expenses;
+      }
+      if (
+        tableName === "inspections" ||
+        tableName === "contracted_customers" ||
+        tableName === "non_contracted_customers"
+      ) {
+        delete cleanedPayload.room_pricing_type;
+        delete cleanedPayload.room_total_price;
       }
     }
 

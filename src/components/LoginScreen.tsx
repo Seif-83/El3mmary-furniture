@@ -1,6 +1,14 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Armchair, ChevronRight, Eye, EyeOff, Key, Phone, Users } from "lucide-react";
+import {
+  Armchair,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  Key,
+  Phone,
+  Users,
+} from "lucide-react";
 
 interface LoginScreenProps {
   isAuthorizedButWrongAccount: boolean;
@@ -18,7 +26,7 @@ interface LoginScreenProps {
   // Customer Login Props
   customerPhone: string;
   onCustomerPhoneChange: (v: string) => void;
-  onCustomerSubmit: (e: React.FormEvent) => void;
+  onCustomerSubmit?: (e: React.FormEvent) => void;
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({
@@ -212,20 +220,20 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 </div>
               </div>
 
-              <div className="bg-amber-50 text-amber-800 border border-amber-100 p-4 rounded-xl text-xs leading-relaxed">
-                {isAr
-                  ? "ملاحظة: يمكنك الوصول لبوابة العملاء وعرض عقدك ومراحل إنتاج طلبك فوراً باستخدام رقم هاتفك المسجل لدينا في العقد."
-                  : "Note: You can access the customer portal to view your contract and live production progress using the phone number registered in your contract."}
-              </div>
-
               {/* Submit */}
               <button
                 disabled={isLoading}
                 type="submit"
                 className="w-full bg-zinc-900 hover:bg-zinc-800 text-white py-5 rounded-2xl font-bold uppercase tracking-widest shadow-2xl flex items-center justify-center gap-3 group text-base btn-3d btn-3d-zinc cursor-pointer active:scale-95 transition-all mt-4"
               >
-                {isLoading ? (isAr ? "جاري التحقق..." : "Verifying...") : (isAr ? "دخول البوابة" : "Access Portal")}
-                <ChevronRight className={`w-5 h-5 transition-transform group-hover:translate-x-1 ${isAr ? "rotate-180 group-hover:-translate-x-1" : ""}`} />
+                {isLoading
+                  ? isAr ? "جاري الدخول..." : "Accessing..."
+                  : isAr ? "الدخول للبوابة" : "Access Portal"}
+                <ChevronRight
+                  className={`w-5 h-5 transition-transform group-hover:translate-x-1 ${
+                    isAr ? "rotate-180 group-hover:-translate-x-1" : ""
+                  }`}
+                />
               </button>
             </motion.form>
           )}

@@ -17,6 +17,8 @@ import {
   Trash2,
   Upload,
   Eye,
+  Coins,
+  CheckCircle2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import type { Inspection } from "../types";
@@ -163,8 +165,8 @@ export const ProductionPage: React.FC<{
   onSendWhatsApp?: (phone: string, msg: string) => void;
   onRefresh?: () => Promise<void>;
   userProfile?: { username?: string; role: string; permissions: string[] } | null;
-  productionFilter: "all" | "in_production" | "completed";
-  onProductionFilterChange: (filter: "all" | "in_production" | "completed") => void;
+  productionFilter: "all" | "waiting_list" | "in_production" | "completed";
+  onProductionFilterChange: (filter: "all" | "waiting_list" | "in_production" | "completed") => void;
 }> = ({
   contractedCustomers,
   inspections,
@@ -230,6 +232,59 @@ export const ProductionPage: React.FC<{
   const [stageImages, setStageImages] = useState<string[]>([]);
   const [isSavingPhotos, setIsSavingPhotos] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  // Stage Expenses Modal State (2 horizontal columns, 15 rows: جهة الصرف والمبلغ)
+  const [expenseModalOpen, setExpenseModalOpen] = useState(false);
+  const [expenseStageData, setExpenseStageData] = useState<{
+    stageRecord: any;
+    stageDef: (typeof STAGE_ORDER)[number];
+    order: Inspection;
+  } | null>(null);
+  const [stageExpenses, setStageExpenses] = useState<{ destination: string; amount: number | "" }[]>(() =>
+    Array.from({ length: 15 }, () => ({ destination: "", amount: "" }))
+  );
+  const [isSavingExpenses, setIsSavingExpenses] = useState(false);
+
+  const handleOpenExpenseModal = (
+    stageRecord: any,
+    stageDef: (typeof STAGE_ORDER)[number],
+    order: Inspection,
+  ) => {
+    setExpenseStageData({ stageRecord, stageDef, order });
+    const existing: { destination: string; amount: number }[] = stageRecord?.expenses || [];
+    const initial: { destination: string; amount: number | "" }[] = Array.from({ length: 15 }, (_, i) => ({
+      destination: existing[i]?.destination || "",
+      amount: existing[i]?.amount !== undefined ? existing[i].amount : "",
+    }));
+    setStageExpenses(initial);
+    setExpenseModalOpen(true);
+  };
+
+  const handleSaveStageExpenses = async () => {
+    if (!expenseStageData?.stageRecord?.id) return;
+    setIsSavingExpenses(true);
+    try {
+      const cleaned = stageExpenses
+        .filter((e) => e.destination.trim() !== "" || (typeof e.amount === "number" && e.amount > 0))
+        .map((e) => ({
+          destination: e.destination.trim(),
+          amount: Number(e.amount) || 0,
+        }));
+
+      await StageService.updateStageExpenses(expenseStageData.stageRecord.id, cleaned);
+      if (onRefresh) await onRefresh();
+      toast.success(
+        lang === "ar"
+          ? "تم حفظ مصروفات المرحلة بنجاح"
+          : "Stage expenses saved successfully"
+      );
+      setExpenseModalOpen(false);
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to save expenses");
+    } finally {
+      setIsSavingExpenses(false);
+    }
+  };
 
   const handleOpenPhotoModal = (
     stageRecord: any,
@@ -341,12 +396,39 @@ export const ProductionPage: React.FC<{
     return orderStages.every((s: any) => s.status === "done");
   };
 
-  // CS accounts (production.view without production.edit) should NOT see prices
+  const isOrderReceived = (order: Inspection) => {
+    const orderPhone = order.phone;
+    const matchingStage = orderPhone
+      ? stages.find((s: any) => s.client?.phones?.includes(orderPhone))
+      : null;
+    const orderClientId = matchingStage?.client_id || null;
+    const orderStages = orderClientId
+      ? stages.filter((s: any) => s.client_id === orderClientId)
+      : [];
+    const receivedStage = orderStages.find((s: any) => s.stage === "received");
+    return receivedStage?.status === "done";
+  };
+
+  const isFactorySupervisor =
+    userProfile?.role === "factory_supervisor" ||
+    userProfile?.role === "production_alexandria" ||
+    userProfile?.role === "production_cairo" ||
+    (!isAdmin &&
+      userProfile?.role !== "super_admin" &&
+      !userProfile?.permissions?.includes("contracts.upload") &&
+      !userProfile?.permissions?.includes("contracts.edit"));
+
+  const waitingCount = allProductionData.filter((o) => !isOrderReceived(o) && !isOrderCompleted(o)).length;
+  const inProductionCount = allProductionData.filter((o) => isOrderReceived(o) && !isOrderCompleted(o)).length;
+  const completedCount = allProductionData.filter((o) => isOrderCompleted(o)).length;
+
+  // CS accounts and factory supervisors should NOT see contract prices
   const perms = userProfile?.permissions || [];
   const showPrice =
-    userProfile?.role === "super_admin" ||
-    perms.includes("production.edit") ||
-    perms.includes("reports.view");
+    !isFactorySupervisor &&
+    (userProfile?.role === "super_admin" ||
+      perms.includes("production.edit") ||
+      perms.includes("reports.view"));
 
   const canEditStages =
     isAdmin ||
@@ -366,13 +448,18 @@ export const ProductionPage: React.FC<{
 
   const filteredProductionData = allProductionData.filter((order) => {
     const isCompleted = isOrderCompleted(order);
+    const isReceived = isOrderReceived(order);
+
     if (govFilter !== "all" && order.governorate !== govFilter) {
       return false;
     }
     if (productionFilter === "completed" && !isCompleted) {
       return false;
     }
-    if (productionFilter === "in_production" && isCompleted) {
+    if (productionFilter === "waiting_list" && (isReceived || isCompleted)) {
+      return false;
+    }
+    if (productionFilter === "in_production" && (!isReceived || isCompleted)) {
       return false;
     }
 
@@ -610,7 +697,7 @@ export const ProductionPage: React.FC<{
     } else {
       msg =
         lang === "ar"
-          ? `مرحباً ${order.customerName || ""}،\nتم استلام وتأكيد طلبكم في مصنع العماري للأثاث.\nيرجى التكرم بسداد دفعة التعاقد / الاستلام لتأكيد بدء مراحل العمل بالورشة.\nالمبلغ المتبقي: ${remaining.toLocaleString()} ج.م.\nشكراً لتعاملكم معنا!`
+          ? `مرحباً ${order.customerName || ""}،\nتم استلام وتأكيد طلبكم في مصنع العماري للأثاث.\nيرجى التكرم بسداد دفعة التعاقد / الاستلام لتأكيد بدء مراحل العمل بالمصنع.\nالمبلغ المتبقي: ${remaining.toLocaleString()} ج.م.\nشكراً لتعاملكم معنا!`
           : `Hello ${order.customerName || ""},\nYour order at El-Amary Furniture has been received and confirmed.\nPlease settle the intake deposit to commence production.\nRemaining balance: ${remaining.toLocaleString()} EGP.\nThank you for choosing us!`;
     }
 
@@ -761,25 +848,43 @@ export const ProductionPage: React.FC<{
             )}
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">
-            {/* Status Filters: All, Incomplete (In-Progress), Completed */}
+            {/* Status Filters: Waiting List, In-Production, Completed, All */}
             <div className="flex items-center gap-1.5 flex-wrap">
               <button
-                onClick={() => onProductionFilterChange("all")}
-                className={`filter-chip ${productionFilter === "all" ? "filter-chip-active" : "filter-chip-inactive"}`}
+                onClick={() => onProductionFilterChange("waiting_list")}
+                className={`filter-chip flex items-center gap-1.5 ${productionFilter === "waiting_list" ? "filter-chip-active" : "filter-chip-inactive"}`}
               >
-                {lang === "ar" ? "الكل" : "All"}
+                <span>{lang === "ar" ? "قوائم الانتظار" : "Waiting List"}</span>
+                <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-amber-500/20 text-amber-800 font-bold font-mono">
+                  {waitingCount}
+                </span>
               </button>
               <button
                 onClick={() => onProductionFilterChange("in_production")}
-                className={`filter-chip ${productionFilter === "in_production" ? "filter-chip-active" : "filter-chip-inactive"}`}
+                className={`filter-chip flex items-center gap-1.5 ${productionFilter === "in_production" ? "filter-chip-active" : "filter-chip-inactive"}`}
               >
-                {lang === "ar" ? "غير مكتمل" : "Incomplete"}
+                <span>{lang === "ar" ? "في الإنتاج" : "In Production"}</span>
+                <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-indigo-500/20 text-indigo-800 font-bold font-mono">
+                  {inProductionCount}
+                </span>
               </button>
               <button
                 onClick={() => onProductionFilterChange("completed")}
-                className={`filter-chip ${productionFilter === "completed" ? "filter-chip-active" : "filter-chip-inactive"}`}
+                className={`filter-chip flex items-center gap-1.5 ${productionFilter === "completed" ? "filter-chip-active" : "filter-chip-inactive"}`}
               >
-                {lang === "ar" ? "مكتمل" : "Completed"}
+                <span>{lang === "ar" ? "مكتمل" : "Completed"}</span>
+                <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-emerald-500/20 text-emerald-800 font-bold font-mono">
+                  {completedCount}
+                </span>
+              </button>
+              <button
+                onClick={() => onProductionFilterChange("all")}
+                className={`filter-chip flex items-center gap-1.5 ${productionFilter === "all" ? "filter-chip-active" : "filter-chip-inactive"}`}
+              >
+                <span>{lang === "ar" ? "الكل" : "All"}</span>
+                <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-zinc-500/20 text-zinc-700 font-bold font-mono">
+                  {allProductionData.length}
+                </span>
               </button>
             </div>
 
@@ -902,6 +1007,12 @@ export const ProductionPage: React.FC<{
             const collectionMilestone = getOrderCollectionMilestone(order, orderStages);
 
             const isStoreOnly = canEditStages && !isAdmin;
+            const isReceived = isOrderReceived(order);
+            const isCompleted = isOrderCompleted(order);
+            const orderTotalExpenses = orderStages.reduce((sum: number, s: any) => {
+              const exps = (s.expenses || []) as { destination: string; amount: number }[];
+              return sum + exps.reduce((s2, e) => s2 + (Number(e.amount) || 0), 0);
+            }, 0);
 
             return (
               <div
@@ -912,22 +1023,31 @@ export const ProductionPage: React.FC<{
                   {/* Card Header */}
                   <div className="flex justify-between items-start mb-4">
                     <div>
-                      <h3 className="text-xl font-bold text-zinc-900 flex items-center gap-2">
-                        {order.customerName}
-                      </h3>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-xl font-bold text-zinc-900">
+                          {order.customerName}
+                        </h3>
+                        {!isReceived && !isCompleted && (
+                          <span className="bg-amber-500/10 text-amber-700 border border-amber-500/20 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                            {lang === "ar" ? "قائمة انتظار" : "Waiting List"}
+                          </span>
+                        )}
+                      </div>
                       {!isStoreUser && (
                         <p className="text-sm text-zinc-500 font-mono">
                           {order.phone}
                         </p>
                       )}
                     </div>
-                    <div className="bg-accent-tan/10 px-3 py-1 rounded-full text-xs font-bold text-accent-tan">
-                      {order.contractDate
-                        ? new Date(order.contractDate).toLocaleDateString("ar-EG")
-                        : lang === "ar"
-                          ? "بدون تاريخ"
-                          : "No date"}
-                    </div>
+                    {!isFactorySupervisor && (
+                      <div className="bg-accent-tan/10 px-3 py-1 rounded-full text-xs font-bold text-accent-tan">
+                        {order.contractDate
+                          ? new Date(order.contractDate).toLocaleDateString("ar-EG")
+                          : lang === "ar"
+                            ? "بدون تاريخ تعاقد"
+                            : "No date"}
+                      </div>
+                    )}
                   </div>
 
                   {/* Order Financial & Room Details */}
@@ -948,6 +1068,17 @@ export const ProductionPage: React.FC<{
                         </span>
                       </div>
                     )}
+                    {orderTotalExpenses > 0 && (isAdmin || canEditStages) && (
+                      <div className="flex justify-between text-sm text-emerald-700 bg-emerald-50/70 px-2 py-1 rounded-lg border border-emerald-200/50">
+                        <span className="font-semibold flex items-center gap-1">
+                          <Coins className="w-3.5 h-3.5 text-emerald-600" />
+                          {lang === "ar" ? "إجمالي المصروفات" : "Total Expenses"}
+                        </span>
+                        <span className="font-mono font-bold">
+                          {orderTotalExpenses.toLocaleString()} EGP
+                        </span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-sm">
                       <span className="text-zinc-500">
                         {lang === "ar" ? "تاريخ التسليم" : "Delivery Date"}
@@ -958,6 +1089,43 @@ export const ProductionPage: React.FC<{
                       </span>
                     </div>
                   </div>
+
+                  {/* WAITING LIST QUICK ACTION BANNER */}
+                  {!isReceived && !isCompleted && (
+                    <div className="mb-4 p-3.5 rounded-2xl bg-amber-50/90 border border-amber-200/90 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-amber-600 animate-pulse flex-shrink-0" />
+                        <div>
+                          <div className="text-xs font-bold text-amber-900">
+                            {lang === "ar" ? "في قائمة الانتظار (بدون استلام)" : "In Waiting List (Unreceived)"}
+                          </div>
+                          <div className="text-[10px] text-amber-700">
+                            {lang === "ar" ? "انقر تأكيد الاستلام لبدء مراحل الإنتاج" : "Click confirm intake to begin production"}
+                          </div>
+                        </div>
+                      </div>
+                      {canEditStages && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const receivedStage = orderStages.find((s: any) => s.stage === "received");
+                            if (receivedStage) {
+                              onStageUpdate(receivedStage.id, "done");
+                              toast.success(
+                                lang === "ar"
+                                  ? "تم الاستلام بنجاح وتم نقل الطلب إلى الإنتاج"
+                                  : "Intake confirmed, moved to production",
+                              );
+                            }
+                          }}
+                          className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700 text-white py-2 px-3.5 rounded-xl text-xs font-bold shadow-md transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>{lang === "ar" ? "تأكيد الاستلام" : "Confirm Intake"}</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                   {/* STORAGE OVERDUE WARNING BANNER */}
                   {storageInfo && storageInfo.isOverdue && (
@@ -1237,6 +1405,47 @@ export const ProductionPage: React.FC<{
                             {imgCount > 0 ? (
                               <span className="w-4 h-4 rounded-full bg-indigo-600 text-white flex items-center justify-center text-[9px] font-bold font-mono">
                                 {imgCount}
+                              </span>
+                            ) : (
+                              canEditStages && (
+                                <span className="text-[9px] text-zinc-400 font-bold">+</span>
+                              )
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Stage Expenses Row */}
+                  <div className="mt-3 pt-3 border-t border-zinc-100/80 flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-[10px] font-bold text-zinc-500 flex items-center gap-1">
+                      <Coins className="w-3.5 h-3.5 text-emerald-600" />
+                      {lang === "ar" ? "مصروفات المراحل:" : "Stage Expenses:"}
+                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {STAGE_ORDER.map((stDef) => {
+                        const stRec = orderStages.find((s: any) => s.stage === stDef.key);
+                        if (!stRec) return null;
+                        const expenses = (stRec.expenses || []) as { destination: string; amount: number }[];
+                        const stageExpenseSum = expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+                        return (
+                          <button
+                            key={stDef.key}
+                            type="button"
+                            onClick={() => handleOpenExpenseModal(stRec, stDef, order)}
+                            className={`px-2.5 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                              stageExpenseSum > 0
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 shadow-sm"
+                                : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 border border-zinc-200/60"
+                            }`}
+                            title={lang === "ar" ? `إدخال / عرض مصروفات مرحلة ${stDef.ar}` : `Expenses for ${stDef.en}`}
+                          >
+                            <span>{stDef.ar}</span>
+                            {stageExpenseSum > 0 ? (
+                              <span className="px-1.5 py-0.2 rounded-md bg-emerald-600 text-white text-[9px] font-bold font-mono">
+                                {stageExpenseSum.toLocaleString()} ج
                               </span>
                             ) : (
                               canEditStages && (
@@ -1846,6 +2055,126 @@ export const ProductionPage: React.FC<{
                   </button>
                 </div>
               )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ===================== STAGE EXPENSES MODAL (2 COLUMNS, 15 ROWS) ===================== */}
+      <AnimatePresence>
+        {expenseModalOpen && expenseStageData && (
+          <div className="fixed inset-0 z-[115] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl p-6 sm:p-8 max-w-2xl w-full shadow-2xl border border-zinc-100 max-h-[90vh] flex flex-col"
+              dir={lang === "ar" ? "rtl" : "ltr"}
+            >
+              <div className="flex items-center justify-between pb-4 border-b border-zinc-100 mb-4">
+                <div>
+                  <h3 className="text-xl font-bold text-zinc-900 flex items-center gap-2">
+                    <Coins className="w-5 h-5 text-emerald-600" />
+                    {lang === "ar"
+                      ? `مصروفات مرحلة (${expenseStageData.stageDef.ar})`
+                      : `Expenses for (${expenseStageData.stageDef.en})`}
+                  </h3>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    {lang === "ar"
+                      ? `العميل: ${expenseStageData.order.customerName} - خاص بالمصنع فقط (لا يظهر للعميل)`
+                      : `Customer: ${expenseStageData.order.customerName} - Factory internal only (Hidden from customer)`}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setExpenseModalOpen(false)}
+                  className="p-2 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 rounded-xl transition-all cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto pr-1 space-y-2">
+                <div className="grid grid-cols-[36px_1fr_130px] gap-2 px-1 text-[11px] font-bold text-zinc-500 uppercase">
+                  <span className="text-center">#</span>
+                  <span>{lang === "ar" ? "جهة الصرف" : "Destination / Entity"}</span>
+                  <span>{lang === "ar" ? "المبلغ (جنيه)" : "Amount (EGP)"}</span>
+                </div>
+
+                {stageExpenses.map((row, idx) => (
+                  <div
+                    key={idx}
+                    className="grid grid-cols-[36px_1fr_130px] gap-2 items-center bg-zinc-50/80 p-1.5 rounded-xl border border-zinc-200/60"
+                  >
+                    <span className="text-center text-xs font-bold text-zinc-400 font-mono">
+                      {idx + 1}
+                    </span>
+                    <input
+                      type="text"
+                      disabled={!canEditStages}
+                      value={row.destination}
+                      onChange={(e) => {
+                        const updated = [...stageExpenses];
+                        updated[idx].destination = e.target.value;
+                        setStageExpenses(updated);
+                      }}
+                      placeholder={lang === "ar" ? `جهة الصرف ${idx + 1}...` : `Expense item ${idx + 1}...`}
+                      className="w-full px-3 py-2 bg-white border border-zinc-200 rounded-lg text-xs font-semibold text-zinc-800 outline-none focus:border-emerald-500 transition-colors"
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      disabled={!canEditStages}
+                      value={row.amount}
+                      onChange={(e) => {
+                        const updated = [...stageExpenses];
+                        updated[idx].amount = e.target.value === "" ? "" : Number(e.target.value);
+                        setStageExpenses(updated);
+                      }}
+                      placeholder="0"
+                      className="w-full px-3 py-2 bg-white border border-zinc-200 rounded-lg text-xs font-bold text-zinc-800 outline-none focus:border-emerald-500 text-right transition-colors"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* Total & Actions */}
+              <div className="pt-4 mt-4 border-t border-zinc-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="text-sm font-bold text-zinc-800 flex items-center gap-1.5">
+                  <span>{lang === "ar" ? "إجمالي مصروفات المرحلة:" : "Stage Total:"}</span>
+                  <span className="text-base text-emerald-600 font-mono font-extrabold">
+                    {stageExpenses
+                      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0)
+                      .toLocaleString()}{" "}
+                    جنيه
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => setExpenseModalOpen(false)}
+                    className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-bold bg-zinc-100 hover:bg-zinc-200 text-zinc-700 transition-all cursor-pointer"
+                  >
+                    {lang === "ar" ? "إغلاق" : "Close"}
+                  </button>
+                  {canEditStages && (
+                    <button
+                      type="button"
+                      disabled={isSavingExpenses}
+                      onClick={handleSaveStageExpenses}
+                      className="flex-1 sm:flex-none px-6 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>
+                        {isSavingExpenses
+                          ? (lang === "ar" ? "جاري الحفظ..." : "Saving...")
+                          : (lang === "ar" ? "حفظ المصروفات" : "Save Expenses")}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              </div>
             </motion.div>
           </div>
         )}

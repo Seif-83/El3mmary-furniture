@@ -43,6 +43,8 @@ import {
   BookOpen,
   TrendingUp,
   SlidersHorizontal,
+  Sparkles,
+  MessageSquare,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { supabase, supabaseAdmin, SUPABASE_CONFIGURED } from "./lib/supabase";
@@ -122,6 +124,13 @@ export default function App() {
   });
   const [customerSession, setCustomerSession] = useState<{ phone: string; name: string; record: any } | null>(null);
   const [customerPhoneInput, setCustomerPhoneInput] = useState("");
+
+  // CS Reply Modal States
+  const [replyModalLog, setReplyModalLog] = useState<CustomerServiceLog | null>(null);
+  const [replyInputText, setReplyInputText] = useState("");
+  const [sendReplyViaWhatsApp, setSendReplyViaWhatsApp] = useState(true);
+  const [isSavingReply, setIsSavingReply] = useState(false);
+
   const [isLoading, setIsLoading] = useState(false);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
@@ -132,12 +141,38 @@ export default function App() {
     return userProfile?.permissions?.includes(permission) || false;
   };
 
+  const isAdminUser = hasPermission("production.edit");
+  const isFactorySupervisor =
+    userProfile?.role === "factory_supervisor" ||
+    userProfile?.role === "production_alexandria" ||
+    userProfile?.role === "production_cairo" ||
+    (!isAdminUser &&
+      userProfile?.role !== "super_admin" &&
+      !hasPermission("contracts.upload") &&
+      !hasPermission("contracts.edit"));
+
+  const isAlexCairoSupervisor =
+    userProfile?.role === "production_alexandria" ||
+    userProfile?.role === "production_cairo" ||
+    userProfile?.role === "factory_supervisor" ||
+    (userProfile?.role !== "super_admin" &&
+      (Boolean(userProfile?.permissions?.includes("production.alexandria")) ||
+        Boolean(userProfile?.permissions?.includes("production.cairo"))));
+
   const canAccessTab = (tab: string) => {
     if (!userProfile) return false;
     const username = userProfile.username;
 
     // Super admin gets everything
     if (userProfile.role === "super_admin") return true;
+
+    // Hide contract tabs for factory and branch supervisors (Alexandria / Cairo)
+    if (
+      (isFactorySupervisor || isAlexCairoSupervisor) &&
+      (tab === "contracted" || tab === "not-contracted")
+    ) {
+      return false;
+    }
 
     // Store accounts: only production and dashboard
     if (username === "alex_store" || username === "cairo_store") {
@@ -149,8 +184,18 @@ export default function App() {
       return ["customers", "production", "phonebook", "dashboard"].includes(tab);
     }
 
+    // Production tab access
+    if (tab === "production") {
+      return (
+        hasPermission("production.view") ||
+        hasPermission("production.alexandria") ||
+        hasPermission("production.cairo") ||
+        isFactorySupervisor
+      );
+    }
+
     // Standard permission-based checks
-    if (["customers", "inspections", "contracted", "not-contracted", "production", "phonebook"].includes(tab)) {
+    if (["customers", "inspections", "contracted", "not-contracted", "phonebook"].includes(tab)) {
       return hasPermission("production.view");
     }
     if (tab === "payments" || tab === "catalogs") return hasPermission("reports.view");
@@ -158,7 +203,6 @@ export default function App() {
     return true;
   };
 
-  const isAdminUser = hasPermission("production.edit");
   const isAuthorizedUser = userProfile !== null;
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -186,7 +230,7 @@ export default function App() {
     | "settings"
     | "users"
   >("dashboard");
-  const [productionFilter, setProductionFilter] = useState<"all" | "in_production" | "completed">("all");
+  const [productionFilter, setProductionFilter] = useState<"all" | "waiting_list" | "in_production" | "completed">("all");
   const [csLogs, setCsLogs] = useState<CustomerServiceLog[]>([]);
   const [csName, setCsName] = useState("");
   const [csPhone, setCsPhone] = useState("");
@@ -439,6 +483,8 @@ export default function App() {
     room_types: [],
     room_aro_veneer: {},
     room_aro_veneer_price: {},
+    room_pricing_type: {},
+    room_total_price: {},
     pieces: [],
     totalAmount: 0,
   });
@@ -714,18 +760,22 @@ export default function App() {
   };
 
   const quoteItemTotal = (item: RoomDraftItem) =>
-    Number(item.price || 0) * Number(item.quantity || 1) +
-    (item.aro_veneer_addon ? Number(item.aro_surcharge || 0) : 0);
+    Number(item.price || 0) * Number(item.quantity || 1);
+
   const quoteRoomSubtotal = (room: RoomDraft) => {
-    const itemsTotal = room.items.reduce(
-      (sum, item) => sum + quoteItemTotal(item),
-      0,
-    );
-    const veneerPrice = Number(room.aro_veneer_price || 0);
-    return itemsTotal + veneerPrice;
+    const basePrice = room.pricing_type === "total"
+      ? Number(room.total_price || 0)
+      : room.items.reduce(
+          (sum, item) => sum + quoteItemTotal(item),
+          0,
+        );
+    const veneerPrice = room.aro_veneer ? Number(room.aro_veneer_price || 0) : 0;
+    return basePrice + veneerPrice;
   };
+
   const quoteTotal = () =>
     quoteDrafts.reduce((sum, r) => sum + quoteRoomSubtotal(r), 0);
+
   // Single source of truth for "what pieces are in this quote right now" -
   // used by every section (grand total, room totals, pieces list) so they
   // can never drift apart, even before the quote is saved.
@@ -733,12 +783,12 @@ export default function App() {
     r.items.map((it) => ({
       name: it.item_name,
       quantity: it.quantity,
-      price: it.price,
+      price: r.pricing_type === "total" ? 0 : it.price,
       details: it.dimensions || it.notes || "",
       room_type: r.room_type,
       room_instance_id: r.id,
-      aro_veneer_addon: it.aro_veneer_addon,
-      aro_surcharge: it.aro_surcharge,
+      aro_veneer_addon: false,
+      aro_surcharge: 0,
     })),
   );
 
@@ -852,16 +902,28 @@ export default function App() {
       id: string,
       room_type: string,
       customLabel: string | null = null,
-    ): RoomDraft => ({
-      id,
-      room_type,
-      aro_veneer:
-        getSelectedRecordRoomAroVeneerEnabled(room_type) ||
-        getSelectedRecordRoomAroVeneerPrice(room_type) > 0,
-      aro_veneer_price: getSelectedRecordRoomAroVeneerPrice(room_type),
-      items: [],
-      customLabel,
-    });
+    ): RoomDraft => {
+      const pricingType =
+        selectedRecord?.room_pricing_type?.[id] ||
+        selectedRecord?.room_pricing_type?.[room_type] ||
+        "detailed";
+      const totalPrice =
+        selectedRecord?.room_total_price?.[id] ??
+        selectedRecord?.room_total_price?.[room_type] ??
+        0;
+      return {
+        id,
+        room_type,
+        aro_veneer:
+          getSelectedRecordRoomAroVeneerEnabled(room_type) ||
+          getSelectedRecordRoomAroVeneerPrice(room_type) > 0,
+        aro_veneer_price: getSelectedRecordRoomAroVeneerPrice(room_type),
+        items: [],
+        customLabel,
+        pricing_type: pricingType,
+        total_price: Number(totalPrice) || 0,
+      };
+    };
 
     const addRoomDraft = (
       id: string,
@@ -939,6 +1001,8 @@ export default function App() {
         aro_veneer_price: 0,
         items: [] as RoomDraftItem[],
         customLabel: null,
+        pricing_type: "detailed" as const,
+        total_price: 0,
       }),
     );
 
@@ -1005,7 +1069,14 @@ export default function App() {
   const addRoom = (type: string) =>
     setQuoteDrafts((prev) => [
       ...prev,
-      { room_type: type, aro_veneer: false, items: [] },
+      {
+        room_type: type,
+        aro_veneer: false,
+        aro_veneer_price: 0,
+        items: [],
+        pricing_type: "detailed",
+        total_price: 0,
+      },
     ]);
   const removeRoom = (roomIndex: number) =>
     setQuoteDrafts((prev) => prev.filter((_, i) => i !== roomIndex));
@@ -1075,19 +1146,28 @@ export default function App() {
       setIsLoading(true);
       const pieces = livePieces;
       const totalAmount = quoteTotal();
-      const roomAroVeneer = parseRecordSource<boolean>(
-        selectedRecord?.room_aro_veneer || selectedRecord?.roomAroVeneer,
-      );
-      const roomAroVeneerPrice = parseRecordSource<number>(
-        selectedRecord?.room_aro_veneer_price ||
-          selectedRecord?.roomAroVeneerPrice,
-      );
+
+      const roomPricingType: Record<string, "detailed" | "total"> = {};
+      const roomTotalPrice: Record<string, number> = {};
+      const roomAroVeneer: Record<string, boolean> = {};
+      const roomAroVeneerPrice: Record<string, number> = {};
+
+      quoteDrafts.forEach((draft) => {
+        const key = draft.id || draft.room_type;
+        roomPricingType[key] = draft.pricing_type || "detailed";
+        roomTotalPrice[key] = Number(draft.total_price || 0);
+        roomAroVeneer[key] = Boolean(draft.aro_veneer);
+        roomAroVeneerPrice[key] = Number(draft.aro_veneer_price || 0);
+      });
+
       const updates = {
         pieces,
         total_amount: totalAmount,
         rooms: quoteDrafts.length,
         room_aro_veneer: roomAroVeneer,
         room_aro_veneer_price: roomAroVeneerPrice,
+        room_pricing_type: roomPricingType,
+        room_total_price: roomTotalPrice,
       };
       // Optimistic UI: update locally and queue sync
       await OrderService.updateInspection(selectedRecord.id, updates);
@@ -2113,8 +2193,8 @@ export default function App() {
     setIsLoading(false);
   };
 
-  const handleCustomerLogin = async (e: FormEvent) => {
-    e.preventDefault();
+  const handleCustomerLogin = async (e?: FormEvent) => {
+    if (e) e.preventDefault();
     setIsLoading(true);
     const rawPhone = customerPhoneInput.trim();
     const normalized = normalizePhone(rawPhone);
@@ -2133,24 +2213,22 @@ export default function App() {
       // 1. Try to find local match first
       const contracted = await OrderService.getContracted();
       let match: any = contracted.find(
-        (c) => normalizePhone(c.phone) === normalized
+        (c) => normalizePhone(c.phone) === normalized,
       );
 
       let fetchedPayments: any[] = [];
       let fetchedStages: any[] = [];
 
       if (match) {
-        // If matched locally, load payments and stages from local Dexie DB
         fetchedPayments = await InvoiceService.getPayments();
         fetchedStages = await StageService.getStages();
       } else {
-        // 2. If no local match (e.g. clean browser), check Supabase directly using RPC
+        // 2. Check remote Supabase if offline search did not find it
         const { data: customerData, error: rpcError } = await supabase
           .rpc("get_customer_by_phone", { phone_input: normalized });
 
         if (rpcError) throw rpcError;
         if (customerData) {
-          // Map snake_case keys from DB to camelCase keys expected by customerRecord/CustomerPortal
           match = {
             id: customerData.id,
             customerName: customerData.customer_name,
@@ -2170,18 +2248,13 @@ export default function App() {
             contractUrl: customerData.contract_url,
           };
 
-          // Fetch their payments and stages from Supabase using RPCs
           const { data: remotePayments } = await supabase
             .rpc("get_customer_payments_by_id", { customer_id: match.id });
-          if (remotePayments) {
-            fetchedPayments = remotePayments;
-          }
+          if (remotePayments) fetchedPayments = remotePayments;
 
           const { data: remoteStages } = await supabase
             .rpc("get_customer_stages_by_phone", { phone_input: normalized });
-          if (remoteStages) {
-            fetchedStages = remoteStages;
-          }
+          if (remoteStages) fetchedStages = remoteStages;
         }
       }
 
@@ -2189,15 +2262,13 @@ export default function App() {
         throw new Error(
           lang === "ar"
             ? "عذراً، لم نجد أي تعاقد نشط مسجل برقم الهاتف هذا."
-            : "Sorry, no active contract found for this phone number."
+            : "Sorry, no active contract found for this phone number.",
         );
       }
 
-      // Update state
+      // Direct Customer Portal Login
       setAllPayments(fetchedPayments);
       setStages(fetchedStages);
-
-      // Success! Log in as customer
       setCustomerSession({
         phone: match.phone,
         name: match.customerName,
@@ -2212,9 +2283,10 @@ export default function App() {
       setCustomerPhoneInput("");
     } catch (error: any) {
       console.error("Customer login error:", error);
-      toast.error(error.message);
+      toast.error(error.message || (lang === "ar" ? "تعذر الدخول للبوابة" : "Login failed"));
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const handleLogout = async () => {
@@ -2417,8 +2489,8 @@ export default function App() {
           ).toLocaleDateString("ar-EG");
           const msg =
             lang === "ar"
-              ? `السلام عليكم، تم تحديد معاد معاينتك يوم ${dateStr} لمصنع العماري للأثاث. برجاء التكرم بالحضور في المعاد المحدد. شكراً لثقتكم.`
-              : `Hello, your inspection appointment has been scheduled for ${dateStr} at El-Amary Furniture. Please attend on the specified date. Thank you for your trust.`;
+              ? `السلام عليكم، تم تحديد موعد معاينتك يوم ${dateStr} لمصنع العماري للأثاث. برجاء التكرم بالانتظار في الموعد المحدد. شكراً لثقتكم.`
+              : `Hello, your inspection appointment has been scheduled for ${dateStr} at El-Amary Furniture. Please wait on the specified date. Thank you for your trust.`;
           sendWhatsAppMessage(inspectionFormData.phone, msg);
         }
         // Notify customer about portfolio date when set for contracted customers
@@ -2432,8 +2504,8 @@ export default function App() {
           ).toLocaleDateString("ar-EG");
           const msg =
             lang === "ar"
-              ? `السلام عليكم، تم تحديد معاد البورتفوليو يوم ${dateStr} لمصنع العماري للأثاث. برجاء التكرم بالحضور في المعاد المحدد. شكراً لثقتكم.`
-              : `Hello, your portfolio appointment has been scheduled for ${dateStr} at El-Amary Furniture. Please attend on the specified date. Thank you for your trust.`;
+              ? `السلام عليكم، تم تحديد موعد البورتفوليو يوم ${dateStr} لمصنع العماري للأثاث. برجاء التكرم بالانتظار في الموعد المحدد. شكراً لثقتكم.`
+              : `Hello, your portfolio appointment has been scheduled for ${dateStr} at El-Amary Furniture. Please wait on the specified date. Thank you for your trust.`;
           sendWhatsAppMessage(inspectionFormData.phone, msg);
         }
 
@@ -2473,6 +2545,8 @@ export default function App() {
           portfolio_date: inspectionFormData.portfolioDate || null,
           room_aro_veneer: inspectionFormData.room_aro_veneer || {},
           room_aro_veneer_price: inspectionFormData.room_aro_veneer_price || {},
+          room_pricing_type: inspectionFormData.room_pricing_type || {},
+          room_total_price: inspectionFormData.room_total_price || {},
         };
         // room_types only exists on contracted_customers / non_contracted_customers, NOT on inspections
         if (editingCollection !== "inspections") {
@@ -2511,6 +2585,10 @@ export default function App() {
           portfolioDate: "",
           contractDate: "",
           portfolio: "",
+          room_aro_veneer: {},
+          room_aro_veneer_price: {},
+          room_pricing_type: {},
+          room_total_price: {},
         });
         setIsLoading(false);
         return;
@@ -2531,6 +2609,8 @@ export default function App() {
         portfolio: inspectionFormData.portfolio || null,
         room_aro_veneer: inspectionFormData.room_aro_veneer || {},
         room_aro_veneer_price: inspectionFormData.room_aro_veneer_price || {},
+        room_pricing_type: inspectionFormData.room_pricing_type || {},
+        room_total_price: inspectionFormData.room_total_price || {},
         pickup_date: inspectionFormData.pickupDate || null,
         portfolio_date: inspectionFormData.portfolioDate || null,
         contract_date: inspectionFormData.contractDate || null,
@@ -2878,7 +2958,7 @@ export default function App() {
       if (status === "contracted" && recordToSave.phone) {
         const msg =
           lang === "ar"
-            ? `السلام عليكم، تم التعاقد مع مصنع العماري للأثاث. سيتم التواصل معكم قريباً لترتيب معاد البورتفوليو وتجهيز طلبكم. شكراً لثقتكم.`
+            ? `السلام عليكم، تم التعاقد مع مصنع العماري للأثاث. سيتم التواصل معكم قريباً لترتيب موعد البورتفوليو وتجهيز طلبكم. شكراً لثقتكم.`
             : `Hello, the contract has been signed with El-Amary Furniture. We will contact you soon to arrange a portfolio appointment and prepare your order. Thank you for your trust.`;
         sendWhatsAppMessage(recordToSave.phone, msg);
       }
@@ -3070,7 +3150,7 @@ export default function App() {
           if (r.phone) {
             const msg =
               lang === "ar"
-                ? `السلام عليكم، تم التعاقد مع مصنع العماري للأثاث. سيتم التواصل معكم قريباً لترتيب معاد البورتفوليو وتجهيز طلبكم. شكراً لثقتكم.`
+                ? `السلام عليكم، تم التعاقد مع مصنع العماري للأثاث. سيتم التواصل معكم قريباً لترتيب موعد البورتفوليو وتجهيز طلبكم. شكراً لثقتكم.`
                 : `Hello, the contract has been signed with El-Amary Furniture. We will contact you soon to arrange a portfolio appointment and prepare your order. Thank you for your trust.`;
             sendWhatsAppMessage(r.phone, msg);
           }
@@ -3091,10 +3171,6 @@ export default function App() {
     );
   };
 
-  const computeInspectionTotalAmount = (pieces: FurniturePiece[]) => {
-    return pieces.reduce((sum, p) => sum + pieceTotal(p), 0);
-  };
-
   const getRoomInstanceKey = (roomType: string, roomIndex: number) =>
     `${roomType}:${roomIndex + 1}`;
 
@@ -3108,6 +3184,49 @@ export default function App() {
       return piece.room_instance_id === roomInstanceId;
     }
     return (piece.room_type || "other") === roomType && roomIndex === 0;
+  };
+
+  const pieceTotal = (piece: FurniturePiece) =>
+    Number(piece.price || 0) * Number(piece.quantity || 1);
+
+  const inspectionRoomSubtotal = (
+    roomType: string,
+    roomInstanceId: string,
+    roomIndex: number,
+    piecesList: FurniturePiece[] = inspectionFormData.pieces || [],
+    formData = inspectionFormData,
+  ) => {
+    const pricingType = formData.room_pricing_type?.[roomInstanceId] || "detailed";
+    const basePrice = pricingType === "total"
+      ? Number(formData.room_total_price?.[roomInstanceId] || 0)
+      : piecesList
+          .filter((p) =>
+            pieceMatchesRoomInstance(p, roomType, roomInstanceId, roomIndex),
+          )
+          .reduce((sum, p) => sum + pieceTotal(p), 0);
+
+    const hasVeneer = formData.room_aro_veneer?.[roomInstanceId] || formData.room_aro_veneer?.[roomType];
+    const veneerPrice = hasVeneer
+      ? Number(formData.room_aro_veneer_price?.[roomInstanceId] || formData.room_aro_veneer_price?.[roomType] || 0)
+      : 0;
+
+    return basePrice + veneerPrice;
+  };
+
+  const computeInspectionTotalAmount = (
+    pieces: FurniturePiece[],
+    formData = inspectionFormData,
+  ) => {
+    const roomKeys = formData.room_types || [];
+    if (roomKeys.length > 0) {
+      let total = 0;
+      roomKeys.forEach((roomType, idx) => {
+        const instanceId = getRoomInstanceKey(roomType, idx);
+        total += inspectionRoomSubtotal(roomType, instanceId, idx, pieces, formData);
+      });
+      return total;
+    }
+    return pieces.reduce((sum, p) => sum + pieceTotal(p), 0);
   };
 
   const addPiece = (
@@ -3223,19 +3342,6 @@ export default function App() {
     });
   };
 
-  const pieceTotal = (piece: FurniturePiece) =>
-    Number(piece.price || 0) * Number(piece.quantity || 1) +
-    (piece.aro_veneer_addon ? Number(piece.aro_surcharge || 0) : 0);
-  const inspectionRoomSubtotal = (
-    roomType: string,
-    roomInstanceId: string,
-    roomIndex: number,
-  ) =>
-    (inspectionFormData.pieces || [])
-      .filter((p) =>
-        pieceMatchesRoomInstance(p, roomType, roomInstanceId, roomIndex),
-      )
-      .reduce((sum, p) => sum + pieceTotal(p), 0);
   const availableRoomTypes = inspectionFormData.room_types?.length
     ? inspectionFormData.room_types
     : ["other"];
@@ -3259,7 +3365,75 @@ export default function App() {
       return {
         ...prev,
         pieces,
-        totalAmount: computeInspectionTotalAmount(pieces),
+        totalAmount: computeInspectionTotalAmount(pieces, prev),
+      };
+    });
+  };
+
+  const setInspectionRoomPricingType = (
+    roomInstanceId: string,
+    pricingType: "detailed" | "total",
+  ) => {
+    setInspectionFormData((prev) => {
+      const nextPricing = {
+        ...(prev.room_pricing_type || {}),
+        [roomInstanceId]: pricingType,
+      };
+      const nextFormData = { ...prev, room_pricing_type: nextPricing };
+      return {
+        ...nextFormData,
+        totalAmount: computeInspectionTotalAmount(prev.pieces || [], nextFormData),
+      };
+    });
+  };
+
+  const setInspectionRoomTotalPrice = (
+    roomInstanceId: string,
+    price: number,
+  ) => {
+    setInspectionFormData((prev) => {
+      const nextTotalPrices = {
+        ...(prev.room_total_price || {}),
+        [roomInstanceId]: price,
+      };
+      const nextFormData = { ...prev, room_total_price: nextTotalPrices };
+      return {
+        ...nextFormData,
+        totalAmount: computeInspectionTotalAmount(prev.pieces || [], nextFormData),
+      };
+    });
+  };
+
+  const setInspectionRoomVeneer = (
+    roomInstanceId: string,
+    enabled: boolean,
+  ) => {
+    setInspectionFormData((prev) => {
+      const nextVeneer = {
+        ...(prev.room_aro_veneer || {}),
+        [roomInstanceId]: enabled,
+      };
+      const nextFormData = { ...prev, room_aro_veneer: nextVeneer };
+      return {
+        ...nextFormData,
+        totalAmount: computeInspectionTotalAmount(prev.pieces || [], nextFormData),
+      };
+    });
+  };
+
+  const setInspectionRoomVeneerPrice = (
+    roomInstanceId: string,
+    price: number,
+  ) => {
+    setInspectionFormData((prev) => {
+      const nextPrices = {
+        ...(prev.room_aro_veneer_price || {}),
+        [roomInstanceId]: price,
+      };
+      const nextFormData = { ...prev, room_aro_veneer_price: nextPrices };
+      return {
+        ...nextFormData,
+        totalAmount: computeInspectionTotalAmount(prev.pieces || [], nextFormData),
       };
     });
   };
@@ -5180,9 +5354,10 @@ export default function App() {
                                                 ? "مرفوض"
                                                 : "Refused"}
                                         </div>
-                                        <div className="flex items-center gap-2 bg-zinc-100/80 px-3 py-1.5 rounded-xl text-[10px] font-bold text-zinc-600 uppercase">
-                                          <Calendar className="w-3 h-3" />
-                                          {ins.visitDate}
+                                        <div className="flex items-center gap-1.5 bg-amber-500/10 text-amber-900 border border-amber-500/20 px-3 py-1.5 rounded-xl text-[10px] font-bold">
+                                          <Calendar className="w-3 h-3 text-amber-600" />
+                                          <span>{lang === "ar" ? "المعاينة:" : "Visit:"}</span>
+                                          <span>{ins.visitDate || (lang === "ar" ? "غير محدد" : "Not set")}</span>
                                         </div>
                                       </div>
                                     </div>
@@ -5199,7 +5374,7 @@ export default function App() {
                                       </button>
                                     )}
 
-                                    {isAdminUser && userProfile?.username !== "ahmed" && (
+                                    {isAdminUser && !isFactorySupervisor && userProfile?.username !== "ahmed" && (
                                       <div className="grid grid-cols-2 gap-3 relative z-10">
                                         <button
                                           onClick={() => {
@@ -6034,6 +6209,29 @@ export default function App() {
                                             <p className="text-xs text-zinc-700 bg-zinc-50 p-2.5 rounded-xl border border-zinc-100 leading-relaxed break-words">
                                               {log.notes}
                                             </p>
+                                            {log.reply && (
+                                              <div className="mt-2 p-2.5 rounded-xl bg-emerald-50/90 border border-emerald-200/80 space-y-1">
+                                                <div className="flex justify-between items-center text-[10px] font-bold text-emerald-800">
+                                                  <span className="flex items-center gap-1">
+                                                    <Sparkles className="w-3 h-3 text-emerald-600" />
+                                                    {lang === "ar" ? "رد الإدارة المعتمد للعميل:" : "Official Reply to Customer:"}
+                                                  </span>
+                                                  {log.repliedAt && (
+                                                    <span className="text-[9px] text-emerald-600 font-mono">
+                                                      {new Date(log.repliedAt).toLocaleDateString(lang === "ar" ? "ar-EG" : "en-US", {
+                                                        month: "short",
+                                                        day: "numeric",
+                                                        hour: "2-digit",
+                                                        minute: "2-digit",
+                                                      })}
+                                                    </span>
+                                                  )}
+                                                </div>
+                                                <p className="text-xs text-emerald-950 font-medium whitespace-pre-wrap">
+                                                  {log.reply}
+                                                </p>
+                                              </div>
+                                            )}
                                           </div>
 
                                           <div className="flex items-center justify-between pt-2 border-t border-zinc-100 gap-1.5">
@@ -6075,6 +6273,18 @@ export default function App() {
                                                   </button>
                                                 </>
                                               )}
+                                               <button
+                                                 type="button"
+                                                 onClick={() => {
+                                                   setReplyModalLog(log);
+                                                   setReplyInputText(log.reply || "");
+                                                 }}
+                                                 className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-600 hover:text-white transition-all text-[11px] font-bold shadow-xs cursor-pointer"
+                                                 title={lang === "ar" ? "كتابة رد بالبوابة" : "Reply in Customer Portal"}
+                                               >
+                                                 <MessageSquare className="w-3.5 h-3.5" />
+                                                 <span>{log.reply ? (lang === "ar" ? "تعديل الرد" : "Edit Reply") : (lang === "ar" ? "الرد بالبوابة" : "Portal Reply")}</span>
+                                               </button>
                                               <button
                                                 type="button"
                                                 onClick={() => {
@@ -7062,6 +7272,24 @@ export default function App() {
                       </select>
                     </div>
 
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-zinc-400 px-1 flex items-center justify-between">
+                        <span>{t.visitDate || (lang === "ar" ? "تاريخ المعاينة" : "Inspection Date")}</span>
+                        <span className="text-[9px] text-zinc-400 font-normal">{lang === "ar" ? "(اختياري)" : "(Optional)"}</span>
+                      </label>
+                      <input
+                        type="date"
+                        className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl text-sm"
+                        value={inspectionFormData.visitDate || ""}
+                        onChange={(e) =>
+                          setInspectionFormData({
+                            ...inspectionFormData,
+                            visitDate: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
+
                     {editingCollection === "contracted_customers" && (
                       <div className="space-y-4 bg-accent-tan/5 p-4 rounded-2xl border border-accent-tan/10">
                         <div className="text-[10px] font-bold uppercase text-zinc-500 mb-2">
@@ -7652,12 +7880,30 @@ export default function App() {
                                   roomInstanceId,
                                   roomIdx,
                                 );
+                                const isTotalPricing =
+                                  (inspectionFormData.room_pricing_type?.[
+                                    roomInstanceId
+                                  ] || "detailed") === "total";
+                                const roomTotalPrice =
+                                  inspectionFormData.room_total_price?.[
+                                    roomInstanceId
+                                  ] ?? "";
+                                const isRoomVeneer = Boolean(
+                                  inspectionFormData.room_aro_veneer?.[
+                                    roomInstanceId
+                                  ],
+                                );
+                                const roomVeneerPrice =
+                                  inspectionFormData.room_aro_veneer_price?.[
+                                    roomInstanceId
+                                  ] ?? "";
+
                                 return (
                                   <div
                                     key={roomInstanceId}
                                     className="rounded-3xl border border-black/10 bg-white p-4"
                                   >
-                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3 pb-3 border-b border-black/5">
                                       <div>
                                         <div className="text-base font-semibold">
                                           {customLabel
@@ -7670,10 +7916,137 @@ export default function App() {
                                             : "Room subtotal"}
                                         </div>
                                       </div>
-                                      <div className="text-xl font-bold">
+                                      <div className="text-xl font-bold text-amber-600">
                                         {subtotal.toLocaleString()} EGP
                                       </div>
                                     </div>
+
+                                    {/* Room Pricing Mode & Whole-room Veneer Toolbar */}
+                                    <div className="mb-4 rounded-2xl bg-[#f8f5ee] p-3 border border-black/5 space-y-3">
+                                      <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-xs font-bold text-zinc-700">
+                                            {lang === "ar"
+                                              ? "طريقة التسعير:"
+                                              : "Pricing:"}
+                                          </span>
+                                          <div className="inline-flex rounded-xl bg-white p-1 border border-black/10 shadow-sm text-xs font-semibold">
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setInspectionRoomPricingType(
+                                                  roomInstanceId,
+                                                  "detailed",
+                                                )
+                                              }
+                                              className={`px-3 py-1 rounded-lg transition-all ${
+                                                !isTotalPricing
+                                                  ? "bg-zinc-900 text-white font-bold"
+                                                  : "text-zinc-600 hover:text-zinc-900"
+                                              }`}
+                                            >
+                                              {lang === "ar"
+                                                ? "سعر تفصيلي"
+                                                : "Detailed"}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setInspectionRoomPricingType(
+                                                  roomInstanceId,
+                                                  "total",
+                                                )
+                                              }
+                                              className={`px-3 py-1 rounded-lg transition-all ${
+                                                isTotalPricing
+                                                  ? "bg-zinc-900 text-white font-bold"
+                                                  : "text-zinc-600 hover:text-zinc-900"
+                                              }`}
+                                            >
+                                              {lang === "ar"
+                                                ? "سعر إجمالي"
+                                                : "Room total"}
+                                            </button>
+                                          </div>
+                                        </div>
+
+                                        {isTotalPricing && (
+                                          <div className="flex items-center gap-2">
+                                            <label className="text-xs font-bold text-zinc-700">
+                                              {lang === "ar"
+                                                ? "سعر الغرفة الإجمالي:"
+                                                : "Total price:"}
+                                            </label>
+                                            <div className="flex items-center rounded-xl bg-white px-3 py-1 border border-black/10 text-xs font-bold">
+                                              <input
+                                                type="number"
+                                                min={0}
+                                                value={roomTotalPrice}
+                                                onChange={(e) =>
+                                                  setInspectionRoomTotalPrice(
+                                                    roomInstanceId,
+                                                    Number(e.target.value) || 0,
+                                                  )
+                                                }
+                                                placeholder="0"
+                                                className="w-24 bg-transparent outline-none text-right font-bold text-zinc-900"
+                                              />
+                                              <span className="ms-1 text-[10px] text-zinc-400">
+                                                EGP
+                                              </span>
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      {/* Whole-Room Veneer Option */}
+                                      <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-black/5">
+                                        <label className="inline-flex items-center gap-2 text-xs font-bold text-zinc-800 cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            checked={isRoomVeneer}
+                                            onChange={(e) =>
+                                              setInspectionRoomVeneer(
+                                                roomInstanceId,
+                                                e.target.checked,
+                                              )
+                                            }
+                                            className="w-4 h-4 rounded accent-[#d4a373]"
+                                          />
+                                          <span>
+                                            {lang === "ar"
+                                              ? "إضافة قشرة أرو للغرفة كاملة"
+                                              : "Add Aro veneer for room"}
+                                          </span>
+                                        </label>
+                                        {isRoomVeneer && (
+                                          <div className="flex items-center gap-1.5 rounded-xl bg-white px-3 py-1 border border-black/10 text-xs font-bold">
+                                            <label className="text-[10px] text-zinc-400">
+                                              {lang === "ar"
+                                                ? "سعر القشرة:"
+                                                : "Veneer price:"}
+                                            </label>
+                                            <input
+                                              type="number"
+                                              min={0}
+                                              value={roomVeneerPrice}
+                                              onChange={(e) =>
+                                                setInspectionRoomVeneerPrice(
+                                                  roomInstanceId,
+                                                  Number(e.target.value) || 0,
+                                                )
+                                              }
+                                              placeholder="0"
+                                              className="w-20 bg-transparent outline-none text-right font-bold text-zinc-900"
+                                            />
+                                            <span className="ms-1 text-[10px] text-zinc-400">
+                                              EGP
+                                            </span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+
                                     <div className="space-y-3">
                                       {items.map((p) => (
                                         <div
@@ -7736,66 +8109,30 @@ export default function App() {
                                                 <span className="text-[10px] text-zinc-400 block mb-1">
                                                   EGP
                                                 </span>
-                                                <input
-                                                  type="number"
-                                                  min={0}
-                                                  value={p.price || ""}
-                                                  onChange={(e) =>
-                                                    updatePiece(
-                                                      p.idx,
-                                                      "price",
-                                                      Number(e.target.value),
-                                                    )
-                                                  }
-                                                  className="w-24 bg-transparent outline-none text-right"
-                                                />
+                                                {isTotalPricing ? (
+                                                  <span className="text-xs text-zinc-400 italic block py-0.5">
+                                                    {lang === "ar"
+                                                      ? "مشمل بالإجمالي"
+                                                      : "Included"}
+                                                  </span>
+                                                ) : (
+                                                  <input
+                                                    type="number"
+                                                    min={0}
+                                                    value={p.price || ""}
+                                                    onChange={(e) =>
+                                                      updatePiece(
+                                                        p.idx,
+                                                        "price",
+                                                        Number(e.target.value),
+                                                      )
+                                                    }
+                                                    className="w-24 bg-transparent outline-none text-right"
+                                                  />
+                                                )}
                                               </div>
                                             </div>
                                           </div>
-                                          <div className="grid gap-3">
-                                            <div className="grid gap-3 sm:grid-cols-[1fr_1fr]">
-                                              <label className="inline-flex items-center gap-2 rounded-3xl border border-black/10 bg-white px-4 py-3 text-sm">
-                                                <input
-                                                  type="checkbox"
-                                                  checked={Boolean(
-                                                    p.aro_veneer_addon,
-                                                  )}
-                                                  onChange={(e) =>
-                                                    updatePiece(
-                                                      p.idx,
-                                                      "aro_veneer_addon",
-                                                      e.target.checked,
-                                                    )
-                                                  }
-                                                  className="accent-[#d4a373]"
-                                                />
-                                                <span>
-                                                  {lang === "ar"
-                                                    ? "قشرة أرو"
-                                                    : "Aro veneer"}
-                                                </span>
-                                              </label>
-                                              <div className="rounded-3xl border border-black/10 bg-white px-4 py-3">
-                                                <label className="text-[10px] text-zinc-400 block mb-1">
-                                                  {lang === "ar"
-                                                    ? "سعر القشرة"
-                                                    : "Veneer surcharge"}
-                                                </label>
-                                                <input
-                                                  type="number"
-                                                  min={0}
-                                                  value={p.aro_surcharge || ""}
-                                                  onChange={(e) =>
-                                                    updatePiece(
-                                                      p.idx,
-                                                      "aro_surcharge",
-                                                      Number(e.target.value),
-                                                    )
-                                                  }
-                                                  className="w-full bg-transparent outline-none text-right"
-                                                />
-                                              </div>
-                                            </div>
                                             <div className="grid gap-3 sm:grid-cols-[1fr_auto] items-start">
                                               <div>
                                                 <label className="text-[10px] font-bold uppercase text-zinc-400">
@@ -7857,7 +8194,6 @@ export default function App() {
                                               </button>
                                             </div>
                                           </div>
-                                        </div>
                                       ))}
                                     </div>
                                   </div>
@@ -8093,27 +8429,29 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="pt-6 border-t border-white/10 grid grid-cols-2 gap-8 items-end">
-                      <div className="space-y-1">
-                        <label className="text-[9px] font-bold uppercase text-zinc-400 tracking-widest">
-                          {t.contractDate}
-                        </label>
-                        <p className="font-bold text-lg">
-                          {selectedRecord.contractDate || "-"}
-                        </p>
+                    {(!isAlexCairoSupervisor && !isFactorySupervisor) && (
+                      <div className="pt-6 border-t border-white/10 grid grid-cols-2 gap-8 items-end">
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold uppercase text-zinc-400 tracking-widest">
+                            {t.contractDate}
+                          </label>
+                          <p className="font-bold text-lg">
+                            {selectedRecord.contractDate || "-"}
+                          </p>
+                        </div>
+                        <div className="text-right rtl:text-left">
+                          <label className="text-[9px] font-bold uppercase text-zinc-400 tracking-widest block mb-1">
+                            {t.total}
+                          </label>
+                          <p className="text-3xl font-black text-accent-tan">
+                            {(selectedRecord.totalAmount || 0).toLocaleString()}{" "}
+                            <span className="text-xs font-bold opacity-60">
+                              EGP
+                            </span>
+                          </p>
+                        </div>
                       </div>
-                      <div className="text-right rtl:text-left">
-                        <label className="text-[9px] font-bold uppercase text-zinc-400 tracking-widest block mb-1">
-                          {t.total}
-                        </label>
-                        <p className="text-3xl font-black text-accent-tan">
-                          {(selectedRecord.totalAmount || 0).toLocaleString()}{" "}
-                          <span className="text-xs font-bold opacity-60">
-                            EGP
-                          </span>
-                        </p>
-                      </div>
-                    </div>
+                    )}
                   </div>
                 </div>
 
@@ -8150,7 +8488,7 @@ export default function App() {
                   </div>
                 )}
 
-                {selectedRecord.contractUrl && (
+                {selectedRecord.contractUrl && !isAlexCairoSupervisor && !isFactorySupervisor && (
                   <div className="bg-white border-2 border-dashed border-zinc-100 rounded-3xl p-6">
                     <label className="text-[10px] font-bold uppercase text-zinc-400 mb-4 block">
                       {lang === "ar" ? "صورة العقد" : "Contract image"}
@@ -8175,7 +8513,8 @@ export default function App() {
 
                 {/* Section: Items */}
                 {/* Section: Quote Builder */}
-                <div className="rounded-[2rem] bg-white p-6 shadow-sm border border-black/10 space-y-4">
+                {(!isAlexCairoSupervisor && !isFactorySupervisor) && (
+                  <div className="rounded-[2rem] bg-white p-6 shadow-sm border border-black/10 space-y-4">
                   <div className="flex items-center justify-between">
                     <h3 className="text-xl font-semibold">
                       {lang === "ar" ? "منشئ العرض" : "Quote builder"}
@@ -8250,7 +8589,9 @@ export default function App() {
                       </div>
                     ) : (
                       <div className="grid gap-4">
-                        {quoteDrafts.map((room, roomIndex) => (
+                        {quoteDrafts.map((room, roomIndex) => {
+                          const isTotalPricing = room.pricing_type === "total";
+                          return (
                           <div
                             key={`${room.room_type}-${roomIndex}-summary`}
                             className="rounded-3xl border border-black/10 bg-[#faf7f1] p-4"
@@ -8277,22 +8618,143 @@ export default function App() {
                                   {room.items.length}{" "}
                                   {lang === "ar" ? "عنصر" : "items"}
                                 </div>
-                                {room.aro_veneer && room.aro_veneer_price ? (
-                                  <div className="text-xs text-zinc-500 mt-1">
-                                    {lang === "ar"
-                                      ? "قشرة أرو بالغرفة:"
-                                      : "Room veneer:"}{" "}
-                                    {Number(
-                                      room.aro_veneer_price,
-                                    ).toLocaleString()}{" "}
-                                    جنيه
-                                  </div>
-                                ) : null}
                               </div>
-                              <div className="text-sm font-bold">
+                              <div className="text-lg font-bold text-amber-600">
                                 {quoteRoomSubtotal(room).toLocaleString()} جنيه
                               </div>
                             </div>
+
+                            {/* Room Pricing Mode & Whole-room Veneer Toolbar */}
+                            <div className="mb-4 rounded-2xl bg-[#f8f5ee] p-3 border border-black/5 space-y-3">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-bold text-zinc-700">
+                                    {lang === "ar"
+                                      ? "طريقة التسعير:"
+                                      : "Pricing mode:"}
+                                  </span>
+                                  <div className="inline-flex rounded-xl bg-white p-1 border border-black/10 shadow-sm text-xs font-semibold">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setRoomField(
+                                          roomIndex,
+                                          "pricing_type",
+                                          "detailed",
+                                        )
+                                      }
+                                      className={`px-3 py-1 rounded-lg transition-all ${
+                                        !isTotalPricing
+                                          ? "bg-zinc-900 text-white font-bold"
+                                          : "text-zinc-600 hover:text-zinc-900"
+                                      }`}
+                                    >
+                                      {lang === "ar"
+                                        ? "سعر تفصيلي"
+                                        : "Detailed"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setRoomField(
+                                          roomIndex,
+                                          "pricing_type",
+                                          "total",
+                                        )
+                                      }
+                                      className={`px-3 py-1 rounded-lg transition-all ${
+                                        isTotalPricing
+                                          ? "bg-zinc-900 text-white font-bold"
+                                          : "text-zinc-600 hover:text-zinc-900"
+                                      }`}
+                                    >
+                                      {lang === "ar"
+                                        ? "سعر إجمالي"
+                                        : "Room total"}
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {isTotalPricing && (
+                                  <div className="flex items-center gap-2">
+                                    <label className="text-xs font-bold text-zinc-700">
+                                      {lang === "ar"
+                                        ? "سعر الغرفة الإجمالي:"
+                                        : "Room total price:"}
+                                    </label>
+                                    <div className="flex items-center rounded-xl bg-white px-3 py-1 border border-black/10 text-xs font-bold">
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        value={room.total_price || ""}
+                                        onChange={(e) =>
+                                          setRoomField(
+                                            roomIndex,
+                                            "total_price",
+                                            Number(e.target.value) || 0,
+                                          )
+                                        }
+                                        placeholder="0"
+                                        className="w-24 bg-transparent outline-none text-right font-bold text-zinc-900"
+                                      />
+                                      <span className="ms-1 text-[10px] text-zinc-400">
+                                        جنيه
+                                      </span>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Whole-room veneer */}
+                              <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-black/5">
+                                <label className="inline-flex items-center gap-2 text-xs font-bold text-zinc-800 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(room.aro_veneer)}
+                                    onChange={(e) =>
+                                      setRoomField(
+                                        roomIndex,
+                                        "aro_veneer",
+                                        e.target.checked,
+                                      )
+                                    }
+                                    className="w-4 h-4 rounded accent-[#d4a373]"
+                                  />
+                                  <span>
+                                    {lang === "ar"
+                                      ? "إضافة قشرة أرو للغرفة كاملة"
+                                      : "Add Aro veneer for room"}
+                                  </span>
+                                </label>
+                                {room.aro_veneer && (
+                                  <div className="flex items-center gap-1.5 rounded-xl bg-white px-3 py-1 border border-black/10 text-xs font-bold">
+                                    <label className="text-[10px] text-zinc-400">
+                                      {lang === "ar"
+                                        ? "سعر القشرة:"
+                                        : "Veneer price:"}
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      value={room.aro_veneer_price || ""}
+                                      onChange={(e) =>
+                                        setRoomField(
+                                          roomIndex,
+                                          "aro_veneer_price",
+                                          Number(e.target.value) || 0,
+                                        )
+                                      }
+                                      placeholder="0"
+                                      className="w-20 bg-transparent outline-none text-right font-bold text-zinc-900"
+                                    />
+                                    <span className="ms-1 text-[10px] text-zinc-400">
+                                      جنيه
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
                             <div className="space-y-3">
                               {room.items.length === 0 ? (
                                 <div className="rounded-3xl bg-white p-4 text-zinc-500">
@@ -8372,20 +8834,28 @@ export default function App() {
                                           <label className="text-[10px] text-zinc-400 block mb-1">
                                             {lang === "ar" ? "السعر" : "Price"}
                                           </label>
-                                          <input
-                                            type="number"
-                                            min={0}
-                                            value={item.price}
-                                            onChange={(e) =>
-                                              setRoomItemField(
-                                                roomIndex,
-                                                itemIndex,
-                                                "price",
-                                                Number(e.target.value) || 0,
-                                              )
-                                            }
-                                            className="w-full bg-transparent outline-none text-right"
-                                          />
+                                          {isTotalPricing ? (
+                                            <span className="text-xs text-zinc-400 italic block py-0.5">
+                                              {lang === "ar"
+                                                ? "مشمل بالإجمالي"
+                                                : "Included"}
+                                            </span>
+                                          ) : (
+                                            <input
+                                              type="number"
+                                              min={0}
+                                              value={item.price}
+                                              onChange={(e) =>
+                                                setRoomItemField(
+                                                  roomIndex,
+                                                  itemIndex,
+                                                  "price",
+                                                  Number(e.target.value) || 0,
+                                                )
+                                              }
+                                              className="w-full bg-transparent outline-none text-right"
+                                            />
+                                          )}
                                         </div>
                                       </div>
                                       <textarea
@@ -8406,60 +8876,19 @@ export default function App() {
                                         rows={2}
                                         className="w-full rounded-3xl border border-black/10 bg-white px-4 py-3 text-sm text-zinc-800 outline-none"
                                       />
-                                      <div className="flex flex-wrap gap-2 items-center">
-                                        <label className="inline-flex items-center gap-2 rounded-3xl border border-black/10 bg-white px-4 py-3 text-sm text-zinc-700">
-                                          <input
-                                            type="checkbox"
-                                            checked={item.aro_veneer_addon}
-                                            onChange={(e) =>
-                                              setRoomItemField(
-                                                roomIndex,
-                                                itemIndex,
-                                                "aro_veneer_addon",
-                                                e.target.checked,
-                                              )
-                                            }
-                                            className="accent-[#d4a373]"
-                                          />
-                                          {lang === "ar"
-                                            ? "قشرة أرو"
-                                            : "Aro veneer"}
-                                        </label>
-                                        {item.aro_veneer_addon && (
-                                          <div className="rounded-3xl border border-black/10 bg-white px-4 py-3 text-sm font-bold text-zinc-800">
-                                            <label className="text-[10px] text-zinc-400 block mb-1">
-                                              {lang === "ar"
-                                                ? "سعر القشرة"
-                                                : "Veneer surcharge"}
-                                            </label>
-                                            <input
-                                              type="number"
-                                              min={0}
-                                              value={item.aro_surcharge}
-                                              onChange={(e) =>
-                                                setRoomItemField(
-                                                  roomIndex,
-                                                  itemIndex,
-                                                  "aro_surcharge",
-                                                  Number(e.target.value) || 0,
-                                                )
-                                              }
-                                              className="w-full bg-transparent outline-none text-right"
-                                            />
-                                          </div>
-                                        )}
-                                      </div>
                                     </div>
                                   </div>
                                 ))
                               )}
                             </div>
                           </div>
-                        ))}
+                        );
+                      })}
                       </div>
                     )}
                   </div>
                 </div>
+                )}
                 {livePieces.length > 0 && (
                   <div className="space-y-4">
                     <label className="text-[10px] font-bold uppercase text-zinc-400 px-1">
@@ -8849,6 +9278,144 @@ export default function App() {
           />
         )}
       </AnimatePresence>
+      {/* Customer Service Reply Modal */}
+      <AnimatePresence>
+        {replyModalLog && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl border border-zinc-100 space-y-4"
+              dir={lang === "ar" ? "rtl" : "ltr"}
+            >
+              <div className="flex justify-between items-start pb-3 border-b border-zinc-100">
+                <div>
+                  <h3 className="text-lg font-bold text-zinc-900 flex items-center gap-2">
+                    <MessageSquare className="w-5 h-5 text-indigo-600" />
+                    {lang === "ar" ? "الرد على الشكوى / الاستفسار" : "Reply to Customer Feedback"}
+                  </h3>
+                  <p className="text-xs text-zinc-500 mt-0.5">
+                    {lang === "ar" ? `العميل: ${replyModalLog.customerName} (${replyModalLog.phone})` : `Customer: ${replyModalLog.customerName}`}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReplyModalLog(null)}
+                  className="p-1 rounded-full text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="bg-zinc-50 p-3 rounded-2xl border border-zinc-200/60 text-xs text-zinc-700 leading-relaxed max-h-32 overflow-y-auto">
+                <span className="font-bold text-zinc-400 block text-[10px] uppercase mb-1">
+                  {lang === "ar" ? "رسالة العميل:" : "Customer message:"}
+                </span>
+                {replyModalLog.notes}
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-700 block">
+                  {lang === "ar" ? "نص رد الإدارة / خدمة العملاء (يظهر للعميل في بوابته):" : "Official Response Text (Visible to customer):"}
+                </label>
+                <textarea
+                  rows={4}
+                  value={replyInputText}
+                  onChange={(e) => setReplyInputText(e.target.value)}
+                  placeholder={
+                    lang === "ar"
+                      ? "اكتب الرد الرسمي للعميل هنا..."
+                      : "Type the official response here..."
+                  }
+                  className="w-full bg-white border border-zinc-200 rounded-2xl p-3 text-xs sm:text-sm font-medium outline-none focus:border-indigo-500 transition-all shadow-inner resize-none"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 text-xs text-zinc-600 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  id="sendWaCheck"
+                  checked={sendReplyViaWhatsApp}
+                  onChange={(e) => setSendReplyViaWhatsApp(e.target.checked)}
+                  className="rounded border-zinc-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
+                />
+                <label htmlFor="sendWaCheck" className="cursor-pointer">
+                  {lang === "ar" ? "إرسال الرد أيضاً للعميل عبر رسالة واتساب فور الحفظ" : "Also send this reply to customer via WhatsApp"}
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-zinc-100">
+                <button
+                  type="button"
+                  onClick={() => setReplyModalLog(null)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-zinc-600 hover:bg-zinc-100 transition-colors cursor-pointer"
+                >
+                  {lang === "ar" ? "إلغاء" : "Cancel"}
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingReply || !replyInputText.trim()}
+                  onClick={async () => {
+                    if (!replyModalLog || !replyInputText.trim()) return;
+                    setIsSavingReply(true);
+                    try {
+                      const reply = replyInputText.trim();
+                      const repliedBy = userProfile?.username || "Admin";
+                      await CustomerServiceLogsService.saveReply(replyModalLog.id, reply, repliedBy);
+                      const nowIso = new Date().toISOString();
+                      setCsLogs((prev) =>
+                        prev.map((l) =>
+                          l.id === replyModalLog.id
+                            ? {
+                                ...l,
+                                reply,
+                                repliedAt: nowIso,
+                                repliedBy,
+                                status: "resolved",
+                              }
+                            : l,
+                        ),
+                      );
+
+                      if (sendReplyViaWhatsApp && replyModalLog.phone) {
+                        const cleanNoteText =
+                          replyModalLog.notes?.replace(/^[.*?]:s*/, "") ||
+                          replyModalLog.notes ||
+                          "";
+                        const replyMsg =
+                          lang === "ar"
+                            ? `مرحباً بك أستاذ ${replyModalLog.customerName || ""}،\nتحية طيبة من مصنع العماري للأثاث 🛋️\nبخصوص رسالتكم الكريمة:\n"${cleanNoteText}"\n\nرد الإدارة:\n${reply}\n\nشكراً لثقتكم وتواصلكم معنا!`
+                            : `Hello ${replyModalLog.customerName || ""},\nRegarding your inquiry with El-Amary Furniture:\n"${cleanNoteText}"\n\nOfficial Reply:\n${reply}\n\nThank you!`;
+                        sendWhatsAppMessage(replyModalLog.phone, replyMsg);
+                      }
+
+                      toast.success(
+                        lang === "ar" ? "تم حفظ الرد بنجاح واعتماده للعميل" : "Reply saved and dispatched successfully",
+                      );
+                      setReplyModalLog(null);
+                      setReplyInputText("");
+                    } catch (err) {
+                      toast.error(err.message || "Failed to save reply");
+                    } finally {
+                      setIsSavingReply(false);
+                    }
+                  }}
+                  className="px-6 py-2.5 rounded-xl text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white shadow-md transition-all active:scale-95 disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>
+                    {isSavingReply
+                      ? lang === "ar" ? "جاري الحفظ..." : "Saving..."
+                      : lang === "ar" ? "حفظ واعتماد الرد" : "Save & Confirm"}
+                  </span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion } from "motion/react";
 import { 
   Armchair, 
@@ -17,6 +17,7 @@ import {
   Sparkles,
   AlertTriangle,
   MessageSquare,
+  MessageCircle,
   Send,
   Camera,
   Eye,
@@ -93,6 +94,29 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
   const [feedbackSuccess, setFeedbackSuccess] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
 
+  const [myComplaints, setMyComplaints] = useState<any[]>([]);
+
+  // Load complaints and CS replies for this customer
+  const loadMyComplaints = async () => {
+    try {
+      const allLogs = await CustomerServiceLogsService.getAll();
+      const rawPhone = customerRecord.phone || "";
+      const normPhone = rawPhone.replace(/\D/g, "");
+      const matched = allLogs.filter((l) => {
+        const lp = (l.phone || "").replace(/\D/g, "");
+        if (!lp || !normPhone) return false;
+        return lp.endsWith(normPhone) || normPhone.endsWith(lp);
+      });
+      setMyComplaints(matched);
+    } catch (e) {
+      console.warn("Error loading customer complaints:", e);
+    }
+  };
+
+  useEffect(() => {
+    loadMyComplaints();
+  }, [customerRecord.phone]);
+
   // Submit Feedback / Complaint to Customer Service
   const handleSubmitFeedback = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -113,6 +137,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
       };
 
       await CustomerServiceLogsService.insert(newLog);
+      await loadMyComplaints();
       setFeedbackText("");
       setFeedbackSuccess(true);
       toast.success(
@@ -219,6 +244,20 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
               </div>
 
               <div className="border-t border-zinc-100 pt-4 space-y-4">
+                {(customerRecord.visitDate || customerRecord.visit_date) && (
+                  <div className="flex items-start gap-3">
+                    <Calendar className="w-5 h-5 text-amber-500 mt-0.5" />
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-zinc-400 block tracking-wider">
+                        {isAr ? "تاريخ المعاينة" : "Inspection Date"}
+                      </span>
+                      <span className="text-sm font-semibold text-zinc-700">
+                        {customerRecord.visitDate || customerRecord.visit_date}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex items-start gap-3">
                   <Calendar className="w-5 h-5 text-accent-tan mt-0.5" />
                   <div>
@@ -309,14 +348,6 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                   {customerRecord.rooms || 0}
                 </span>
               </div>
-              {customerRecord.notes && (
-                <div className="pt-2">
-                  <span className="text-zinc-400 text-xs block mb-1">{isAr ? "ملاحظات إضافية" : "Additional Notes"}</span>
-                  <p className="text-zinc-300 text-xs bg-zinc-800/50 p-4 rounded-xl leading-relaxed border border-zinc-800">
-                    {customerRecord.notes}
-                  </p>
-                </div>
-              )}
             </div>
           </motion.div>
         </div>
@@ -337,7 +368,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                   {isAr ? "حالة مراحل الإنتاج" : "Production Progress"}
                 </h3>
                 <p className="text-zinc-500 text-sm mt-1">
-                  {isAr ? "متابعة حية لمراحل تصنيع غرفتك بالورشة" : "Live tracker of your furniture's manufacturing stages"}
+                  {isAr ? "متابعة حية لمراحل تصنيع غرفتك بالمصنع" : "Live tracker of your furniture's manufacturing stages"}
                 </p>
               </div>
               <div className="flex items-center gap-3 bg-zinc-900 text-white rounded-2xl px-5 py-3 shadow-lg">
@@ -662,6 +693,118 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                     ? "تم استلام رسالتك بنجاح وسيتواصل معك فريق خدمة العملاء في أقرب وقت."
                     : "Your feedback has been received. Our customer care team will review it promptly."}
                 </span>
+              </div>
+            )}
+
+            {/* Previous Complaints & Official Replies History */}
+            {myComplaints.length > 0 && (
+              <div className="mb-8 space-y-4">
+                <div className="flex items-center justify-between pb-2 border-b border-zinc-200/80">
+                  <h4 className="text-sm sm:text-base font-bold text-zinc-900 flex items-center gap-2">
+                    <MessageCircle className="w-4 h-4 text-accent-tan" />
+                    {isAr ? "سجل طلباتك وشكاواك السابقة والردود" : "Your Requests, Complaints & Official Replies"}
+                  </h4>
+                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-zinc-200 text-zinc-700 font-bold font-mono">
+                    {myComplaints.length}
+                  </span>
+                </div>
+
+                <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                  {myComplaints.map((comp) => {
+                    const isReplied = Boolean(comp.reply);
+                    const cleanText = (comp.notes || "").replace(/^\[.*?\]:\s*/, "");
+                    const createdDate = new Date(comp.createdAt).toLocaleDateString(isAr ? "ar-EG" : "en-US", {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    });
+                    const replyDate = comp.repliedAt
+                      ? new Date(comp.repliedAt).toLocaleDateString(isAr ? "ar-EG" : "en-US", {
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : "";
+
+                    return (
+                      <div
+                        key={comp.id}
+                        className="bg-white/90 border border-zinc-200 rounded-2xl p-4 shadow-sm space-y-3"
+                      >
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-zinc-100 text-zinc-700">
+                              {comp.notes?.includes("شكوى")
+                                ? isAr ? "⚠️ شكوى" : "⚠️ Complaint"
+                                : comp.notes?.includes("استفسار")
+                                  ? isAr ? "❓ استفسار" : "❓ Inquiry"
+                                  : isAr ? "💡 مقترح" : "💡 Suggestion"}
+                            </span>
+                            <span className="text-[11px] text-zinc-400 font-mono">
+                              {createdDate}
+                            </span>
+                          </div>
+
+                          <span
+                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                              isReplied
+                                ? "bg-emerald-100 text-emerald-800"
+                                : "bg-amber-100 text-amber-800"
+                            }`}
+                          >
+                            {isReplied ? (
+                              <>
+                                <CheckCircle2 className="w-3 h-3" />
+                                {isAr ? "تم الرد" : "Replied"}
+                              </>
+                            ) : (
+                              <>
+                                <Clock className="w-3 h-3" />
+                                {isAr ? "قيد المتابعة" : "Under Review"}
+                              </>
+                            )}
+                          </span>
+                        </div>
+
+                        {/* Customer Message */}
+                        <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-100 text-xs text-zinc-800 leading-relaxed">
+                          <span className="font-bold text-zinc-400 block text-[10px] uppercase mb-1">
+                            {isAr ? "رسالتك:" : "Your Message:"}
+                          </span>
+                          {cleanText}
+                        </div>
+
+                        {/* Official Response */}
+                        {isReplied ? (
+                          <div className="bg-emerald-50/90 border border-emerald-200/80 p-3.5 rounded-xl space-y-1.5">
+                            <div className="flex justify-between items-center text-xs font-bold text-emerald-900">
+                              <span className="flex items-center gap-1.5">
+                                <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                                {isAr ? "رد إدارة مصنع العماري للأثاث:" : "Official Reply from Management:"}
+                              </span>
+                              {replyDate && (
+                                <span className="text-[10px] text-emerald-700 font-mono font-normal">
+                                  {replyDate}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-emerald-950 leading-relaxed whitespace-pre-wrap font-medium">
+                              {comp.reply}
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-zinc-400 italic flex items-center gap-1.5 px-1">
+                            <Clock className="w-3 h-3" />
+                            {isAr
+                              ? "يقوم فريق خدمة العملاء بمتابعة طلبك والرد عليه في أسرع وقت."
+                              : "Customer service is currently reviewing your request."}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 

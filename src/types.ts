@@ -77,6 +77,8 @@ export interface Inspection {
   room_types?: string[];
   room_aro_veneer?: Record<string, boolean>;
   room_aro_veneer_price?: Record<string, number>;
+  room_pricing_type?: Record<string, "detailed" | "total">;
+  room_total_price?: Record<string, number>;
   deliveryDate?: string;
   pickupDate?: string;
   portfolioDate?: string;
@@ -93,8 +95,8 @@ export type RoomDraftItem = {
   dimensions: string;
   price: number;
   notes: string;
-  aro_veneer_addon: boolean;
-  aro_surcharge: number;
+  aro_veneer_addon?: boolean;
+  aro_surcharge?: number;
 };
 
 export type RoomDraft = {
@@ -102,9 +104,16 @@ export type RoomDraft = {
   room_type: string;
   aro_veneer: boolean;
   aro_veneer_price?: number;
+  pricing_type?: "detailed" | "total";
+  total_price?: number;
   items: RoomDraftItem[];
   customLabel?: string | null;
 };
+
+export interface ProductionStageExpense {
+  destination: string;
+  amount: number;
+}
 
 export interface ProductionStageRecord {
   id: string;
@@ -120,6 +129,7 @@ export interface ProductionStageRecord {
   payment_requested_at?: string | null; // When payment collection was triggered
   storage_warning_dismissed_at?: string | null; // Admin dismissal timestamp for storage overdue warnings (repeats every 7 days)
   images?: string[]; // Stage photo attachments (e.g. carpentry, painting photos)
+  expenses?: ProductionStageExpense[]; // Stage expenses (جهة الصرف والمبلغ)
   created_at?: string;
   client?: { phones: string[] };
 }
@@ -131,5 +141,9 @@ export interface CustomerServiceLog {
   notes: string;
   createdAt: string; // ISO string timestamp
   createdBy?: string;
+  reply?: string;
+  repliedAt?: string;
+  repliedBy?: string;
+  status?: "pending" | "resolved";
   last_modified?: number;
 }
