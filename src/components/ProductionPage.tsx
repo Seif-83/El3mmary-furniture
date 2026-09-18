@@ -219,7 +219,7 @@ export const ProductionPage: React.FC<{
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentTargetOrder, setPaymentTargetOrder] = useState<Inspection | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<number | "">("");
-  const [paymentStage, setPaymentStage] = useState<string>("بعد تمام الاستلام");
+  const [paymentStage, setPaymentStage] = useState<string>("التعاقد");
   const [isSavingPayment, setIsSavingPayment] = useState(false);
 
   // Stage Photos Modal State (Carpentry & Painting photos)
@@ -343,9 +343,10 @@ export const ProductionPage: React.FC<{
   };
 
   const paymentStages = [
-    "بعد تمام الاستلام",
-    "بعد تمام النجارة",
-    "بعد تمام التجهيزات",
+    "التعاقد",
+    "الاستلام",
+    "النجارة",
+    "الدهانات",
   ];
 
   const getCustomerPayments = (customerId: string) =>
@@ -619,10 +620,10 @@ export const ProductionPage: React.FC<{
         onStageUpdate(stageRecord.id, "done");
 
         // Trigger milestone notifications / payments
-        if (["received", "carpentry", "fittings"].includes(stageDef.key)) {
-          let installmentName = "بعد تمام الاستلام";
-          if (stageDef.key === "carpentry") installmentName = "بعد تمام النجارة";
-          else if (stageDef.key === "fittings") installmentName = "بعد تمام التجهيزات";
+        if (["received", "carpentry", "painting"].includes(stageDef.key)) {
+          let installmentName = "الاستلام";
+          if (stageDef.key === "carpentry") installmentName = "النجارة";
+          else if (stageDef.key === "painting") installmentName = "الدهانات";
 
           const totalPaid = getCustomerPayments(order.id).reduce(
             (sum, p) => sum + (Number(p.amount) || 0),
@@ -639,7 +640,9 @@ export const ProductionPage: React.FC<{
             });
             setCollectionModalOpen(true);
           }
-        } else if (stageDef.key === "painting" && onSendWhatsApp && order.phone) {
+        }
+
+        if (stageDef.key === "painting" && onSendWhatsApp && order.phone) {
           // Painting completion WhatsApp
           const msg =
             lang === "ar"
@@ -689,16 +692,26 @@ export const ProductionPage: React.FC<{
         lang === "ar"
           ? `مرحباً ${order.customerName || ""}،\nيسعدنا إبلاغكم بتمام تجهيز طلبكم بالكامل في مصنع العماري للأثاث وجاهزيته للتسليم.\nنرجو التكرم بإنهاء التعاقد وسداد الدفعة النهائية لترتيب موعد الشحن والتسليم.\nالمبلغ المتبقي: ${remaining.toLocaleString()} ج.م.\nشكراً لثقتكم واختياركم لنا!`
           : `Hello ${order.customerName || ""},\nWe are pleased to inform you that your order is completely ready for delivery.\nPlease conclude the contract settlement and final payment to schedule delivery.\nRemaining balance: ${remaining.toLocaleString()} EGP.\nThank you!`;
+    } else if (stageKey === "painting") {
+      msg =
+        lang === "ar"
+          ? `مرحباً ${order.customerName || ""}،\nيسعدنا إبلاغكم بانتهاء مرحلة الدهانات لطلبكم في مصنع العماري للأثاث.\nنرجو التكرم بسداد دفعة مرحلة الدهانات لمتابعة تجهيز الطلب.\nالمبلغ المتبقي: ${remaining.toLocaleString()} ج.م.\nشكراً لثقتكم واختياركم لنا!`
+          : `Hello ${order.customerName || ""},\nWe are pleased to inform you that the Painting phase for your order is completed.\nPlease settle the painting installment.\nRemaining balance: ${remaining.toLocaleString()} EGP.\nThank you!`;
     } else if (stageKey === "carpentry") {
       msg =
         lang === "ar"
           ? `مرحباً ${order.customerName || ""}،\nيسعدنا إبلاغكم بانتهاء مرحلة النجارة لطلبكم في مصنع العماري للأثاث.\nنرجو التكرم بسداد دفعة المرحلة واختيار الألوان للبدء في مرحلة الدهانات.\nالمبلغ المتبقي: ${remaining.toLocaleString()} ج.م.\nشكراً لثقتكم واختياركم لنا!`
           : `Hello ${order.customerName || ""},\nWe are pleased to inform you that the Carpentry phase for your order at El-Amary Furniture is completed.\nPlease proceed with the installment payment and color selection to begin the Painting phase.\nRemaining balance: ${remaining.toLocaleString()} EGP.\nThank you!`;
+    } else if (stageKey === "contract") {
+      msg =
+        lang === "ar"
+          ? `مرحباً ${order.customerName || ""}،\nتم تأكيد تعاقدكم في مصنع العماري للأثاث.\nيرجى التكرم بسداد دفعة التعاقد لتأكيد بدء مراحل العمل بالمصنع.\nالمبلغ المتبقي: ${remaining.toLocaleString()} ج.م.\nشكراً لتعاملكم معنا!`
+          : `Hello ${order.customerName || ""},\nYour order at El-Amary Furniture has been contracted.\nPlease settle the contract deposit.\nRemaining balance: ${remaining.toLocaleString()} EGP.\nThank you!`;
     } else {
       msg =
         lang === "ar"
-          ? `مرحباً ${order.customerName || ""}،\nتم استلام وتأكيد طلبكم في مصنع العماري للأثاث.\nيرجى التكرم بسداد دفعة التعاقد / الاستلام لتأكيد بدء مراحل العمل بالمصنع.\nالمبلغ المتبقي: ${remaining.toLocaleString()} ج.م.\nشكراً لتعاملكم معنا!`
-          : `Hello ${order.customerName || ""},\nYour order at El-Amary Furniture has been received and confirmed.\nPlease settle the intake deposit to commence production.\nRemaining balance: ${remaining.toLocaleString()} EGP.\nThank you for choosing us!`;
+          ? `مرحباً ${order.customerName || ""}،\nتم استلام وتأكيد طلبكم في مصنع العماري للأثاث.\nيرجى التكرم بسداد دفعة الاستلام لتأكيد مراحل العمل بالمصنع.\nالمبلغ المتبقي: ${remaining.toLocaleString()} ج.م.\nشكراً لتعاملكم معنا!`
+          : `Hello ${order.customerName || ""},\nYour order at El-Amary Furniture has been received and confirmed.\nPlease settle the intake deposit.\nRemaining balance: ${remaining.toLocaleString()} EGP.\nThank you for choosing us!`;
     }
 
     onSendWhatsApp(order.phone, msg);
@@ -768,24 +781,39 @@ export const ProductionPage: React.FC<{
     }
   };
 
-  // Detect pending payment collection milestone for an order (only received, carpentry, fittings)
+  // Detect pending payment collection milestone for an order (contract, received, carpentry, painting)
   const getOrderCollectionMilestone = (order: Inspection, orderStages: any[]) => {
-    const totalPaid = getCustomerPayments(order.id).reduce(
+    const custPayments = getCustomerPayments(order.id);
+    const totalPaid = custPayments.reduce(
       (sum, p) => sum + (Number(p.amount) || 0),
       0,
     );
     const remaining = (order.totalAmount || 0) - totalPaid;
     if (remaining <= 0) return null;
 
-    const fittingsStage = orderStages.find((s) => s.stage === "fittings");
+    const paintingStage = orderStages.find((s) => s.stage === "painting");
     const carpentryStage = orderStages.find((s) => s.stage === "carpentry");
     const receivedStage = orderStages.find((s) => s.stage === "received");
 
-    if (fittingsStage?.status === "done") {
+    const hasContractPayment = custPayments.some(
+      (p) => p.installment?.includes("التعاقد") || p.installment === "التعاقد",
+    );
+
+    // Contract milestone
+    if (!hasContractPayment || custPayments.length === 0) {
       return {
-        key: "fittings",
-        stageName: lang === "ar" ? "تمام التجهيزات" : "Fittings Completed",
-        installmentName: "بعد تمام التجهيزات",
+        key: "contract",
+        stageName: lang === "ar" ? "دفعة التعاقد" : "Contract Deposit",
+        installmentName: "التعاقد",
+        remaining,
+      };
+    }
+
+    if (paintingStage?.status === "done") {
+      return {
+        key: "painting",
+        stageName: lang === "ar" ? "تمام الدهانات" : "Painting Completed",
+        installmentName: "الدهانات",
         remaining,
       };
     }
@@ -793,7 +821,7 @@ export const ProductionPage: React.FC<{
       return {
         key: "carpentry",
         stageName: lang === "ar" ? "تمام النجارة" : "Carpentry Completed",
-        installmentName: "بعد تمام النجارة",
+        installmentName: "النجارة",
         remaining,
       };
     }
@@ -801,7 +829,7 @@ export const ProductionPage: React.FC<{
       return {
         key: "received",
         stageName: lang === "ar" ? "تمام الاستلام" : "Intake Completed",
-        installmentName: "بعد تمام الاستلام",
+        installmentName: "الاستلام",
         remaining,
       };
     }

@@ -226,6 +226,14 @@ export class InvoiceService {
     return this.insert(payment);
   }
 
+  static async update(id: string, updates: any) {
+    const record = await db.payments.get(id);
+    const updated = { ...record, ...updates, id, last_modified: Date.now() };
+    await db.payments.put(updated);
+    await SyncManager.queueOperation("UPDATE", "payments", id, updates);
+    return updated;
+  }
+
   static async delete(id: string) {
     await db.payments.delete(id);
     await SyncManager.addTombstone("payments", id);
