@@ -16,6 +16,8 @@ export interface LocalCustomer {
   delivery_address?: string;
   visit_date?: string;
   visit_date_to?: string;
+  visit_time?: string;
+  visitTime?: string;
   notes?: string;
   delivery_date?: string;
   pickup_date?: string;
@@ -32,6 +34,8 @@ export interface LocalInspection {
   delivery_address?: string;
   visit_date?: string;
   visit_date_to?: string;
+  visit_time?: string;
+  visitTime?: string;
   notes?: string;
   rooms: number;
   pieces: any;
@@ -58,6 +62,8 @@ export interface LocalContractedCustomer {
   delivery_address?: string;
   visit_date?: string;
   visit_date_to?: string;
+  visit_time?: string;
+  visitTime?: string;
   notes?: string;
   rooms: number;
   pieces: any;
@@ -84,6 +90,8 @@ export interface LocalNonContractedCustomer {
   delivery_address?: string;
   visit_date?: string;
   visit_date_to?: string;
+  visit_time?: string;
+  visitTime?: string;
   notes?: string;
   rooms: number;
   pieces: any;

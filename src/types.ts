@@ -38,6 +38,7 @@ export interface CustomerRecord {
   deliveryAddress?: string;
   visitDate?: string;
   visitDateTo?: string;
+  visitTime?: string;
   notes?: string;
   deliveryDate?: string;
   pickupDate?: string;
@@ -66,6 +67,7 @@ export interface Inspection {
   governorate?: string;
   visitDate: string;
   visitDateTo?: string;
+  visitTime?: string;
   notes: string;
   rooms: number;
   pieces: FurniturePiece[];

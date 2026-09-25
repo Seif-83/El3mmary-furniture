@@ -1,5 +1,5 @@
 // Production/workshop tracker page with Phase-Based Timers (3-20 days) & Payment Collection Triggers.
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Search,
@@ -19,11 +19,23 @@ import {
   Eye,
   Coins,
   CheckCircle2,
+  WalletCards,
+  FileSpreadsheet,
+  FileText,
+  ChevronDown,
+  ChevronUp,
+  Download,
+  Printer,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import type { Inspection } from "../types";
 import { STAGE_ORDER } from "../constants";
 import { InvoiceService, StageService } from "../services/data";
+import {
+  exportExpensesToExcel,
+  exportElementToImage,
+  exportElementToPdf,
+} from "../exportExpenses";
 
 // Helper to determine if a stage key requires / supports the duration timer
 const isTimedStage = (stageKey: string): boolean => {
@@ -506,6 +518,124 @@ export const ProductionPage: React.FC<{
     );
   });
 
+  // ===================== PHASE EXPENSES SUMMARY & EXPORTS =====================
+  const [isExpenseDetailsOpen, setIsExpenseDetailsOpen] = useState(false);
+  const [stageExpenseFilter, setStageExpenseFilter] = useState<string>("all");
+  const phaseExpensesStatementRef = useRef<HTMLDivElement>(null);
+  const stageExpensesModalRef = useRef<HTMLDivElement>(null);
+  const singleStageStatementRef = useRef<HTMLDivElement>(null);
+
+  const phaseExpensesSummary = useMemo(() => {
+    const items: Array<{
+      id: string;
+      orderId: string;
+      customerName: string;
+      phone: string;
+      stageKey: string;
+      stageName: string;
+      destination: string;
+      amount: number;
+    }> = [];
+
+    const stageTotals: Record<string, { count: number; total: number; label: string }> = {};
+    STAGE_ORDER.forEach((st) => {
+      stageTotals[st.key] = {
+        count: 0,
+        total: 0,
+        label: lang === "ar" ? st.ar : st.en,
+      };
+    });
+
+    // Process all stages directly to ensure no expenses are missed
+    stages.forEach((stRec: any) => {
+      const exps = (stRec.expenses || []) as { destination: string; amount: number }[];
+      if (!Array.isArray(exps) || exps.length === 0) return;
+
+      // Find matching order in allProductionData
+      const matchingOrder = allProductionData.find((o) => {
+        if (!o.phone) return false;
+        if (stRec.client?.phones?.includes(o.phone)) return true;
+        const normO = o.phone.replace(/\D/g, "");
+        if (!normO) return false;
+        return (stRec.client?.phones || []).some((p: string) => {
+          const normP = p.replace(/\D/g, "");
+          return normP === normO || normP.endsWith(normO) || normO.endsWith(normP);
+        });
+      });
+
+      const customerName = matchingOrder?.customerName || (lang === "ar" ? "طلب إنتاج" : "Production Order");
+      const phone = matchingOrder?.phone || stRec.client?.phones?.[0] || "";
+      const orderId = matchingOrder?.id || stRec.client_id || stRec.id;
+
+      const stDef = STAGE_ORDER.find((def) => def.key === stRec.stage);
+      const stageName = stDef ? (lang === "ar" ? stDef.ar : stDef.en) : stRec.stage;
+
+      exps.forEach((exp, idx) => {
+        const amt = Number(exp.amount) || 0;
+        if (amt > 0 || (exp.destination && exp.destination.trim() !== "")) {
+          items.push({
+            id: `${stRec.id}-${idx}`,
+            orderId,
+            customerName,
+            phone,
+            stageKey: stRec.stage,
+            stageName,
+            destination: exp.destination || (lang === "ar" ? "بند مصروف" : "Expense item"),
+            amount: amt,
+          });
+
+          if (!stageTotals[stRec.stage]) {
+            stageTotals[stRec.stage] = {
+              count: 0,
+              total: 0,
+              label: stageName,
+            };
+          }
+          stageTotals[stRec.stage].total += amt;
+          stageTotals[stRec.stage].count += 1;
+        }
+      });
+    });
+
+    const grandTotal = items.reduce((sum, item) => sum + item.amount, 0);
+    const uniqueOrders = new Set(items.map((i) => i.orderId)).size;
+
+    return {
+      items,
+      stageTotals,
+      grandTotal,
+      uniqueOrders,
+    };
+  }, [allProductionData, stages, lang]);
+
+  const filteredExpenseItems = useMemo(() => {
+    if (stageExpenseFilter === "all") return phaseExpensesSummary.items;
+    return phaseExpensesSummary.items.filter((i) => i.stageKey === stageExpenseFilter);
+  }, [phaseExpensesSummary.items, stageExpenseFilter]);
+
+  const handleExportAllExpensesExcel = () => {
+    const filename = `مصروفات_مراحل_الإنتاج_${new Date().toISOString().slice(0, 10)}`;
+    exportExpensesToExcel(
+      lang === "ar" ? "مصروفات المراحل" : "Phase Expenses",
+      phaseExpensesSummary.items,
+      phaseExpensesSummary.grandTotal,
+      filename,
+      lang,
+    );
+  };
+
+  const handleExportAllExpensesPdf = async () => {
+    if (!phaseExpensesStatementRef.current) return;
+    const filename = `كشف_مصروفات_المراحل_${new Date().toISOString().slice(0, 10)}`;
+    await exportElementToPdf(phaseExpensesStatementRef.current, filename, lang);
+  };
+
+  const handleExportAllExpensesImage = async () => {
+    if (!phaseExpensesStatementRef.current) return;
+    const filename = `كشف_مصروفات_المراحل_${new Date().toISOString().slice(0, 10)}`;
+    await exportElementToImage(phaseExpensesStatementRef.current, filename, lang);
+  };
+
   // Open Timer Duration Selection Modal (1 to 60 days)
   const handleOpenTimerModal = (
     stageRecord: any,
@@ -791,16 +921,21 @@ export const ProductionPage: React.FC<{
     const remaining = (order.totalAmount || 0) - totalPaid;
     if (remaining <= 0) return null;
 
-    const paintingStage = orderStages.find((s) => s.stage === "painting");
-    const carpentryStage = orderStages.find((s) => s.stage === "carpentry");
-    const receivedStage = orderStages.find((s) => s.stage === "received");
-
-    const hasContractPayment = custPayments.some(
-      (p) => p.installment?.includes("التعاقد") || p.installment === "التعاقد",
+    // Determine paid installments sequentially
+    const paidStages = new Set(
+      custPayments.map((p) => {
+        const s = (p.installment || "").trim();
+        if (s.includes("تعاقد")) return "التعاقد";
+        if (s.includes("نجارة")) return "النجارة";
+        if (s.includes("دهان") || s.includes("تجهيز")) return "الدهانات";
+        if (s.includes("استلام") || s.includes("تسليم")) return "الاستلام";
+        return s;
+      }),
     );
 
-    // Contract milestone
-    if (!hasContractPayment || custPayments.length === 0) {
+    // Strictly sequential installments:
+    // 1. Contract ("التعاقد")
+    if (!paidStages.has("التعاقد")) {
       return {
         key: "contract",
         stageName: lang === "ar" ? "دفعة التعاقد" : "Contract Deposit",
@@ -809,31 +944,43 @@ export const ProductionPage: React.FC<{
       };
     }
 
-    if (paintingStage?.status === "done") {
-      return {
-        key: "painting",
-        stageName: lang === "ar" ? "تمام الدهانات" : "Painting Completed",
-        installmentName: "الدهانات",
-        remaining,
-      };
-    }
-    if (carpentryStage?.status === "done") {
+    // 2. Carpentry ("النجارة")
+    if (!paidStages.has("النجارة")) {
       return {
         key: "carpentry",
-        stageName: lang === "ar" ? "تمام النجارة" : "Carpentry Completed",
+        stageName: lang === "ar" ? "دفعة مرحلة النجارة" : "Carpentry Installment",
         installmentName: "النجارة",
         remaining,
       };
     }
-    if (receivedStage?.status === "done") {
+
+    // 3. Painting ("الدهانات") - Example: if carpentry is paid, next due is painting
+    if (!paidStages.has("الدهانات")) {
+      return {
+        key: "painting",
+        stageName: lang === "ar" ? "دفعة مرحلة الدهانات" : "Painting Installment",
+        installmentName: "الدهانات",
+        remaining,
+      };
+    }
+
+    // 4. Delivery / Final Handover ("الاستلام")
+    if (!paidStages.has("الاستلام")) {
       return {
         key: "received",
-        stageName: lang === "ar" ? "تمام الاستلام" : "Intake Completed",
+        stageName: lang === "ar" ? "دفعة الاستلام النهائي" : "Final Delivery Installment",
         installmentName: "الاستلام",
         remaining,
       };
     }
-    return null;
+
+    // 5. Remaining balance if any
+    return {
+      key: "remaining",
+      stageName: lang === "ar" ? "متبقي الحساب النهائي" : "Remaining Balance",
+      installmentName: "الاستلام",
+      remaining,
+    };
   };
 
   return (
@@ -998,6 +1145,225 @@ export const ProductionPage: React.FC<{
           </div>
         </div>
       </div>
+
+      {/* ===================== PHASE EXPENSES SECTION ===================== */}
+      {(isAdmin || canEditStages) && (
+        <div className="glass rounded-[2rem] p-6 border border-emerald-500/20 shadow-xl bg-gradient-to-br from-white/95 via-emerald-50/20 to-white/90 relative overflow-hidden transition-all">
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 pb-5 border-b border-emerald-100/60">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center shadow-lg shadow-emerald-600/20 shrink-0">
+                <Coins className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl md:text-2xl font-bold text-zinc-900">
+                    {lang === "ar" ? "قسم مصروفات المراحل" : "Phase Expenses Tracker"}
+                  </h2>
+                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    {lang === "ar" ? "خاص بالورشة" : "Factory Internal"}
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  {lang === "ar"
+                    ? "تجميع وحساب كافة المصروفات التشغيلية لجميع مراحل الإنتاج وعرض الإجمالي النهائي"
+                    : "Aggregated operational expenses across all production stages and workshop operations"}
+                </p>
+              </div>
+            </div>
+
+            {/* Grand Total Highlight Card */}
+            <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-end">
+              <div className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-6 py-3.5 rounded-2xl shadow-xl shadow-emerald-600/20 flex items-center gap-3.5 border border-emerald-400/30">
+                <div className="text-right rtl:text-right ltr:text-left">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-100 flex items-center gap-1.5 justify-end">
+                    <WalletCards className="w-3.5 h-3.5 text-emerald-200" />
+                    <span>{lang === "ar" ? "الإجمالي النهائي للمصروفات" : "Grand Total Expenses"}</span>
+                  </div>
+                  <div className="text-2xl md:text-3xl font-black font-mono tracking-tight mt-0.5">
+                    {phaseExpensesSummary.grandTotal.toLocaleString()}{" "}
+                    <span className="text-sm font-normal opacity-90">{lang === "ar" ? "ج.م" : "EGP"}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Metrics & Actions Bar */}
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pt-4">
+            {/* Stage Breakdown Pills */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-bold text-zinc-500 flex items-center gap-1">
+                <WalletCards className="w-3.5 h-3.5 text-zinc-400" />
+                {lang === "ar" ? "حسب المرحلة:" : "By Stage:"}
+              </span>
+              {STAGE_ORDER.map((st) => {
+                const stData = phaseExpensesSummary.stageTotals[st.key];
+                const hasAmount = (stData?.total || 0) > 0;
+                return (
+                  <button
+                    key={st.key}
+                    type="button"
+                    onClick={() => {
+                      setStageExpenseFilter(stageExpenseFilter === st.key ? "all" : st.key);
+                      if (!isExpenseDetailsOpen) setIsExpenseDetailsOpen(true);
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      stageExpenseFilter === st.key
+                        ? "bg-emerald-600 text-white shadow-sm"
+                        : hasAmount
+                        ? "bg-white text-zinc-800 border border-zinc-200 hover:border-emerald-300"
+                        : "bg-zinc-100/70 text-zinc-400 border border-transparent"
+                    }`}
+                  >
+                    <span>{lang === "ar" ? st.ar : st.en}</span>
+                    <span className={`px-1.5 py-0.2 rounded-md font-mono text-[10px] ${stageExpenseFilter === st.key ? "bg-white/20 text-white" : "bg-zinc-100 text-zinc-600"}`}>
+                      {(stData?.total || 0).toLocaleString()}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Export & Toggle Actions */}
+            <div className="flex items-center gap-2 flex-wrap w-full md:w-auto justify-end">
+              <button
+                type="button"
+                onClick={handleExportAllExpensesExcel}
+                className="btn-3d px-3.5 py-2 rounded-xl text-xs font-bold bg-white text-emerald-700 hover:bg-emerald-50 border border-emerald-200 flex items-center gap-1.5 shadow-sm hover:shadow transition-all cursor-pointer"
+                title={lang === "ar" ? "تصدير إلى ملف Excel" : "Export to Excel"}
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                <span>{lang === "ar" ? "إكسيل" : "Excel"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExportAllExpensesPdf}
+                className="btn-3d px-3.5 py-2 rounded-xl text-xs font-bold bg-white text-rose-700 hover:bg-rose-50 border border-rose-200 flex items-center gap-1.5 shadow-sm hover:shadow transition-all cursor-pointer"
+                title={lang === "ar" ? "تحميل كملف PDF" : "Download PDF"}
+              >
+                <FileText className="w-4 h-4 text-rose-600" />
+                <span>{lang === "ar" ? "PDF" : "PDF"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExportAllExpensesImage}
+                className="btn-3d px-3.5 py-2 rounded-xl text-xs font-bold bg-white text-indigo-700 hover:bg-indigo-50 border border-indigo-200 flex items-center gap-1.5 shadow-sm hover:shadow transition-all cursor-pointer"
+                title={lang === "ar" ? "تحميل كصورة عالية الدقة" : "Download Image"}
+              >
+                <ImageIcon className="w-4 h-4 text-indigo-600" />
+                <span>{lang === "ar" ? "صورة" : "Image"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsExpenseDetailsOpen(!isExpenseDetailsOpen)}
+                className="btn-3d px-3.5 py-2 rounded-xl text-xs font-bold bg-zinc-900 text-white hover:bg-zinc-800 flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+              >
+                {isExpenseDetailsOpen ? (
+                  <>
+                    <ChevronUp className="w-4 h-4" />
+                    <span>{lang === "ar" ? "إخفاء التفاصيل" : "Hide Details"}</span>
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="w-4 h-4" />
+                    <span>
+                      {lang === "ar"
+                        ? `عرض الكشف (${phaseExpensesSummary.items.length})`
+                        : `Show Details (${phaseExpensesSummary.items.length})`}
+                    </span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Expandable Itemized Table */}
+          <AnimatePresence>
+            {isExpenseDetailsOpen && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden pt-4 mt-4 border-t border-zinc-100"
+              >
+                <div className="bg-white/90 rounded-2xl border border-zinc-200/80 overflow-hidden shadow-sm">
+                  <div className="p-3 bg-zinc-50 border-b border-zinc-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="font-bold text-zinc-700 flex items-center gap-2">
+                      <span>{lang === "ar" ? "كشف بنود المصروفات المفصلة" : "Itemized Phase Expenses"}</span>
+                      {stageExpenseFilter !== "all" && (
+                        <button
+                          type="button"
+                          onClick={() => setStageExpenseFilter("all")}
+                          className="text-[10px] text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full hover:underline cursor-pointer"
+                        >
+                          {lang === "ar" ? "إلغاء التصفية" : "Clear Filter"}
+                        </button>
+                      )}
+                    </div>
+                    <div className="text-zinc-500 font-mono text-[11px]">
+                      {lang === "ar"
+                        ? `${filteredExpenseItems.length} بند مسجل`
+                        : `${filteredExpenseItems.length} recorded items`}
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                    {filteredExpenseItems.length > 0 ? (
+                      <table className="w-full text-right rtl:text-right ltr:text-left text-xs border-collapse">
+                        <thead className="bg-zinc-100/80 sticky top-0 z-10 text-zinc-600 font-bold uppercase text-[10px]">
+                          <tr>
+                            <th className="p-3">#</th>
+                            <th className="p-3">{lang === "ar" ? "اسم العميل" : "Customer"}</th>
+                            <th className="p-3">{lang === "ar" ? "الهاتف" : "Phone"}</th>
+                            <th className="p-3">{lang === "ar" ? "المرحلة" : "Stage"}</th>
+                            <th className="p-3">{lang === "ar" ? "جهة الصرف / البيان" : "Destination"}</th>
+                            <th className="p-3 text-left rtl:text-left ltr:text-right">{lang === "ar" ? "المبلغ (جنيه)" : "Amount (EGP)"}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-100 text-zinc-800">
+                          {filteredExpenseItems.map((item, idx) => (
+                            <tr key={item.id} className="hover:bg-emerald-50/30 transition-colors">
+                              <td className="p-3 font-mono text-zinc-400 font-bold">{idx + 1}</td>
+                              <td className="p-3 font-bold text-zinc-900">{item.customerName}</td>
+                              <td className="p-3 font-mono text-zinc-500" dir="ltr">{item.phone}</td>
+                              <td className="p-3">
+                                <span className="bg-zinc-100 text-zinc-700 px-2 py-0.5 rounded-md font-semibold text-[11px]">
+                                  {item.stageName}
+                                </span>
+                              </td>
+                              <td className="p-3 font-medium text-zinc-700">{item.destination}</td>
+                              <td className="p-3 font-mono font-bold text-emerald-700 text-left rtl:text-left ltr:text-right">
+                                {item.amount.toLocaleString()} ج.م
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot className="bg-emerald-50/70 border-t-2 border-emerald-200 font-bold text-xs sticky bottom-0">
+                          <tr>
+                            <td colSpan={5} className="p-3 text-emerald-900">
+                              {lang === "ar" ? "إجمالي المعروض:" : "Subtotal:"}
+                            </td>
+                            <td className="p-3 font-mono text-emerald-800 text-sm font-black text-left rtl:text-left ltr:text-right">
+                              {filteredExpenseItems.reduce((s, i) => s + i.amount, 0).toLocaleString()} ج.م
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    ) : (
+                      <div className="py-8 text-center text-zinc-400 text-xs font-semibold">
+                        {lang === "ar" ? "لا توجد مصروفات مسجلة للمراحل المحددة" : "No expenses recorded for this filter"}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
 
       {filteredProductionData.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
@@ -2093,6 +2459,7 @@ export const ProductionPage: React.FC<{
         {expenseModalOpen && expenseStageData && (
           <div className="fixed inset-0 z-[115] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <motion.div
+              ref={stageExpensesModalRef}
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
@@ -2113,13 +2480,78 @@ export const ProductionPage: React.FC<{
                       : `Customer: ${expenseStageData.order.customerName} - Factory internal only (Hidden from customer)`}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setExpenseModalOpen(false)}
-                  className="p-2 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 rounded-xl transition-all cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const items = stageExpenses
+                        .filter((r) => (Number(r.amount) || 0) > 0 || r.destination.trim() !== "")
+                        .map((r) => ({
+                          customerName: expenseStageData.order.customerName,
+                          phone: expenseStageData.order.phone,
+                          stageName: lang === "ar" ? expenseStageData.stageDef.ar : expenseStageData.stageDef.en,
+                          destination: r.destination,
+                          amount: Number(r.amount) || 0,
+                        }));
+                      const total = items.reduce((s, i) => s + i.amount, 0);
+                      exportExpensesToExcel(
+                        `مصروفات_${expenseStageData.stageDef.ar}`,
+                        items,
+                        total,
+                        `مصروفات_${expenseStageData.stageDef.ar}_${expenseStageData.order.customerName}_${new Date().toISOString().slice(0, 10)}`,
+                        lang,
+                      );
+                    }}
+                    className="p-2 text-emerald-700 hover:bg-emerald-50 rounded-xl transition-all border border-emerald-200 cursor-pointer flex items-center gap-1 text-xs font-bold"
+                    title={lang === "ar" ? "تصدير إلى إكسيل" : "Export Excel"}
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                    <span className="hidden sm:inline">{lang === "ar" ? "إكسيل" : "Excel"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const exportTarget = singleStageStatementRef.current || stageExpensesModalRef.current;
+                      if (exportTarget) {
+                        exportElementToPdf(
+                          exportTarget,
+                          `مصروفات_${expenseStageData.stageDef.ar}_${expenseStageData.order.customerName}_${new Date().toISOString().slice(0, 10)}`,
+                          lang,
+                        );
+                      }
+                    }}
+                    className="p-2 text-rose-700 hover:bg-rose-50 rounded-xl transition-all border border-rose-200 cursor-pointer flex items-center gap-1 text-xs font-bold"
+                    title={lang === "ar" ? "تحميل كملف PDF" : "Download PDF"}
+                  >
+                    <FileText className="w-4 h-4 text-rose-600" />
+                    <span className="hidden sm:inline">{lang === "ar" ? "PDF" : "PDF"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const exportTarget = singleStageStatementRef.current || stageExpensesModalRef.current;
+                      if (exportTarget) {
+                        exportElementToImage(
+                          exportTarget,
+                          `مصروفات_${expenseStageData.stageDef.ar}_${expenseStageData.order.customerName}_${new Date().toISOString().slice(0, 10)}`,
+                          lang,
+                        );
+                      }
+                    }}
+                    className="p-2 text-indigo-700 hover:bg-indigo-50 rounded-xl transition-all border border-indigo-200 cursor-pointer flex items-center gap-1 text-xs font-bold"
+                    title={lang === "ar" ? "تحميل كصورة" : "Download Image"}
+                  >
+                    <ImageIcon className="w-4 h-4 text-indigo-600" />
+                    <span className="hidden sm:inline">{lang === "ar" ? "صورة" : "Image"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExpenseModalOpen(false)}
+                    className="p-2 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 rounded-xl transition-all cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
 
               <div className="flex-1 overflow-y-auto pr-1 space-y-2">
@@ -2229,6 +2661,298 @@ export const ProductionPage: React.FC<{
           </div>
         )}
       </AnimatePresence>
+      {/* ===================== PRINTABLE STATEMENT FOR PDF & IMAGE EXPORT ===================== */}
+      <div style={{ position: "fixed", left: 0, top: 0, zIndex: -9999, pointerEvents: "none" }} aria-hidden="true">
+        <div
+          ref={phaseExpensesStatementRef}
+          id="phase-expenses-statement"
+          dir={lang === "ar" ? "rtl" : "ltr"}
+          className="bg-white p-10 text-zinc-900 w-[1000px] border border-zinc-200"
+          style={{ fontFamily: "inherit" }}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between pb-6 border-b-2 border-emerald-600 mb-6">
+            <div>
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-black text-2xl shadow-md">
+                  ع
+                </div>
+                <div>
+                  <h1 className="text-2xl font-black text-zinc-900">
+                    {lang === "ar" ? "مصنع العماري للأثاث الراقي" : "El-Amary Furniture Industry"}
+                  </h1>
+                  <p className="text-xs text-zinc-500 font-semibold">
+                    {lang === "ar" ? "إدارة الإنتاج والتشغيل - كشف مصروفات المراحل" : "Production Management - Phase Expenses Statement"}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="text-left rtl:text-left ltr:text-right text-xs text-zinc-500 space-y-1">
+              <div>
+                <span className="font-bold text-zinc-700">{lang === "ar" ? "تاريخ التصدير:" : "Export Date:"} </span>
+                <span className="font-mono">{new Date().toLocaleDateString(lang === "ar" ? "ar-EG" : "en-US", { year: "numeric", month: "long", day: "numeric" })}</span>
+              </div>
+              <div>
+                <span className="font-bold text-zinc-700">{lang === "ar" ? "وقت الإصدار:" : "Issue Time:"} </span>
+                <span className="font-mono">{new Date().toLocaleTimeString(lang === "ar" ? "ar-EG" : "en-US", { hour: "2-digit", minute: "2-digit" })}</span>
+              </div>
+              <div>
+                <span className="inline-block bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-bold px-2 py-0.5 rounded-md">
+                  {lang === "ar" ? "مستند رسمي معتمد داخلياً" : "Official Internal Document"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* KPI Summary Cards */}
+          <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4">
+              <div className="text-xs font-bold text-emerald-800 mb-1">
+                {lang === "ar" ? "إجمالي مصروفات المراحل" : "Total Phase Expenses"}
+              </div>
+              <div className="text-2xl font-black font-mono text-emerald-700">
+                {phaseExpensesSummary.grandTotal.toLocaleString()}{" "}
+                <span className="text-sm font-bold">{lang === "ar" ? "جنيه مصري" : "EGP"}</span>
+              </div>
+            </div>
+            <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-4">
+              <div className="text-xs font-bold text-zinc-600 mb-1">
+                {lang === "ar" ? "عدد البنود المسجلة" : "Recorded Items"}
+              </div>
+              <div className="text-2xl font-black font-mono text-zinc-800">
+                {phaseExpensesSummary.items.length}{" "}
+                <span className="text-sm font-bold text-zinc-500">{lang === "ar" ? "بند" : "items"}</span>
+              </div>
+            </div>
+            <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-4">
+              <div className="text-xs font-bold text-zinc-600 mb-1">
+                {lang === "ar" ? "عدد الطلبات المستفيدة" : "Affected Orders"}
+              </div>
+              <div className="text-2xl font-black font-mono text-zinc-800">
+                {phaseExpensesSummary.uniqueOrders}{" "}
+                <span className="text-sm font-bold text-zinc-500">{lang === "ar" ? "طلب" : "orders"}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Stage Breakdown Summary */}
+          <div className="mb-6">
+            <h3 className="text-sm font-bold text-zinc-800 mb-2 pb-1 border-b border-zinc-200">
+              {lang === "ar" ? "ملخص المصروفات حسب مراحل الإنتاج:" : "Summary by Production Stage:"}
+            </h3>
+            <div className="grid grid-cols-4 gap-2 text-xs">
+              {STAGE_ORDER.map((st) => {
+                const info = phaseExpensesSummary.stageTotals[st.key] || { count: 0, total: 0 };
+                const pct = phaseExpensesSummary.grandTotal > 0
+                  ? Math.round((info.total / phaseExpensesSummary.grandTotal) * 100)
+                  : 0;
+                return (
+                  <div key={st.key} className="bg-zinc-50 p-2.5 rounded-xl border border-zinc-200/70">
+                    <div className="font-bold text-zinc-700">{lang === "ar" ? st.ar : st.en}</div>
+                    <div className="text-emerald-700 font-mono font-black text-sm mt-0.5">
+                      {info.total.toLocaleString()} ج.م
+                    </div>
+                    <div className="text-[10px] text-zinc-400 font-mono">
+                      {info.count} {lang === "ar" ? "بند" : "items"} ({pct}%)
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Detailed Itemized Table */}
+          <div className="mb-8">
+            <h3 className="text-sm font-bold text-zinc-800 mb-2 pb-1 border-b border-zinc-200">
+              {lang === "ar" ? "كشف تفصيلي ببنود المصروفات:" : "Itemized Expenses Details:"}
+            </h3>
+            <table className="w-full text-right rtl:text-right ltr:text-left text-xs border border-zinc-200">
+              <thead>
+                <tr className="bg-zinc-100 text-zinc-700 font-bold border-b border-zinc-200">
+                  <th className="p-2.5 border-l border-zinc-200 w-10 text-center">#</th>
+                  <th className="p-2.5 border-l border-zinc-200">{lang === "ar" ? "اسم العميل" : "Customer"}</th>
+                  <th className="p-2.5 border-l border-zinc-200">{lang === "ar" ? "الهاتف" : "Phone"}</th>
+                  <th className="p-2.5 border-l border-zinc-200">{lang === "ar" ? "المرحلة" : "Stage"}</th>
+                  <th className="p-2.5 border-l border-zinc-200">{lang === "ar" ? "جهة الصرف / البيان" : "Destination"}</th>
+                  <th className="p-2.5 text-left rtl:text-left ltr:text-right">{lang === "ar" ? "المبلغ" : "Amount"}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-200">
+                {phaseExpensesSummary.items.map((item, idx) => (
+                  <tr key={item.id} className={idx % 2 === 0 ? "bg-white" : "bg-zinc-50/50"}>
+                    <td className="p-2 border-l border-zinc-200 text-center font-mono text-zinc-400 font-bold">{idx + 1}</td>
+                    <td className="p-2 border-l border-zinc-200 font-bold text-zinc-900">{item.customerName}</td>
+                    <td className="p-2 border-l border-zinc-200 font-mono text-zinc-600" dir="ltr">{item.phone}</td>
+                    <td className="p-2 border-l border-zinc-200 font-semibold text-zinc-700">{item.stageName}</td>
+                    <td className="p-2 border-l border-zinc-200 text-zinc-800">{item.destination}</td>
+                    <td className="p-2 font-mono font-bold text-emerald-700 text-left rtl:text-left ltr:text-right">
+                      {item.amount.toLocaleString()} ج.م
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-emerald-50 font-bold text-xs border-t-2 border-emerald-300">
+                  <td colSpan={5} className="p-3 text-emerald-950 font-bold border-l border-zinc-200">
+                    {lang === "ar" ? "الإجمالي الكلي النهائي لكافة مصروفات المراحل:" : "Grand Total Phase Expenses:"}
+                  </td>
+                  <td className="p-3 font-mono font-black text-sm text-emerald-800 text-left rtl:text-left ltr:text-right">
+                    {phaseExpensesSummary.grandTotal.toLocaleString()} ج.م
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          {/* Signatures & Approvals */}
+          <div className="grid grid-cols-3 gap-6 pt-6 border-t-2 border-zinc-200 text-xs">
+            <div className="text-center space-y-10">
+              <div className="font-bold text-zinc-700">{lang === "ar" ? "المسؤول عن الإدخال" : "Data Entry Officer"}</div>
+              <div className="border-b border-dashed border-zinc-400 w-36 mx-auto"></div>
+            </div>
+            <div className="text-center space-y-10">
+              <div className="font-bold text-zinc-700">{lang === "ar" ? "مدير المصنع / التشغيل" : "Factory Manager"}</div>
+              <div className="border-b border-dashed border-zinc-400 w-36 mx-auto"></div>
+            </div>
+            <div className="text-center space-y-10">
+              <div className="font-bold text-zinc-700">{lang === "ar" ? "الإدارة المالية والاعتماد" : "Financial Approver"}</div>
+              <div className="border-b border-dashed border-zinc-400 w-36 mx-auto"></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Offscreen Single Stage Expenses Statement */}
+        {expenseStageData && (
+          <div
+            ref={singleStageStatementRef}
+            id="single-stage-expenses-statement"
+            dir={lang === "ar" ? "rtl" : "ltr"}
+            className="bg-white p-10 text-zinc-900 w-[900px] border border-zinc-200 mt-6"
+            style={{ fontFamily: "inherit" }}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between pb-6 border-b-2 border-emerald-600 mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-black text-2xl shadow-md">
+                  ع
+                </div>
+                <div>
+                  <h1 className="text-2xl font-black text-zinc-900">
+                    {lang === "ar" ? "مصنع العماري للأثاث الراقي" : "El-Amary Furniture Industry"}
+                  </h1>
+                  <p className="text-xs text-zinc-500 font-semibold">
+                    {lang === "ar"
+                      ? `كشف مصروفات مرحلة (${expenseStageData.stageDef.ar})`
+                      : `Expenses Statement for (${expenseStageData.stageDef.en})`}
+                  </p>
+                </div>
+              </div>
+              <div className="text-left rtl:text-left ltr:text-right text-xs text-zinc-500 space-y-1">
+                <div>
+                  <span className="font-bold text-zinc-700">{lang === "ar" ? "التاريخ:" : "Date:"} </span>
+                  <span className="font-mono">
+                    {new Date().toLocaleDateString(lang === "ar" ? "ar-EG" : "en-US", {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                    })}
+                  </span>
+                </div>
+                <div>
+                  <span className="font-bold text-zinc-700">{lang === "ar" ? "الوقت:" : "Time:"} </span>
+                  <span className="font-mono">
+                    {new Date().toLocaleTimeString(lang === "ar" ? "ar-EG" : "en-US", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Customer & Stage Info Box */}
+            <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-4 mb-6 grid grid-cols-3 gap-4 text-xs">
+              <div>
+                <span className="text-zinc-500 block mb-0.5">{lang === "ar" ? "اسم العميل" : "Customer"}</span>
+                <span className="font-bold text-sm text-zinc-900">{expenseStageData.order.customerName}</span>
+              </div>
+              <div>
+                <span className="text-zinc-500 block mb-0.5">{lang === "ar" ? "رقم الهاتف" : "Phone"}</span>
+                <span className="font-mono font-bold text-sm text-zinc-800" dir="ltr">
+                  {expenseStageData.order.phone || "-"}
+                </span>
+              </div>
+              <div>
+                <span className="text-zinc-500 block mb-0.5">{lang === "ar" ? "المرحلة التشغيلية" : "Stage"}</span>
+                <span className="font-bold text-sm text-emerald-700">
+                  {lang === "ar" ? expenseStageData.stageDef.ar : expenseStageData.stageDef.en}
+                </span>
+              </div>
+            </div>
+
+            {/* Items Table */}
+            <table className="w-full text-right rtl:text-right ltr:text-left text-xs border border-zinc-200 mb-6">
+              <thead>
+                <tr className="bg-zinc-100 text-zinc-700 font-bold border-b border-zinc-200">
+                  <th className="p-2.5 border-l border-zinc-200 w-12 text-center">#</th>
+                  <th className="p-2.5 border-l border-zinc-200">
+                    {lang === "ar" ? "جهة الصرف / البيان" : "Destination / Description"}
+                  </th>
+                  <th className="p-2.5 text-left rtl:text-left ltr:text-right w-44">
+                    {lang === "ar" ? "المبلغ (جنيه)" : "Amount (EGP)"}
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-200">
+                {stageExpenses
+                  .filter((r) => (Number(r.amount) || 0) > 0 || r.destination.trim() !== "")
+                  .map((row, idx) => (
+                    <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-zinc-50/50"}>
+                      <td className="p-2.5 border-l border-zinc-200 text-center font-mono text-zinc-400 font-bold">
+                        {idx + 1}
+                      </td>
+                      <td className="p-2.5 border-l border-zinc-200 text-zinc-800 font-medium">
+                        {row.destination || "-"}
+                      </td>
+                      <td className="p-2.5 font-mono font-bold text-emerald-700 text-left rtl:text-left ltr:text-right">
+                        {(Number(row.amount) || 0).toLocaleString()} ج.م
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-emerald-50 font-bold text-xs border-t-2 border-emerald-300">
+                  <td colSpan={2} className="p-3 text-emerald-950 font-bold border-l border-zinc-200">
+                    {lang === "ar" ? "إجمالي مصروفات هذه المرحلة:" : "Total Stage Expenses:"}
+                  </td>
+                  <td className="p-3 font-mono font-black text-sm text-emerald-800 text-left rtl:text-left ltr:text-right">
+                    {stageExpenses
+                      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0)
+                      .toLocaleString()}{" "}
+                    ج.م
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+
+            {/* Signatures */}
+            <div className="grid grid-cols-2 gap-8 pt-6 border-t-2 border-zinc-200 text-xs">
+              <div className="text-center space-y-10">
+                <div className="font-bold text-zinc-700">
+                  {lang === "ar" ? "مسؤول المرحلة" : "Stage Supervisor"}
+                </div>
+                <div className="border-b border-dashed border-zinc-400 w-36 mx-auto"></div>
+              </div>
+              <div className="text-center space-y-10">
+                <div className="font-bold text-zinc-700">
+                  {lang === "ar" ? "الاعتماد المالي" : "Financial Approval"}
+                </div>
+                <div className="border-b border-dashed border-zinc-400 w-36 mx-auto"></div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

@@ -226,7 +226,7 @@ export class SyncManager {
       non_contracted_customers: "id, customer_name, phone, address, delivery_address, visit_date, visit_date_to, notes, status, portfolio, delivery_date, pickup_date, portfolio_date, contract_date, governorate, room_types, contract_url, rooms, pieces, total_amount, room_aro_veneer, room_aro_veneer_price, created_at, finalized_at",
       catalogs: "id, title, data, created_at",
       payments: "id, client_id, visit_id, amount, paid_at, installment, note, created_at",
-      production_stages: "id, client_id, visit_id, stage, status, completed_at, created_at",
+      production_stages: "id, client_id, visit_id, stage, status, completed_at, created_at, expenses",
       clients: "id, name, phones, address, governorate, created_at",
       app_settings: "key, value, updated_at",
     };
@@ -424,11 +424,14 @@ export class SyncManager {
             }
           }
 
-          recordsToPut.push({
+          const mergedRecord = {
+            ...(localRecord || {}),
             ...remoteRecord,
+            expenses: remoteRecord.expenses ?? localRecord?.expenses ?? [],
             last_modified: Date.now(),
             synced: true,
-          });
+          };
+          recordsToPut.push(mergedRecord);
         }
 
         // Self-healing / reconciliation sync
@@ -708,13 +711,13 @@ export class SyncManager {
       delete cleanedPayload.last_modified;
       delete cleanedPayload.synced;
       delete cleanedPayload.location_url;
+      delete cleanedPayload.visitTime;
       if (tableName === "production_stages") {
         delete cleanedPayload.client;
         delete cleanedPayload.timer_days;
         delete cleanedPayload.timer_started_at;
         delete cleanedPayload.payment_requested;
         delete cleanedPayload.payment_requested_at;
-        delete cleanedPayload.expenses;
       }
       if (
         tableName === "inspections" ||
@@ -728,7 +731,12 @@ export class SyncManager {
 
     switch (operation) {
       case "INSERT": {
-        const { error } = await supabase.from(tableName).insert(cleanedPayload);
+        let { error } = await supabase.from(tableName).insert(cleanedPayload);
+        if (error && error.message?.includes("visit_time")) {
+          delete cleanedPayload.visit_time;
+          const retry = await supabase.from(tableName).insert(cleanedPayload);
+          error = retry.error;
+        }
         if (error && !error.message?.includes("duplicate key")) throw error;
 
         // Clear remote tombstone on Supabase by ID and Phone if insertion succeeded
@@ -747,7 +755,12 @@ export class SyncManager {
         break;
       }
       case "UPDATE": {
-        const { error } = await supabase.from(tableName).update(cleanedPayload).eq(pkColumn, recordId);
+        let { error } = await supabase.from(tableName).update(cleanedPayload).eq(pkColumn, recordId);
+        if (error && error.message?.includes("visit_time")) {
+          delete cleanedPayload.visit_time;
+          const retry = await supabase.from(tableName).update(cleanedPayload).eq(pkColumn, recordId);
+          error = retry.error;
+        }
         if (error) throw error;
 
         // Clear remote tombstone on Supabase by ID and Phone if update succeeded

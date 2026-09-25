@@ -46,6 +46,22 @@ export const formatCellValue = (v: any) => {
   return String(v);
 };
 
+export const formatTime12 = (timeStr?: string, lang: string = "ar"): string => {
+  if (!timeStr) return "";
+  const parts = timeStr.trim().split(":");
+  if (parts.length < 2) return timeStr;
+  let hours = parseInt(parts[0], 10);
+  const minutes = parts[1].slice(0, 2).padStart(2, "0");
+  if (isNaN(hours)) return timeStr;
+  const isPM = hours >= 12;
+  const period = isPM
+    ? (lang === "ar" ? "م" : "PM")
+    : (lang === "ar" ? "ص" : "AM");
+  hours = hours % 12 || 12;
+  const hoursStr = hours.toString().padStart(2, "0");
+  return `${hoursStr}:${minutes} ${period}`;
+};
+
 export const mapCustomerFromDB = (dbCust: any): CustomerRecord => ({
   id: dbCust.id,
   name: dbCust.name,
@@ -54,6 +70,7 @@ export const mapCustomerFromDB = (dbCust: any): CustomerRecord => ({
   address: dbCust.address,
   deliveryAddress: dbCust.delivery_address,
   visitDate: dbCust.visit_date,
+  visitTime: dbCust.visit_time || dbCust.visitTime,
   notes: dbCust.notes,
   deliveryDate: dbCust.delivery_date,
   pickupDate: dbCust.pickup_date,
@@ -96,6 +113,7 @@ export const mapInspectionFromDB = (dbInsp: any): Inspection =>
     address: dbInsp.address,
     deliveryAddress: dbInsp.delivery_address,
     visitDate: dbInsp.visit_date,
+    visitTime: dbInsp.visit_time || dbInsp.visitTime,
     notes: dbInsp.notes,
     governorate: dbInsp.governorate,
     rooms: dbInsp.rooms,

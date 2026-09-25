@@ -159,13 +159,17 @@ export const ActivitiesPage: React.FC<{
       : "-";
     const typeLabel = getActivityTypeLabel(activity.type, "ar");
     const activityMessage = getArabicActivityMessage(activity.message);
-    const message = `${typeLabel}: ${activityMessage} - ${dateStr}`;
+    const siteUrl = (import.meta as any).env?.VITE_WEBSITE_URL || window.location.origin;
+    let finalMessage = `${typeLabel}: ${activityMessage} - ${dateStr}`;
+    if (siteUrl && !finalMessage.includes(siteUrl)) {
+      finalMessage = `${finalMessage}\n\n🌐 موقعنا الإلكتروني:\n${siteUrl}`;
+    }
     const cleanPhone = phone.replace(/\D/g, "");
     const fullPhone = cleanPhone.startsWith("2")
       ? cleanPhone
       : `2${cleanPhone}`;
     window.open(
-      `https://wa.me/${fullPhone}?text=${encodeURIComponent(message)}`,
+      `https://wa.me/${fullPhone}?text=${encodeURIComponent(finalMessage)}`,
       "_blank",
     );
     toast.success(lang === "ar" ? "تم فتح واتساب" : "WhatsApp opened");

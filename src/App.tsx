@@ -45,6 +45,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   MessageSquare,
+  Clock,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { supabase, supabaseAdmin, SUPABASE_CONFIGURED } from "./lib/supabase";
@@ -96,6 +97,7 @@ import {
   withoutAroVeneer,
   withoutRoomTypesAndAroVeneer,
   playSound,
+  formatTime12,
 } from "./utils";
 import { ProductionPage } from "./components/ProductionPage";
 import { PaymentsPage, type PaymentRecord } from "./components/PaymentsPage";
@@ -478,6 +480,7 @@ export default function App() {
     phone: "",
     governorate: "",
     visitDate: "",
+    visitTime: "",
     notes: "",
     rooms: 0,
     room_types: [],
@@ -679,6 +682,7 @@ export default function App() {
             pickupDate: r.pickupDate || r.address || "",
             visitDate: r.visitDate || "",
             visitDateTo: r.visitDateTo || "",
+            visitTime: r.visitTime || "",
             notes: r.notes || "",
             governorate: r.governorate || "",
             rooms: 0,
@@ -703,6 +707,7 @@ export default function App() {
       (inspectionFormData.deliveryAddress?.trim() || "") !== "" ||
       (inspectionFormData.governorate?.trim() || "") !== "" ||
       (inspectionFormData.visitDate || "") !== "" ||
+      (inspectionFormData.visitTime || "") !== "" ||
       (inspectionFormData.notes?.trim() || "") !== "" ||
       (inspectionFormData.rooms || 0) !== 0 ||
       (inspectionFormData.pieces?.length || 0) > 0 ||
@@ -747,6 +752,7 @@ export default function App() {
       phone: "",
       governorate: "",
       visitDate: "",
+      visitTime: "",
       notes: "",
       rooms: 0,
       pieces: [],
@@ -1272,8 +1278,10 @@ export default function App() {
     name: "",
     phone: "",
     phones: [""],
+    totalAmount: "",
     pickupDate: "",
     visitDate: "",
+    visitTime: "",
     locationUrl: "",
     notes: "",
     address: "",
@@ -1297,6 +1305,7 @@ export default function App() {
           phones: formData.phones,
           pickupDate: formData.pickupDate,
           visitDate: formData.visitDate,
+          visitTime: formData.visitTime,
           locationUrl: formData.locationUrl,
           notes: formData.notes,
           address: formData.address,
@@ -1639,12 +1648,17 @@ export default function App() {
   };
 
   const sendWhatsAppMessage = (phone: string, message: string) => {
+    const siteUrl = (import.meta as any).env?.VITE_WEBSITE_URL || window.location.origin;
+    let finalMessage = message.trim();
+    if (siteUrl && !finalMessage.includes(siteUrl)) {
+      finalMessage = `${finalMessage}\n\n🌐 لمتابعة طلبك وزيارة موقعنا:\n${siteUrl}`;
+    }
     const cleanPhone = phone.replace(/\D/g, "");
     const fullPhone = cleanPhone.startsWith("2")
       ? cleanPhone
       : `2${cleanPhone}`;
     window.open(
-      `https://wa.me/${fullPhone}?text=${encodeURIComponent(message)}`,
+      `https://wa.me/${fullPhone}?text=${encodeURIComponent(finalMessage)}`,
       "_blank",
     );
   };
@@ -2446,6 +2460,7 @@ export default function App() {
             governorate: inspectionFormData.governorate || null,
             phone: inspectionFormData.phone?.trim(),
             visit_date: inspectionFormData.visitDate,
+            visit_time: inspectionFormData.visitTime || null,
             notes: inspectionFormData.notes,
             rooms: inspectionFormData.rooms || 0,
             pieces: inspectionFormData.pieces || [],
@@ -2473,6 +2488,7 @@ export default function App() {
             delivery_address: inspectionFormData.deliveryAddress?.trim(),
             governorate: inspectionFormData.governorate || null,
             visit_date: inspectionFormData.visitDate,
+            visit_time: inspectionFormData.visitTime || null,
             notes: inspectionFormData.notes,
             pickup_date: inspectionFormData.pickupDate || null,
             portfolio_date: inspectionFormData.portfolio_date || null,
@@ -2487,10 +2503,13 @@ export default function App() {
           const dateStr = new Date(
             inspectionFormData.visitDate,
           ).toLocaleDateString("ar-EG");
+          const timeStr = inspectionFormData.visitTime
+            ? (lang === "ar" ? ` في تمام الساعة ${formatTime12(inspectionFormData.visitTime, "ar")}` : ` at ${formatTime12(inspectionFormData.visitTime, "en")}`)
+            : "";
           const msg =
             lang === "ar"
-              ? `السلام عليكم، تم تحديد موعد معاينتك يوم ${dateStr} لمصنع العماري للأثاث. برجاء التكرم بالانتظار في الموعد المحدد. شكراً لثقتكم.`
-              : `Hello, your inspection appointment has been scheduled for ${dateStr} at El-Amary Furniture. Please wait on the specified date. Thank you for your trust.`;
+              ? `السلام عليكم، تم تحديد موعد معاينتك يوم ${dateStr}${timeStr} لمصنع العماري للأثاث. برجاء التكرم بالانتظار في الموعد المحدد. شكراً لثقتكم.`
+              : `Hello, your inspection appointment has been scheduled for ${dateStr}${timeStr} at El-Amary Furniture. Please wait on the specified date. Thank you for your trust.`;
           sendWhatsAppMessage(inspectionFormData.phone, msg);
         }
         // Notify customer about portfolio date when set for contracted customers
@@ -2603,6 +2622,7 @@ export default function App() {
         governorate: inspectionFormData.governorate || null,
         phone: inspectionFormData.phone?.trim(),
         visit_date: inspectionFormData.visitDate,
+        visit_time: inspectionFormData.visitTime || null,
         rooms: inspectionFormData.rooms || 0,
         pieces: inspectionFormData.pieces || [],
         total_amount: inspectionFormData.totalAmount || 0,
@@ -2989,6 +3009,74 @@ export default function App() {
       toast.error(err.message);
     }
     setIsLoading(false);
+  };
+
+  const sendInspectionFeedbackMessage = async (target: {
+    id?: string;
+    phone?: string;
+    customerName?: string;
+    name?: string;
+    status?: string;
+  }) => {
+    const phone = target.phone?.trim();
+    if (!phone) {
+      toast.error(
+        lang === "ar" ? "لا يوجد رقم هاتف مسجل لهذا العميل" : "No phone number registered for customer",
+      );
+      return false;
+    }
+
+    const currentStatus = target.status || "pending";
+    // الشرط: التحقق أولاً أن حالة التعاقد هي "عدم تأكيد التعاقد" (not confirmed / non-contracted / refused)
+    if (currentStatus === "contracted") {
+      toast.error(
+        lang === "ar"
+          ? "لا يمكن إرسال رسالة التقييم لأن العميل في حالة (تأكيد التعاقد). الميزة متاحة فقط لحالة عدم تأكيد التعاقد."
+          : "Cannot send feedback request because customer contract is confirmed.",
+      );
+      return false;
+    }
+
+    // نص الرسالة المطلوب بالضبط:
+    const feedbackText = "لأن رأيك يهمنا، منتظر من حضرتك تقييم للمعاينة أو feedback";
+    sendWhatsAppMessage(phone, feedbackText);
+    toast.success(
+      lang === "ar"
+        ? "تم إرسال رسالة طلب التقييم للعميل بنجاح"
+        : "Feedback request message sent successfully",
+    );
+    await logActivity(
+      "feedback_sent",
+      `${lang === "ar" ? "إرسال طلب تقييم معاينة للعميل" : "Sent inspection feedback request to"} ${target.customerName || target.name || phone}`,
+    );
+    return true;
+  };
+
+  const handleInspectionDoneWithFeedback = async (ins: Inspection) => {
+    if (ins.status === "contracted") {
+      toast.error(
+        lang === "ar"
+          ? "لا يمكن إرسال رسالة التقييم، العميل في حالة (تم التعاقد)."
+          : "Cannot send feedback request because customer is contracted.",
+      );
+      return;
+    }
+
+    triggerConfirm(
+      lang === "ar" ? "تمت المعاينة وإرسال تقييم" : "Inspection Done & Feedback",
+      lang === "ar"
+        ? `هل تمت المعاينة للعميل (${ins.customerName}) مع "عدم تأكيد التعاقد"؟ سيتم نقله لغير المتعاقدين وإرسال رسالة التقييم تلقائياً.`
+        : `Mark inspection for (${ins.customerName}) as completed without contracting and send feedback message?`,
+      async () => {
+        if (ins.status !== "refused") {
+          await handleFinalizeInspection("refused", ins);
+        }
+        await sendInspectionFeedbackMessage({
+          ...ins,
+          status: "refused",
+        });
+      },
+    );
   };
 
   const handleDeleteContracted = async (id: string) => {
@@ -3455,6 +3543,7 @@ export default function App() {
           draft.phones.some((p: string) => (p || "").trim() !== "")) ||
         (draft.address || "").trim() !== "" ||
         (draft.visitDate || "").trim() !== "" ||
+        (draft.visitTime || "").trim() !== "" ||
         (draft.locationUrl || "").trim() !== "" ||
         (draft.notes || "").trim() !== "" ||
         (draft.pickupDate || "").trim() !== "" ||
@@ -3467,6 +3556,7 @@ export default function App() {
       phones: hasDraftContent ? draft.phones || [""] : [""],
       pickupDate: hasDraftContent ? draft.pickupDate || "" : "",
       visitDate: hasDraftContent ? draft.visitDate || "" : "",
+      visitTime: hasDraftContent ? draft.visitTime || "" : "",
       locationUrl: hasDraftContent ? draft.locationUrl || "" : "",
       notes: hasDraftContent ? draft.notes || "" : "",
       address: hasDraftContent ? draft.address || "" : "",
@@ -3487,13 +3577,22 @@ export default function App() {
   const handleOpenEditModal = (unifiedRec: any) => {
     const record = unifiedRec.raw || unifiedRec;
     const phones = normalizePhoneList(record.phone);
+    const totalAmt =
+      record.totalAmount != null
+        ? String(record.totalAmount)
+        : record.total_amount != null
+        ? String(record.total_amount)
+        : "";
+
     setFormData({
       ...formData,
       name: record.name || record.customerName || "",
       phone: phones[0] || "",
       phones,
+      totalAmount: totalAmt,
       pickupDate: record.pickupDate || record.pickup_date || "",
       visitDate: record.visitDate || record.visit_date || "",
+      visitTime: record.visitTime || record.visit_time || "",
       locationUrl: record.locationUrl || record.location_url || record.deliveryAddress || record.delivery_address || "",
       notes: record.notes || "",
       address: record.address || record.pickupDate || "",
@@ -3853,6 +3952,7 @@ export default function App() {
           address: formData.address || null,
           delivery_address: formData.locationUrl || null,
           visit_date: formData.visitDate || null,
+          visit_time: formData.visitTime || null,
           notes: formData.notes || null,
           pickup_date: formData.pickupDate || null,
           governorate: formData.governorate || null,
@@ -3867,58 +3967,84 @@ export default function App() {
         void playSound("success");
         toast.success("Added success");
       } else {
+        const numTotal =
+          formData.totalAmount !== "" && !Number.isNaN(Number(formData.totalAmount))
+            ? Number(formData.totalAmount)
+            : undefined;
+
         if (editingCollection === "inspections") {
-          const updates = {
+          const updates: any = {
             customer_name: formData.name.trim(),
             phone: combinedPhone,
             address: formData.address || null,
             delivery_address: formData.locationUrl || null,
             visit_date: formData.visitDate || null,
+            visit_time: formData.visitTime || null,
             notes: formData.notes || null,
             pickup_date: formData.pickupDate || null,
             governorate: formData.governorate || null,
           };
+          if (numTotal !== undefined) updates.total_amount = numTotal;
           await OrderService.updateInspection(editingId!, updates);
         } else if (editingCollection === "contracted_customers") {
-          const updates = {
+          const updates: any = {
             customer_name: formData.name.trim(),
             phone: combinedPhone,
             address: formData.address || null,
             delivery_address: formData.locationUrl || null,
             visit_date: formData.visitDate || null,
+            visit_time: formData.visitTime || null,
             notes: formData.notes || null,
             pickup_date: formData.pickupDate || null,
             governorate: formData.governorate || null,
           };
+          if (numTotal !== undefined) updates.total_amount = numTotal;
           await OrderService.updateContracted(editingId!, updates);
         } else if (editingCollection === "non_contracted_customers") {
-          const updates = {
+          const updates: any = {
             customer_name: formData.name.trim(),
             phone: combinedPhone,
             address: formData.address || null,
             delivery_address: formData.locationUrl || null,
             visit_date: formData.visitDate || null,
+            visit_time: formData.visitTime || null,
             notes: formData.notes || null,
             pickup_date: formData.pickupDate || null,
             governorate: formData.governorate || null,
           };
+          if (numTotal !== undefined) updates.total_amount = numTotal;
           await OrderService.updateNonContracted(editingId!, updates);
         } else {
-          const updates = {
+          const updates: any = {
             name: formData.name.trim(),
             phone: combinedPhone,
             address: formData.address || null,
             delivery_address: formData.locationUrl || null,
             visit_date: formData.visitDate || null,
+            visit_time: formData.visitTime || null,
             notes: formData.notes || null,
             pickup_date: formData.pickupDate || null,
             governorate: formData.governorate || null,
           };
           await CustomerService.update(editingId!, updates);
+
+          // If there is an associated contracted customer with the same phone or ID, update their data and total_amount as well
+          const matchingContracted = contractedCustomers.find(
+            (c) => c.id === editingId || normalizePhone(c.phone) === normalizePhone(combinedPhone),
+          );
+          if (matchingContracted && matchingContracted.id) {
+            const contractedUpdates: any = {
+              customer_name: formData.name.trim(),
+              phone: combinedPhone,
+              governorate: formData.governorate || null,
+            };
+            if (numTotal !== undefined) contractedUpdates.total_amount = numTotal;
+            await OrderService.updateContracted(matchingContracted.id, contractedUpdates);
+          }
         }
         await refreshAllData();
         void playSound("success");
-        toast.success("Updated success");
+        toast.success(lang === "ar" ? "تم حفظ التعديلات بنجاح" : "Updated successfully");
       }
       setIsModalOpen(false);
     } catch (error: any) {
@@ -4009,6 +4135,7 @@ export default function App() {
             delivery_address: formData.locationUrl || null,
             location_url: formData.locationUrl || null,
             visit_date: formData.visitDate || null,
+            visit_time: formData.visitTime || null,
             notes: formData.notes || null,
             pickup_date: formData.pickupDate || null,
             governorate: formData.governorate || null,
@@ -4031,6 +4158,7 @@ export default function App() {
           deliveryAddress: formData.locationUrl || "",
           pickupDate: formData.pickupDate || formData.address || "",
           visitDate: formData.visitDate || "",
+          visitTime: formData.visitTime || "",
           visitDateTo: "",
           notes: formData.notes || "",
           governorate: formData.governorate || "",
@@ -5354,10 +5482,20 @@ export default function App() {
                                                 ? "مرفوض"
                                                 : "Refused"}
                                         </div>
-                                        <div className="flex items-center gap-1.5 bg-amber-500/10 text-amber-900 border border-amber-500/20 px-3 py-1.5 rounded-xl text-[10px] font-bold">
-                                          <Calendar className="w-3 h-3 text-amber-600" />
-                                          <span>{lang === "ar" ? "المعاينة:" : "Visit:"}</span>
-                                          <span>{ins.visitDate || (lang === "ar" ? "غير محدد" : "Not set")}</span>
+                                        <div className="flex flex-col sm:flex-row items-end sm:items-center gap-1.5 bg-amber-500/10 text-amber-950 border border-amber-500/25 px-3 py-2 rounded-xl text-[11px] font-bold shadow-xs">
+                                          <div className="flex items-center gap-1">
+                                            <Calendar className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                            <span className="text-zinc-500 text-[10px] font-medium">{lang === "ar" ? "التاريخ:" : "Date:"}</span>
+                                            <span className="font-mono text-zinc-800">{ins.visitDate || (lang === "ar" ? "غير محدد" : "Not set")}</span>
+                                          </div>
+                                          <span className="hidden sm:inline text-amber-400 font-light">|</span>
+                                          <div className="flex items-center gap-1">
+                                            <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                            <span className="text-zinc-500 text-[10px] font-medium">{lang === "ar" ? "الوقت:" : "Time:"}</span>
+                                            <span className="font-mono text-amber-800 font-extrabold bg-amber-500/15 px-1.5 py-0.5 rounded-md">
+                                              {ins.visitTime ? formatTime12(ins.visitTime, lang) : (lang === "ar" ? "غير محدد" : "Not set")}
+                                            </span>
+                                          </div>
                                         </div>
                                       </div>
                                     </div>
@@ -5375,32 +5513,45 @@ export default function App() {
                                     )}
 
                                     {isAdminUser && !isFactorySupervisor && userProfile?.username !== "ahmed" && (
-                                      <div className="grid grid-cols-2 gap-3 relative z-10">
+                                      <div className="space-y-2.5 relative z-10">
+                                        <div className="grid grid-cols-2 gap-3">
+                                          <button
+                                            onClick={() => {
+                                              setPendingContractInspection(ins);
+                                              setIsContractUploadOpen(true);
+                                            }}
+                                            className="btn-3d btn-3d-glass flex flex-col items-center justify-center gap-2 bg-white border border-zinc-100 text-zinc-400 p-4 rounded-3xl font-bold uppercase transition-all hover:scale-[1.02] active:scale-95 hover:text-emerald-600 hover:border-emerald-200 cursor-pointer"
+                                          >
+                                            <CheckCircle2 className="w-5 h-5" />
+                                            <span className="text-[11px] tracking-widest">
+                                              {t.contractedBtn}
+                                            </span>
+                                          </button>
+                                          <button
+                                            onClick={() =>
+                                              handleFinalizeInspection(
+                                                "refused",
+                                                ins,
+                                              )
+                                            }
+                                            className="btn-3d btn-3d-red flex flex-col items-center justify-center gap-2 bg-red-50 text-red-500 p-4 rounded-3xl font-bold uppercase transition-all hover:bg-red-100 active:scale-95 border border-red-100 cursor-pointer"
+                                          >
+                                            <X className="w-5 h-5" />
+                                            <span className="text-[11px] tracking-widest">
+                                              {t.refusedBtn}
+                                            </span>
+                                          </button>
+                                        </div>
+
+                                        {/* زر تمت المعاينة: يتحقق من عدم تأكيد التعاقد ويرسل رسالة التقييم تلقائياً */}
                                         <button
-                                          onClick={() => {
-                                            setPendingContractInspection(ins);
-                                            setIsContractUploadOpen(true);
-                                          }}
-                                          className="btn-3d btn-3d-glass flex flex-col items-center justify-center gap-2 bg-white border border-zinc-100 text-zinc-400 p-4 rounded-3xl font-bold uppercase transition-all hover:scale-[1.02] active:scale-95 hover:text-emerald-600 hover:border-emerald-200"
+                                          type="button"
+                                          onClick={() => handleInspectionDoneWithFeedback(ins)}
+                                          className="w-full btn-3d flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-zinc-950 p-3 rounded-2xl font-bold uppercase transition-all shadow-md active:scale-95 cursor-pointer text-xs"
+                                          title={lang === "ar" ? "تمت المعاينة وإرسال رسالة التقييم للعميل (شرط عدم تأكيد التعاقد)" : "Inspection Done & Send Feedback"}
                                         >
-                                          <CheckCircle2 className="w-5 h-5" />
-                                          <span className="text-[11px] tracking-widest">
-                                            {t.contractedBtn}
-                                          </span>
-                                        </button>
-                                        <button
-                                          onClick={() =>
-                                            handleFinalizeInspection(
-                                              "refused",
-                                              ins,
-                                            )
-                                          }
-                                          className="btn-3d btn-3d-red flex flex-col items-center justify-center gap-2 bg-red-50 text-red-500 p-4 rounded-3xl font-bold uppercase transition-all hover:bg-red-100 active:scale-95 border border-red-100"
-                                        >
-                                          <X className="w-5 h-5" />
-                                          <span className="text-[11px] tracking-widest">
-                                            {t.refusedBtn}
-                                          </span>
+                                          <MessageSquare className="w-4 h-4 text-zinc-950" />
+                                          <span>{lang === "ar" ? "تمت المعاينة (إرسال تقييم)" : "Inspection Done (Feedback)"}</span>
                                         </button>
                                       </div>
                                     )}
@@ -6791,21 +6942,40 @@ export default function App() {
                                           )}
                                         {isAdminUser &&
                                           adminSubView === "not-contracted" && (
-                                            <button
-                                              onClick={() =>
-                                                handleMoveNonContractedToContracted(
-                                                  r,
-                                                )
-                                              }
-                                              className="text-emerald-600 border border-emerald-200 px-3 xl:px-5 py-2.5 xl:py-3 rounded-lg text-xs font-bold uppercase hover:bg-emerald-600 hover:text-white transition-all"
-                                              title={
-                                                lang === "ar"
-                                                  ? "نقل للمتعاقدين"
-                                                  : "Move to Contracted"
-                                              }
-                                            >
-                                              <CheckCircle2 className="w-4 h-4" />
-                                            </button>
+                                            <>
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  sendInspectionFeedbackMessage(r)
+                                                }
+                                                className="text-amber-700 bg-amber-50 hover:bg-amber-500 hover:text-white border border-amber-200 px-3 xl:px-4 py-2.5 xl:py-3 rounded-lg text-xs font-bold uppercase transition-all flex items-center gap-1 cursor-pointer"
+                                                title={
+                                                  lang === "ar"
+                                                    ? "تمت المعاينة (إرسال رسالة التقييم للعميل)"
+                                                    : "Inspection Done (Send Feedback)"
+                                                }
+                                              >
+                                                <MessageSquare className="w-4 h-4" />
+                                                <span className="hidden xl:inline">
+                                                  {lang === "ar" ? "تمت المعاينة" : "Feedback"}
+                                                </span>
+                                              </button>
+                                              <button
+                                                onClick={() =>
+                                                  handleMoveNonContractedToContracted(
+                                                    r,
+                                                  )
+                                                }
+                                                className="text-emerald-600 border border-emerald-200 px-3 xl:px-5 py-2.5 xl:py-3 rounded-lg text-xs font-bold uppercase hover:bg-emerald-600 hover:text-white transition-all cursor-pointer"
+                                                title={
+                                                  lang === "ar"
+                                                    ? "نقل للمتعاقدين"
+                                                    : "Move to Contracted"
+                                                }
+                                              >
+                                                <CheckCircle2 className="w-4 h-4" />
+                                              </button>
+                                            </>
                                           )}
                                         <button
                                           onClick={() => {
@@ -6943,15 +7113,28 @@ export default function App() {
                                     )}
                                   {isAdminUser &&
                                     adminSubView === "not-contracted" && (
-                                      <button
-                                        onClick={() =>
-                                          handleMoveNonContractedToContracted(r)
-                                        }
-                                        className="flex-1 min-w-[70px] flex items-center justify-center gap-2 bg-emerald-50 text-emerald-600 border border-emerald-200 px-4 py-3 rounded-2xl text-xs font-bold uppercase hover:bg-emerald-600 hover:text-white transition-all shadow-sm"
-                                      >
-                                        <CheckCircle2 className="w-4 h-4" />{" "}
-                                        {lang === "ar" ? "تعاقد" : "Contract"}
-                                      </button>
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            sendInspectionFeedbackMessage(r)
+                                          }
+                                          className="flex-1 min-w-[70px] flex items-center justify-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-200 px-4 py-3 rounded-2xl text-xs font-bold uppercase hover:bg-amber-500 hover:text-white transition-all shadow-sm cursor-pointer"
+                                          title={lang === "ar" ? "تمت المعاينة (إرسال رسالة تقييم)" : "Feedback"}
+                                        >
+                                          <MessageSquare className="w-4 h-4" />{" "}
+                                          {lang === "ar" ? "تقييم" : "Feedback"}
+                                        </button>
+                                        <button
+                                          onClick={() =>
+                                            handleMoveNonContractedToContracted(r)
+                                          }
+                                          className="flex-1 min-w-[70px] flex items-center justify-center gap-2 bg-emerald-50 text-emerald-600 border border-emerald-200 px-4 py-3 rounded-2xl text-xs font-bold uppercase hover:bg-emerald-600 hover:text-white transition-all shadow-sm"
+                                        >
+                                          <CheckCircle2 className="w-4 h-4" />{" "}
+                                          {lang === "ar" ? "تعاقد" : "Contract"}
+                                        </button>
+                                      </>
                                     )}
                                   <button
                                     onClick={() => {
@@ -7272,22 +7455,41 @@ export default function App() {
                       </select>
                     </div>
 
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold uppercase text-zinc-400 px-1 flex items-center justify-between">
-                        <span>{t.visitDate || (lang === "ar" ? "تاريخ المعاينة" : "Inspection Date")}</span>
-                        <span className="text-[9px] text-zinc-400 font-normal">{lang === "ar" ? "(اختياري)" : "(Optional)"}</span>
-                      </label>
-                      <input
-                        type="date"
-                        className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl text-sm"
-                        value={inspectionFormData.visitDate || ""}
-                        onChange={(e) =>
-                          setInspectionFormData({
-                            ...inspectionFormData,
-                            visitDate: e.target.value,
-                          })
-                        }
-                      />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold uppercase text-zinc-400 px-1 flex items-center justify-between">
+                          <span>{t.visitDate || (lang === "ar" ? "تاريخ المعاينة" : "Inspection Date")}</span>
+                          <span className="text-[9px] text-zinc-400 font-normal">{lang === "ar" ? "(اختياري)" : "(Optional)"}</span>
+                        </label>
+                        <input
+                          type="date"
+                          className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl text-sm"
+                          value={inspectionFormData.visitDate || ""}
+                          onChange={(e) =>
+                            setInspectionFormData({
+                              ...inspectionFormData,
+                              visitDate: e.target.value,
+                            })
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold uppercase text-zinc-400 px-1 flex items-center justify-between">
+                          <span>{lang === "ar" ? "وقت المعاينة" : "Inspection Time"}</span>
+                          <span className="text-[9px] text-zinc-400 font-normal">{lang === "ar" ? "(اختياري)" : "(Optional)"}</span>
+                        </label>
+                        <input
+                          type="time"
+                          className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl text-sm"
+                          value={inspectionFormData.visitTime || ""}
+                          onChange={(e) =>
+                            setInspectionFormData({
+                              ...inspectionFormData,
+                              visitTime: e.target.value,
+                            })
+                          }
+                        />
+                      </div>
                     </div>
 
                     {editingCollection === "contracted_customers" && (
@@ -8374,20 +8576,30 @@ export default function App() {
                     <label className="text-[10px] font-bold uppercase text-zinc-400 mb-3 block">
                       {t.visitDate}
                     </label>
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-accent-tan/10 flex items-center justify-center">
-                        <Calendar className="w-5 h-5 text-accent-tan" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold text-zinc-900">
-                          {selectedRecord.visitDate || "-"}
-                        </p>
-                        {selectedRecord.visitDateTo && (
-                          <p className="text-[10px] text-zinc-400">
-                            إلى {selectedRecord.visitDateTo}
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-accent-tan/10 flex items-center justify-center">
+                          <Calendar className="w-5 h-5 text-accent-tan" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-zinc-900">
+                            {selectedRecord.visitDate || "-"}
                           </p>
-                        )}
+                          {selectedRecord.visitDateTo && (
+                            <p className="text-[10px] text-zinc-400">
+                              إلى {selectedRecord.visitDateTo}
+                            </p>
+                          )}
+                        </div>
                       </div>
+                      {selectedRecord.visitTime && (
+                        <div className="flex items-center gap-1.5 bg-amber-500/10 text-amber-900 border border-amber-500/20 px-3 py-1.5 rounded-xl">
+                          <Clock className="w-4 h-4 text-amber-600" />
+                          <span className="text-xs font-bold font-mono">
+                            {formatTime12(selectedRecord.visitTime, lang)}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -9080,19 +9292,35 @@ export default function App() {
                     }
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase text-zinc-400 px-1 flex items-center justify-between">
-                    <span>{t.visitDate}</span>
-                    <span className="text-[9px] text-zinc-400 font-normal">{lang === "ar" ? "(اختياري)" : "(Optional)"}</span>
-                  </label>
-                  <input
-                    type="date"
-                    className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl text-sm"
-                    value={formData.visitDate || ""}
-                    onChange={(e) =>
-                      setFormData({ ...formData, visitDate: e.target.value })
-                    }
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase text-zinc-400 px-1 flex items-center justify-between">
+                      <span>{t.visitDate}</span>
+                      <span className="text-[9px] text-zinc-400 font-normal">{lang === "ar" ? "(اختياري)" : "(Optional)"}</span>
+                    </label>
+                    <input
+                      type="date"
+                      className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl text-sm"
+                      value={formData.visitDate || ""}
+                      onChange={(e) =>
+                        setFormData({ ...formData, visitDate: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase text-zinc-400 px-1 flex items-center justify-between">
+                      <span>{lang === "ar" ? "وقت المعاينة" : "Inspection Time"}</span>
+                      <span className="text-[9px] text-zinc-400 font-normal">{lang === "ar" ? "(اختياري)" : "(Optional)"}</span>
+                    </label>
+                    <input
+                      type="time"
+                      className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl text-sm"
+                      value={formData.visitTime || ""}
+                      onChange={(e) =>
+                        setFormData({ ...formData, visitTime: e.target.value })
+                      }
+                    />
+                  </div>
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold uppercase text-zinc-400 px-1 flex items-center justify-between">
@@ -9124,23 +9352,41 @@ export default function App() {
                     }
                   />
                 </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase text-zinc-400 px-1 flex items-center justify-between">
+                    <span>{lang === "ar" ? "مبلغ التعاقد (جنيه)" : "Contract Amount (EGP)"}</span>
+                    <span className="text-[9px] text-zinc-400 font-normal">{lang === "ar" ? "(اختياري)" : "(Optional)"}</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    className="w-full px-5 py-4 bg-black/5 border border-black/5 rounded-2xl text-sm font-mono"
+                    value={formData.totalAmount || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, totalAmount: e.target.value })
+                    }
+                  />
+                </div>
                 <div className="flex flex-col sm:flex-row gap-3 pt-2">
                   <button
                     disabled={isLoading}
                     type="submit"
-                    className="flex-1 bg-zinc-900 text-white py-4 rounded-2xl font-bold uppercase tracking-wider shadow-xl btn-3d btn-3d-zinc text-xs sm:text-sm"
+                    className="flex-1 bg-zinc-900 text-white py-4 rounded-2xl font-bold uppercase tracking-wider shadow-xl btn-3d btn-3d-zinc text-xs sm:text-sm cursor-pointer"
                   >
                     {isLoading ? t.processing : t.save}
                   </button>
-                  <button
-                    disabled={isLoading}
-                    type="button"
-                    onClick={handleStartInspectionFromModal}
-                    className="flex-1 bg-amber-500 hover:bg-amber-400 text-zinc-950 py-4 rounded-2xl font-bold uppercase tracking-wider shadow-xl btn-3d text-xs sm:text-sm flex items-center justify-center gap-1.5"
-                  >
-                    <Calendar className="w-4 h-4" />
-                    {lang === "ar" ? "بدء المعاينة" : "Start Inspection"}
-                  </button>
+                  {modalMode === "add" && (
+                    <button
+                      disabled={isLoading}
+                      type="button"
+                      onClick={handleStartInspectionFromModal}
+                      className="flex-1 bg-amber-500 hover:bg-amber-400 text-zinc-950 py-4 rounded-2xl font-bold uppercase tracking-wider shadow-xl btn-3d text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Calendar className="w-4 h-4" />
+                      {lang === "ar" ? "بدء المعاينة" : "Start Inspection"}
+                    </button>
+                  )}
                 </div>
               </form>
             </motion.div>

@@ -32,28 +32,27 @@ export interface PaymentRecord {
 
 export const PAYMENT_STAGES = [
   "التعاقد",
-  "الاستلام",
   "النجارة",
   "الدهانات",
+  "الاستلام",
 ] as const;
 
 export const normalizePaymentStage = (stage?: string | null): string => {
   if (!stage) return "التعاقد";
   const s = stage.trim();
   if (s.includes("تعاقد") || s === "التعاقد") return "التعاقد";
-  if (s.includes("استلام") || s === "الاستلام") return "الاستلام";
   if (s.includes("نجارة") || s === "النجارة") return "النجارة";
-  if (s.includes("دهان") || s === "الدهانات") return "الدهانات";
-  if (s.includes("تجهيز") || s.includes("تجهيزات")) return "الدهانات";
+  if (s.includes("دهان") || s === "الدهانات" || s.includes("تجهيز")) return "الدهانات";
+  if (s.includes("استلام") || s === "الاستلام" || s.includes("تسليم")) return "الاستلام";
   return s;
 };
 
 export const stageColor = (stage: string) => {
   const norm = normalizePaymentStage(stage);
   if (norm === "التعاقد") return "bg-blue-500";
-  if (norm === "الاستلام") return "bg-amber-500";
   if (norm === "النجارة") return "bg-indigo-500";
   if (norm === "الدهانات") return "bg-purple-500";
+  if (norm === "الاستلام") return "bg-emerald-500";
   return "bg-zinc-400";
 };
 
@@ -61,12 +60,12 @@ export const stageBadgeClass = (stage: string) => {
   const norm = normalizePaymentStage(stage);
   if (norm === "التعاقد")
     return "bg-blue-50 text-blue-700 border-blue-200/80";
-  if (norm === "الاستلام")
-    return "bg-amber-50 text-amber-700 border-amber-200/80";
   if (norm === "النجارة")
     return "bg-indigo-50 text-indigo-700 border-indigo-200/80";
   if (norm === "الدهانات")
     return "bg-purple-50 text-purple-700 border-purple-200/80";
+  if (norm === "الاستلام")
+    return "bg-emerald-50 text-emerald-700 border-emerald-200/80";
   return "bg-zinc-50 text-zinc-700 border-zinc-200/80";
 };
 
@@ -175,16 +174,14 @@ export const PaymentsPage: React.FC<{
     const remaining = total - paid;
     if (remaining <= 0) return null;
 
-    const paintingStage = customerStages.find((s) => s.stage === "painting");
-    const carpentryStage = customerStages.find((s) => s.stage === "carpentry");
-    const receivedStage = customerStages.find((s) => s.stage === "received");
-
-    const hasContractPayment = customerPayments.some(
-      (p) => normalizePaymentStage(p.installment) === "التعاقد",
+    // Check which installment stages have already been paid
+    const paidStages = new Set(
+      customerPayments.map((p) => normalizePaymentStage(p.installment)),
     );
 
-    // 1st Priority: Contract payment if not paid yet!
-    if (!hasContractPayment || customerPayments.length === 0) {
+    // Strictly sequential installments:
+    // 1. Contract ("التعاقد")
+    if (!paidStages.has("التعاقد")) {
       return {
         stageKey: "contract",
         title:
@@ -195,18 +192,8 @@ export const PaymentsPage: React.FC<{
       };
     }
 
-    // Subsequent milestones based on production completion
-    if (paintingStage?.status === "done") {
-      return {
-        stageKey: "painting",
-        title:
-          lang === "ar"
-            ? "مطلوب تحصيل دفعة الدهانات"
-            : "Post-Painting Payment Due",
-        installment: "الدهانات",
-      };
-    }
-    if (carpentryStage?.status === "done") {
+    // 2. Carpentry ("النجارة")
+    if (!paidStages.has("النجارة")) {
       return {
         stageKey: "carpentry",
         title:
@@ -216,18 +203,40 @@ export const PaymentsPage: React.FC<{
         installment: "النجارة",
       };
     }
-    if (receivedStage?.status === "done") {
+
+    // 3. Painting ("الدهانات") - Example: if carpentry is paid, next due is painting
+    if (!paidStages.has("الدهانات")) {
+      return {
+        stageKey: "painting",
+        title:
+          lang === "ar"
+            ? "مطلوب تحصيل دفعة الدهانات"
+            : "Post-Painting Payment Due",
+        installment: "الدهانات",
+      };
+    }
+
+    // 4. Delivery / Final Handover ("الاستلام")
+    if (!paidStages.has("الاستلام")) {
       return {
         stageKey: "received",
         title:
           lang === "ar"
-            ? "مطلوب تحصيل دفعة الاستلام"
-            : "Post-Intake Payment Due",
+            ? "مطلوب تحصيل دفعة الاستلام النهائي"
+            : "Final Delivery Payment Due",
         installment: "الاستلام",
       };
     }
 
-    return null;
+    // 5. If all 4 predefined stages are recorded but remaining balance > 0
+    return {
+      stageKey: "remaining",
+      title:
+        lang === "ar"
+          ? "مطلوب تحصيل متبقي الحساب"
+          : "Remaining Balance Due",
+      installment: "الاستلام",
+    };
   };
 
   const getCustomerPaymentBreakdown = (customerId: string): { stage: string; amount: number }[] => {
@@ -300,7 +309,8 @@ export const PaymentsPage: React.FC<{
   const handleOpenAddModal = (customer: Inspection, prefillStage?: string) => {
     setSelectedCustomer(customer);
     setPaymentAmount("");
-    setPaymentStage(prefillStage || paymentStages[0]);
+    const nextDue = getPendingCollectionTrigger(customer)?.installment;
+    setPaymentStage(prefillStage || nextDue || paymentStages[0]);
     setIsAddModalOpen(true);
   };
 
@@ -358,10 +368,30 @@ export const PaymentsPage: React.FC<{
       if (onRefresh) await onRefresh();
 
       if (selectedCustomer.phone) {
+        // Calculate the next due installment stage in sequence
+        const updatedPaidStages = new Set([
+          ...customerPayments.map((p) => normalizePaymentStage(p.installment)),
+          normalizePaymentStage(paymentStage),
+        ]);
+        let nextStageName = "";
+        if (remaining > 0) {
+          if (!updatedPaidStages.has("التعاقد")) nextStageName = "التعاقد";
+          else if (!updatedPaidStages.has("النجارة")) nextStageName = "النجارة";
+          else if (!updatedPaidStages.has("الدهانات")) nextStageName = "الدهانات";
+          else if (!updatedPaidStages.has("الاستلام")) nextStageName = "الاستلام النهائي";
+          else nextStageName = "متبقي الحساب";
+        }
+
+        const nextDueNote = nextStageName
+          ? lang === "ar"
+            ? `\nالدفعة القادمة المستحقة: (${nextStageName}).`
+            : `\nNext installment due: (${nextStageName}).`
+          : "";
+
         const msg =
           lang === "ar"
-            ? `مرحباً ${selectedCustomer.customerName || ""},\nتم استلام دفعة بقيمة ${paymentAmount} جنيه (مرحلة: ${paymentStage}).\nالمتبقي من إجمالي الحساب: ${remaining} جنيه.\nشكراً لك!`
-            : `Hello ${selectedCustomer.customerName || ""},\nA payment of ${paymentAmount} EGP has been received (Stage: ${paymentStage}).\nRemaining balance: ${remaining} EGP.\nThank you!`;
+            ? `مرحباً ${selectedCustomer.customerName || ""},\nتم استلام دفعة بقيمة ${paymentAmount} جنيه (مرحلة: ${paymentStage}).\nالمتبقي من إجمالي الحساب: ${remaining} جنيه.${nextDueNote}\nشكراً لتعاملكم معنا!`
+            : `Hello ${selectedCustomer.customerName || ""},\nA payment of ${paymentAmount} EGP has been received (Stage: ${paymentStage}).\nRemaining balance: ${remaining} EGP.${nextDueNote}\nThank you!`;
         onSendWhatsApp(selectedCustomer.phone, msg);
       }
 

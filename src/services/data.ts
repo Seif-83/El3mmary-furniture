@@ -311,6 +311,7 @@ export class StageService {
     await SyncManager.queueOperation("UPDATE", "production_stages", id, {
       status: updated.status,
       completed_at: updated.completed_at,
+      expenses,
     });
   }
 
