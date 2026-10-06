@@ -51,6 +51,7 @@ export interface LocalInspection {
   room_aro_veneer?: boolean;
   room_aro_veneer_price?: number;
   contract_url?: string | null;
+  additions?: any;
   last_modified: number;
 }
 
@@ -79,6 +80,7 @@ export interface LocalContractedCustomer {
   room_aro_veneer?: boolean;
   room_aro_veneer_price?: number;
   contract_url?: string | null;
+  additions?: any;
   last_modified: number;
 }
 

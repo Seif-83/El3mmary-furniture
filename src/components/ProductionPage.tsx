@@ -177,8 +177,8 @@ export const ProductionPage: React.FC<{
   onSendWhatsApp?: (phone: string, msg: string) => void;
   onRefresh?: () => Promise<void>;
   userProfile?: { username?: string; role: string; permissions: string[] } | null;
-  productionFilter: "all" | "waiting_list" | "in_production" | "completed";
-  onProductionFilterChange: (filter: "all" | "waiting_list" | "in_production" | "completed") => void;
+  productionFilter: "all" | "contracts" | "waiting_list" | "in_production" | "completed";
+  onProductionFilterChange: (filter: "all" | "contracts" | "waiting_list" | "in_production" | "completed") => void;
 }> = ({
   contractedCustomers,
   inspections,
@@ -434,6 +434,7 @@ export const ProductionPage: React.FC<{
   const waitingCount = allProductionData.filter((o) => !isOrderReceived(o) && !isOrderCompleted(o)).length;
   const inProductionCount = allProductionData.filter((o) => isOrderReceived(o) && !isOrderCompleted(o)).length;
   const completedCount = allProductionData.filter((o) => isOrderCompleted(o)).length;
+  const contractsCount = waitingCount + inProductionCount;
 
   // CS accounts and factory supervisors should NOT see contract prices
   const perms = userProfile?.permissions || [];
@@ -473,6 +474,9 @@ export const ProductionPage: React.FC<{
       return false;
     }
     if (productionFilter === "in_production" && (!isReceived || isCompleted)) {
+      return false;
+    }
+    if (productionFilter === "contracts" && isCompleted) {
       return false;
     }
 
@@ -1023,8 +1027,18 @@ export const ProductionPage: React.FC<{
             )}
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">
-            {/* Status Filters: Waiting List, In-Production, Completed, All */}
+            {/* Status Filters: Contracts, Waiting List, In-Production, Completed, All */}
             <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                onClick={() => onProductionFilterChange("contracts")}
+                className={`filter-chip flex items-center gap-1.5 ${productionFilter === "contracts" ? "filter-chip-active" : "filter-chip-inactive"}`}
+                title={lang === "ar" ? "التعاقدات (تجمع قائمة الانتظار والإنتاج معاً)" : "Contracts (Waiting List + In Production)"}
+              >
+                <span>{lang === "ar" ? "التعاقدات" : "Contracts"}</span>
+                <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-blue-500/20 text-blue-800 font-bold font-mono">
+                  {contractsCount}
+                </span>
+              </button>
               <button
                 onClick={() => onProductionFilterChange("waiting_list")}
                 className={`filter-chip flex items-center gap-1.5 ${productionFilter === "waiting_list" ? "filter-chip-active" : "filter-chip-inactive"}`}

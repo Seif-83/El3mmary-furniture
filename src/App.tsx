@@ -232,7 +232,7 @@ export default function App() {
     | "settings"
     | "users"
   >("dashboard");
-  const [productionFilter, setProductionFilter] = useState<"all" | "waiting_list" | "in_production" | "completed">("all");
+  const [productionFilter, setProductionFilter] = useState<"all" | "contracts" | "waiting_list" | "in_production" | "completed">("all");
   const [csLogs, setCsLogs] = useState<CustomerServiceLog[]>([]);
   const [csName, setCsName] = useState("");
   const [csPhone, setCsPhone] = useState("");
@@ -2224,59 +2224,123 @@ export default function App() {
     }
 
     try {
-      // 1. Try to find local match first
+      // 1. Try to find local match in contracted customers first
       const contracted = await OrderService.getContracted();
       let match: any = contracted.find(
         (c) => normalizePhone(c.phone) === normalized,
       );
 
+      // 2. If not in contracted, search local inspections table
+      if (!match) {
+        const localInspections = await OrderService.getInspections();
+        const matchedInsp = localInspections.find(
+          (c) => normalizePhone(c.phone) === normalized,
+        );
+        if (matchedInsp) {
+          match = {
+            ...mapInspectionFromDB(matchedInsp),
+            isInspection: true,
+          };
+        }
+      }
+
       let fetchedPayments: any[] = [];
       let fetchedStages: any[] = [];
 
       if (match) {
+        if (!match.isInspection) {
+          match = {
+            ...match,
+            customerName: match.customerName || match.customer_name,
+            totalAmount: match.totalAmount ?? match.total_amount ?? 0,
+            rooms: match.rooms ?? 0,
+            isInspection: false,
+          };
+        }
         fetchedPayments = await InvoiceService.getPayments();
         fetchedStages = await StageService.getStages();
       } else {
-        // 2. Check remote Supabase if offline search did not find it
-        const { data: customerData, error: rpcError } = await supabase
-          .rpc("get_customer_by_phone", { phone_input: normalized });
+        // 3. Check remote Supabase if offline search did not find it
+        // 3a. Check contracted customers via RPC
+        try {
+          const { data: customerData, error: rpcError } = await supabase
+            .rpc("get_customer_by_phone", { phone_input: normalized });
 
-        if (rpcError) throw rpcError;
-        if (customerData) {
-          match = {
-            id: customerData.id,
-            customerName: customerData.customer_name,
-            phone: customerData.phone,
-            address: customerData.address,
-            deliveryAddress: customerData.delivery_address,
-            deliveryDate: customerData.delivery_date,
-            visitDate: customerData.visit_date,
-            notes: customerData.notes,
-            rooms: customerData.rooms,
-            pieces: customerData.pieces,
-            totalAmount: customerData.total_amount,
-            paidAmount: customerData.paid_amount,
-            remainingAmount: customerData.remaining_amount,
-            status: customerData.status,
-            governorate: customerData.governorate,
-            contractUrl: customerData.contract_url,
-          };
+          if (!rpcError && customerData) {
+            match = {
+              id: customerData.id,
+              customerName: customerData.customer_name,
+              phone: customerData.phone,
+              address: customerData.address,
+              deliveryAddress: customerData.delivery_address,
+              deliveryDate: customerData.delivery_date,
+              visitDate: customerData.visit_date,
+              notes: customerData.notes,
+              rooms: customerData.rooms,
+              pieces: customerData.pieces,
+              totalAmount: customerData.total_amount,
+              paidAmount: customerData.paid_amount,
+              remainingAmount: customerData.remaining_amount,
+              status: customerData.status,
+              governorate: customerData.governorate,
+              contractUrl: customerData.contract_url,
+              contractDate: customerData.contract_date,
+              isInspection: false,
+            };
 
-          const { data: remotePayments } = await supabase
-            .rpc("get_customer_payments_by_id", { customer_id: match.id });
-          if (remotePayments) fetchedPayments = remotePayments;
+            const { data: remotePayments } = await supabase
+              .rpc("get_customer_payments_by_id", { customer_id: match.id });
+            if (remotePayments) fetchedPayments = remotePayments;
 
-          const { data: remoteStages } = await supabase
-            .rpc("get_customer_stages_by_phone", { phone_input: normalized });
-          if (remoteStages) fetchedStages = remoteStages;
+            const { data: remoteStages } = await supabase
+              .rpc("get_customer_stages_by_phone", { phone_input: normalized });
+            if (remoteStages) fetchedStages = remoteStages;
+          }
+        } catch (rpcErr) {
+          console.warn("RPC contracted check error:", rpcErr);
+        }
+
+        // 3b. If still not found, check remote inspections table
+        if (!match) {
+          try {
+            const { data: remoteInspections, error: inspError } = await supabase
+              .from("inspections")
+              .select("*")
+              .or(`phone.eq.${normalized},phone.eq.${rawPhone}`);
+
+            if (!inspError && remoteInspections && remoteInspections.length > 0) {
+              const matchedInsp =
+                remoteInspections.find(
+                  (r: any) => normalizePhone(r.phone) === normalized,
+                ) || remoteInspections[0];
+
+              match = {
+                ...mapInspectionFromDB(matchedInsp),
+                isInspection: true,
+              };
+
+              try {
+                const { data: remotePayments } = await supabase
+                  .rpc("get_customer_payments_by_id", { customer_id: match.id });
+                if (remotePayments) fetchedPayments = remotePayments;
+              } catch {}
+              try {
+                const { data: remoteStages } = await supabase
+                  .rpc("get_customer_stages_by_phone", { phone_input: normalized });
+                if (remoteStages) fetchedStages = remoteStages;
+              } catch {}
+            }
+          } catch (inspErr) {
+            console.warn("Remote inspections check error:", inspErr);
+          }
         }
       }
 
       if (!match) {
         throw new Error(
           lang === "ar"
-            ? "عذراً، لم نجد أي تعاقد نشط مسجل برقم الهاتف هذا."
-            : "Sorry, no active contract found for this phone number.",
+            ? "عذراً، لم نجد أي معاينة أو تعاقد مسجل برقم الهاتف هذا."
+            : "Sorry, no inspection or contract found for this phone number.",
         );
       }
 
@@ -2285,14 +2349,14 @@ export default function App() {
       setStages(fetchedStages);
       setCustomerSession({
         phone: match.phone,
-        name: match.customerName,
+        name: match.customerName || match.customer_name || "عميلنا العزيز",
         record: match,
       });
 
       toast.success(
         lang === "ar"
-          ? `أهلاً بك، ${match.customerName}`
-          : `Welcome, ${match.customerName}`,
+          ? `أهلاً بك، ${match.customerName || match.customer_name}`
+          : `Welcome, ${match.customerName || match.customer_name}`,
       );
       setCustomerPhoneInput("");
     } catch (error: any) {
@@ -2480,19 +2544,51 @@ export default function App() {
             baseUpdateData,
             inspectionFormData.id,
           );
-        } else if (editingId) {
-          await CustomerService.update(editingId, {
-            name: inspectionFormData.customerName?.trim(),
-            phone: inspectionFormData.phone?.trim(),
+        } else {
+          // Creating inspection for customer or directly from step 1
+          const inspectionDbData = {
+            customer_name: inspectionFormData.customerName?.trim(),
             address: inspectionFormData.address?.trim(),
             delivery_address: inspectionFormData.deliveryAddress?.trim(),
             governorate: inspectionFormData.governorate || null,
+            phone: inspectionFormData.phone?.trim(),
             visit_date: inspectionFormData.visitDate,
             visit_time: inspectionFormData.visitTime || null,
             notes: inspectionFormData.notes,
+            rooms: inspectionFormData.rooms || 0,
+            pieces: inspectionFormData.pieces || [],
+            total_amount: inspectionFormData.totalAmount || 0,
+            delivery_date: inspectionFormData.deliveryDate || null,
             pickup_date: inspectionFormData.pickupDate || null,
-            portfolio_date: inspectionFormData.portfolio_date || null,
-          });
+            portfolio_date: inspectionFormData.portfolioDate || null,
+            contract_date: inspectionFormData.contractDate || null,
+            portfolio: inspectionFormData.portfolio || null,
+            status: inspectionFormData.status || "pending",
+          };
+          const newId = await insertInspectionRecord(inspectionDbData);
+          setInspectionFormData((prev) => ({ ...prev, id: newId }));
+          const originalCustomerId = editingCollection === "customers" ? editingId : null;
+          setEditingCollection("inspections");
+          setEditingId(newId);
+
+          if (originalCustomerId) {
+            await CustomerService.update(originalCustomerId, {
+              name: inspectionFormData.customerName?.trim(),
+              phone: inspectionFormData.phone?.trim(),
+              address: inspectionFormData.address?.trim(),
+              delivery_address: inspectionFormData.deliveryAddress?.trim(),
+              governorate: inspectionFormData.governorate || null,
+              visit_date: inspectionFormData.visitDate,
+              visit_time: inspectionFormData.visitTime || null,
+              notes: inspectionFormData.notes,
+              pickup_date: inspectionFormData.pickupDate || null,
+              portfolio_date: inspectionFormData.portfolioDate || null,
+            });
+            await logActivity(
+              "move_to_inspection",
+              `${lang === "ar" ? "نقل" : "Moved"} ${inspectionFormData.customerName} ${lang === "ar" ? "إلى المعاينات" : "to inspections"}`,
+            );
+          }
         }
         await refreshAllData();
         void playSound("success");
@@ -2795,52 +2891,96 @@ export default function App() {
           id: toastId,
         },
       );
-      let uploadResult = await supabase.storage
-        .from(CONTRACT_BUCKET)
-        .upload(fileName, compressedBlob, {
-          contentType: "image/jpeg",
-          cacheControl: "3600",
-          upsert: false,
+      let contractUrl = "";
+
+      // 1. Try uploading to Google Drive in folder 'عقود'
+      try {
+        const reader = new FileReader();
+        const base64Promise = new Promise<string>((resolve, reject) => {
+          reader.onload = () => {
+            const result = reader.result as string;
+            resolve(result.split(",")[1]);
+          };
+          reader.onerror = reject;
+        });
+        reader.readAsDataURL(compressedBlob);
+        const base64Data = await base64Promise;
+
+        const driveUploadUrl =
+          import.meta.env.VITE_GOOGLE_DRIVE_UPLOAD_URL?.trim() ||
+          "https://script.google.com/macros/s/AKfycbyoomg69wsCclO0eQV33mjv2rIoNNn1gHpbhDk9NV4DzeNirR9NBeee8Q8bK81rlXIdrA/exec";
+
+        const driveRes = await fetch(driveUploadUrl, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain" },
+          body: JSON.stringify({
+            filename: fileName,
+            mimeType: "image/jpeg",
+            base64Data: base64Data,
+            folderName: "عقود",
+          }),
         });
 
-      if (
-        uploadResult.error &&
-        (uploadResult.error.message?.includes("Invalid key") ||
-          uploadResult.error.message?.includes("row-level security"))
-      ) {
-        uploadResult = await supabase.storage
+        if (driveRes.ok) {
+          const driveData = await driveRes.json();
+          if (driveData.success && driveData.url) {
+            contractUrl = driveData.url;
+          }
+        }
+      } catch (driveErr) {
+        console.warn("Google Drive upload for contract failed, using Supabase fallback:", driveErr);
+      }
+
+      // 2. Fallback to Supabase Storage if Google Drive did not return a URL
+      if (!contractUrl) {
+        let uploadResult = await supabase.storage
           .from(CONTRACT_BUCKET)
           .upload(fileName, compressedBlob, {
             contentType: "image/jpeg",
             cacheControl: "3600",
-            upsert: true,
+            upsert: false,
           });
+
+        if (
+          uploadResult.error &&
+          (uploadResult.error.message?.includes("Invalid key") ||
+            uploadResult.error.message?.includes("row-level security"))
+        ) {
+          uploadResult = await supabase.storage
+            .from(CONTRACT_BUCKET)
+            .upload(fileName, compressedBlob, {
+              contentType: "image/jpeg",
+              cacheControl: "3600",
+              upsert: true,
+            });
+        }
+
+        if (uploadResult.error) {
+          const errorMsg = uploadResult.error.message || "Storage upload failed";
+          if (errorMsg.includes("row-level security")) {
+            throw new Error(
+              lang === "ar"
+                ? "فشل رفع العقد: إعدادات أمان Supabase تمنع رفع الملفات. تحقق من صلاحيات bucket في Supabase Storage أو استخدم مفاتيح خدمة صحيحة."
+                : "Contract upload blocked by Supabase row-level security. Check your Storage bucket policies or use the correct service key.",
+            );
+          }
+          if (errorMsg.includes("Bucket not found")) {
+            throw new Error(
+              lang === "ar"
+                ? `فشل رفع العقد: لم يتم العثور على bucket باسم ${CONTRACT_BUCKET}. تحقق من وجوده في Supabase Storage.`
+                : `Contract upload failed: bucket not found: ${CONTRACT_BUCKET}.`,
+            );
+          }
+          throw uploadResult.error;
+        }
+
+        const publicUrlData = supabase.storage
+          .from(CONTRACT_BUCKET)
+          .getPublicUrl(fileName);
+        if (publicUrlData.error) throw publicUrlData.error;
+        contractUrl = publicUrlData.data?.publicUrl || "";
       }
 
-      if (uploadResult.error) {
-        const errorMsg = uploadResult.error.message || "Storage upload failed";
-        if (errorMsg.includes("row-level security")) {
-          throw new Error(
-            lang === "ar"
-              ? "فشل رفع العقد: إعدادات أمان Supabase تمنع رفع الملفات. تحقق من صلاحيات bucket في Supabase Storage أو استخدم مفاتيح خدمة صحيحة."
-              : "Contract upload blocked by Supabase row-level security. Check your Storage bucket policies or use the correct service key.",
-          );
-        }
-        if (errorMsg.includes("Bucket not found")) {
-          throw new Error(
-            lang === "ar"
-              ? `فشل رفع العقد: لم يتم العثور على bucket باسم ${CONTRACT_BUCKET}. تحقق من وجوده في Supabase Storage.`
-              : `Contract upload failed: bucket not found: ${CONTRACT_BUCKET}.`,
-          );
-        }
-        throw uploadResult.error;
-      }
-
-      const publicUrlData = supabase.storage
-        .from(CONTRACT_BUCKET)
-        .getPublicUrl(fileName);
-      if (publicUrlData.error) throw publicUrlData.error;
-      const contractUrl = publicUrlData.data?.publicUrl;
       if (!contractUrl) throw new Error("Unable to build contract URL");
 
       toast.loading(
@@ -3804,7 +3944,7 @@ export default function App() {
           filename: safeFileName,
           mimeType: file.type,
           base64Data: base64Data,
-          folderName: "contracts",
+          folderName: "portfolios",
         }),
         redirect: "follow",
       });
@@ -3893,6 +4033,18 @@ export default function App() {
     }
 
     if (uploadedUrl) {
+      // If there was an old portfolio file stored in Supabase, remove it to prevent storage waste
+      const oldUrl = inspectionFormData.portfolio;
+      if (oldUrl && !oldUrl.includes("google.com")) {
+        const oldFileName = oldUrl.split("/").pop()?.split("?")[0];
+        if (oldFileName) {
+          supabase.storage
+            .from("portfolios")
+            .remove([decodeURIComponent(oldFileName), oldFileName])
+            .catch((err) => console.warn("Failed to delete replaced portfolio file:", err));
+        }
+      }
+
       setInspectionFormData((prev) => ({ ...prev, portfolio: uploadedUrl }));
       toast.success(
         lang === "ar"
@@ -6552,6 +6704,14 @@ export default function App() {
                         t={t}
                         onRefresh={refreshAllData}
                         onSendWhatsApp={sendWhatsAppMessage}
+                        onOpenInspection={(cust) => {
+                          setAdminSubView("inspections");
+                          setInspectionFormData({ ...cust });
+                          setEditingId(cust.id);
+                          setEditingCollection("contracted_customers");
+                          setInspectionStep(2); // خطوة أثناء المعاينة
+                          setIsInspectionModalOpen(true);
+                        }}
                       />
                     ) : adminSubView === "activities" ? (
                       <ActivitiesPage

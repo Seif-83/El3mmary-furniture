@@ -205,7 +205,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               {/* Phone Input */}
               <div className="space-y-2">
                 <label className="text-[10px] font-bold uppercase text-zinc-400 px-1 tracking-[0.2em] block">
-                  {isAr ? "رقم الهاتف المسجل بالتعاقد" : "Registered Phone Number"}
+                  {isAr ? "رقم الهاتف المسجل (بالمعاينة أو التعاقد)" : "Registered Phone (Inspection or Contract)"}
                 </label>
                 <div className="relative">
                   <Phone className="absolute ltr:left-4 rtl:right-4 top-1/2 -translate-y-1/2 text-zinc-400 w-5 h-5 pointer-events-none" />

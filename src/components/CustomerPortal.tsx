@@ -152,10 +152,20 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
     }
   };
 
+  // Detect if record is inspection vs finalized contract
+  const isInspection = Boolean(
+    customerRecord.isInspection ||
+    (!customerRecord.contractDate && !customerRecord.contract_date && !customerRecord.finalized_at && !customerRecord.finalizedAt)
+  );
+
   // Filter payments belonging to this customer
-  const customerPhone = customerRecord.phone;
+  const customerPhone = customerRecord.phone || "";
   const filteredPayments = payments.filter((p) => {
-    return p.note?.startsWith(`cc:${customerRecord.id}:`);
+    return (
+      p.note?.startsWith(`cc:${customerRecord.id}:`) ||
+      p.client_id === customerRecord.id ||
+      p.visit_id === customerRecord.id
+    );
   });
 
   // Find client ID from stages to filter client's specific stages
@@ -176,6 +186,40 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
     ? Math.round((completedStagesCount / totalStagesCount) * 100) 
     : 0;
 
+  const renderStatusBadge = () => {
+    if (!isInspection) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-sm">
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+          {isAr ? "تعاقد نشط" : "Active Contract"}
+        </span>
+      );
+    }
+    const st = customerRecord.status || "pending";
+    if (st === "contracted") {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-sm">
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+          {isAr ? "تم التعاقد" : "Contracted"}
+        </span>
+      );
+    }
+    if (st === "refused") {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-800 border border-rose-200 shadow-sm">
+          <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+          {isAr ? "ملغى / غير متعاقد" : "Cancelled"}
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300 shadow-sm">
+        <Calendar className="w-3.5 h-3.5 text-amber-700" />
+        {isAr ? "طلب معاينة نشط" : "Active Inspection Request"}
+      </span>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-zinc-50 py-10 px-4 sm:px-6 lg:px-8" dir={isAr ? "rtl" : "ltr"}>
       {/* Header */}
@@ -189,7 +233,13 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
               {isAr ? "بوابة العملاء | العماري للأثاث" : "Customer Portal | El3mmary Furniture"}
             </h1>
             <p className="text-zinc-500 text-sm mt-0.5">
-              {isAr ? "تابع طلبك ومدفوعاتك مباشرة" : "Track your order and payments live"}
+              {isAr
+                ? isInspection
+                  ? "تابع تفاصيل طلب المعاينة وموعد الزيارة مباشرة"
+                  : "تابع طلبك ومدفوعاتك مباشرة"
+                : isInspection
+                  ? "Track your inspection request and visit schedule"
+                  : "Track your order and payments live"}
             </p>
           </div>
         </div>
@@ -211,9 +261,18 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
             className="glass rounded-[2.5rem] p-8 shadow-xl border border-white/40 relative overflow-hidden"
           >
             <div className="absolute top-0 right-0 w-32 h-32 bg-accent-tan/5 rounded-full -mr-16 -mt-16 blur-3xl" />
-            <h2 className="text-2xl font-bold text-zinc-900 mb-6 flex items-center gap-2">
-              {isAr ? "تفاصيل التعاقد" : "Contract Details"}
-            </h2>
+            <div className="flex items-center justify-between gap-2 mb-6">
+              <h2 className="text-2xl font-bold text-zinc-900 flex items-center gap-2">
+                {isAr
+                  ? isInspection
+                    ? "تفاصيل المعاينة"
+                    : "تفاصيل التعاقد"
+                  : isInspection
+                    ? "Inspection Details"
+                    : "Contract Details"}
+              </h2>
+              {renderStatusBadge()}
+            </div>
             <div className="space-y-6">
               <div>
                 <span className="text-[10px] uppercase font-bold text-zinc-400 block tracking-wider mb-1">
@@ -235,7 +294,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                 </div>
                 <div>
                   <span className="text-[10px] uppercase font-bold text-zinc-400 block tracking-wider mb-1">
-                    {isAr ? "كود العميل" : "Customer Code"}
+                    {isAr ? "كود الطلب / العميل" : "Customer Code"}
                   </span>
                   <span className="text-sm font-bold text-zinc-700 font-mono">
                     #{customerRecord.id?.slice(0, 8).toUpperCase() || "-"}
@@ -244,67 +303,108 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
               </div>
 
               <div className="border-t border-zinc-100 pt-4 space-y-4">
-                {(customerRecord.visitDate || customerRecord.visit_date) && (
+                {/* Inspection Visit Date & Time */}
+                {(customerRecord.visitDate || customerRecord.visit_date) ? (
                   <div className="flex items-start gap-3">
-                    <Calendar className="w-5 h-5 text-amber-500 mt-0.5" />
+                    <Calendar className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" />
                     <div>
                       <span className="text-[10px] uppercase font-bold text-zinc-400 block tracking-wider">
-                        {isAr ? "تاريخ المعاينة" : "Inspection Date"}
+                        {isAr ? "موعد المعاينة" : "Inspection Date"}
                       </span>
                       <span className="text-sm font-semibold text-zinc-700">
                         {customerRecord.visitDate || customerRecord.visit_date}
+                        {(customerRecord.visitTime || customerRecord.visit_time)
+                          ? ` (${customerRecord.visitTime || customerRecord.visit_time})`
+                          : ""}
+                      </span>
+                    </div>
+                  </div>
+                ) : isInspection ? (
+                  <div className="flex items-start gap-3">
+                    <Calendar className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" />
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-zinc-400 block tracking-wider">
+                        {isAr ? "موعد المعاينة" : "Inspection Date"}
+                      </span>
+                      <span className="text-sm font-semibold text-zinc-500">
+                        {isAr ? "جاري التنسيق والتأكيد" : "Being scheduled"}
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* Contract Date */}
+                {(!isInspection || customerRecord.contractDate || customerRecord.contract_date) && (
+                  <div className="flex items-start gap-3">
+                    <Calendar className="w-5 h-5 text-accent-tan mt-0.5 shrink-0" />
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-zinc-400 block tracking-wider">
+                        {isAr ? "تاريخ التعاقد" : "Contract Date"}
+                      </span>
+                      <span className="text-sm font-semibold text-zinc-700">
+                        {customerRecord.contractDate || customerRecord.contract_date || (isAr ? "غير محدد" : "Not set")}
                       </span>
                     </div>
                   </div>
                 )}
 
+                {/* Expected Delivery */}
+                {(!isInspection || customerRecord.deliveryDate || customerRecord.delivery_date) && (
+                  <div className="flex items-start gap-3">
+                    <Calendar className="w-5 h-5 text-emerald-500 mt-0.5 shrink-0" />
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-zinc-400 block tracking-wider">
+                        {isAr ? "تاريخ الاستلام المتوقع" : "Expected Delivery"}
+                      </span>
+                      <span className="text-sm font-semibold text-zinc-700">
+                        {customerRecord.deliveryDate || customerRecord.delivery_date || (isAr ? "غير محدد" : "Not set")}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Address */}
                 <div className="flex items-start gap-3">
-                  <Calendar className="w-5 h-5 text-accent-tan mt-0.5" />
+                  <MapPin className="w-5 h-5 text-red-400 mt-0.5 shrink-0" />
                   <div>
                     <span className="text-[10px] uppercase font-bold text-zinc-400 block tracking-wider">
-                      {isAr ? "تاريخ التعاقد" : "Contract Date"}
+                      {isAr ? (isInspection ? "عنوان المعاينة" : "عنوان التوصيل") : (isInspection ? "Inspection Address" : "Delivery Address")}
                     </span>
                     <span className="text-sm font-semibold text-zinc-700">
-                      {customerRecord.contractDate || customerRecord.contract_date || (isAr ? "غير محدد" : "Not set")}
+                      {customerRecord.address || customerRecord.deliveryAddress || customerRecord.delivery_address || (isAr ? "غير محدد" : "Not set")}
                     </span>
                   </div>
                 </div>
 
-                <div className="flex items-start gap-3">
-                  <Calendar className="w-5 h-5 text-emerald-500 mt-0.5" />
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-zinc-400 block tracking-wider">
-                      {isAr ? "تاريخ الاستلام المتوقع" : "Expected Delivery"}
-                    </span>
-                    <span className="text-sm font-semibold text-zinc-700">
-                      {customerRecord.deliveryDate || customerRecord.delivery_date || (isAr ? "غير محدد" : "Not set")}
-                    </span>
+                {/* Governorate */}
+                {customerRecord.governorate && (
+                  <div className="flex items-start gap-3">
+                    <MapPin className="w-5 h-5 text-indigo-400 mt-0.5 shrink-0" />
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-zinc-400 block tracking-wider">
+                        {isAr ? "المحافظة" : "Governorate"}
+                      </span>
+                      <span className="text-sm font-semibold text-zinc-700">
+                        {customerRecord.governorate}
+                      </span>
+                    </div>
                   </div>
-                </div>
+                )}
 
-                <div className="flex items-start gap-3">
-                  <MapPin className="w-5 h-5 text-red-400 mt-0.5" />
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-zinc-400 block tracking-wider">
-                      {isAr ? "عنوان التوصيل" : "Delivery Address"}
-                    </span>
-                    <span className="text-sm font-semibold text-zinc-700">
-                      {customerRecord.deliveryAddress || customerRecord.delivery_address || customerRecord.address || (isAr ? "غير محدد" : "Not set")}
-                    </span>
+                {/* Notes if any */}
+                {customerRecord.notes && (
+                  <div className="flex items-start gap-3 bg-zinc-50/80 p-3.5 rounded-2xl border border-zinc-100">
+                    <FileText className="w-4 h-4 text-zinc-400 mt-0.5 shrink-0" />
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-zinc-400 block tracking-wider">
+                        {isAr ? "ملاحظات الطلب" : "Notes"}
+                      </span>
+                      <span className="text-xs text-zinc-600 block mt-0.5 leading-relaxed">
+                        {customerRecord.notes}
+                      </span>
+                    </div>
                   </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <MapPin className="w-5 h-5 text-indigo-400 mt-0.5" />
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-zinc-400 block tracking-wider">
-                      {isAr ? "المحافظة" : "Governorate"}
-                    </span>
-                    <span className="text-sm font-semibold text-zinc-700">
-                      {customerRecord.governorate || (isAr ? "غير محدد" : "Not set")}
-                    </span>
-                  </div>
-                </div>
+                )}
               </div>
 
               {customerRecord.contract_url && (
@@ -333,21 +433,86 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
             <div className="absolute bottom-0 right-0 w-32 h-32 bg-accent-tan/5 rounded-full -mr-16 -mb-16 blur-3xl" />
             <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
               <Coins className="w-5 h-5 text-accent-tan" />
-              {isAr ? "الملخص المالي" : "Financial Summary"}
+              {isAr
+                ? isInspection
+                  ? "المقايسة التقديرية"
+                  : "الملخص المالي"
+                : isInspection
+                  ? "Estimated Quotation"
+                  : "Financial Summary"}
             </h3>
             <div className="space-y-4">
               <div className="flex justify-between items-center py-2 border-b border-zinc-800">
-                <span className="text-zinc-400 text-sm">{isAr ? "إجمالي قيمة العقد" : "Total Contract Value"}</span>
+                <span className="text-zinc-400 text-sm">
+                  {isAr
+                    ? isInspection
+                      ? "قيمة المقايسة التقديرية"
+                      : "إجمالي قيمة العقد"
+                    : isInspection
+                      ? "Estimated Value"
+                      : "Total Contract Value"}
+                </span>
                 <span className="text-lg font-bold text-accent-tan">
-                  {customerRecord.totalAmount?.toLocaleString() || customerRecord.total_amount?.toLocaleString() || 0} EGP
+                  {Number(customerRecord.totalAmount || customerRecord.total_amount || 0) > 0
+                    ? `${(Number(customerRecord.totalAmount || customerRecord.total_amount)).toLocaleString()} EGP`
+                    : isAr
+                      ? "تحدد أثناء المعاينة"
+                      : "To be estimated"}
                 </span>
               </div>
               <div className="flex justify-between items-center py-2 border-b border-zinc-800">
-                <span className="text-zinc-400 text-sm">{isAr ? "عدد الغرف المتعاقد عليها" : "Rooms Contracted"}</span>
+                <span className="text-zinc-400 text-sm">
+                  {isAr
+                    ? isInspection
+                      ? "عدد الغرف المطلوبة"
+                      : "عدد الغرف المتعاقد عليها"
+                    : isInspection
+                      ? "Requested Rooms"
+                      : "Rooms Contracted"}
+                </span>
                 <span className="text-lg font-bold text-white">
-                  {customerRecord.rooms || 0}
+                  {customerRecord.rooms || (Array.isArray(customerRecord.room_types) ? customerRecord.room_types.length : 0) || "-"}
                 </span>
               </div>
+
+              {/* Room types tags if present */}
+              {Array.isArray(customerRecord.room_types) && customerRecord.room_types.length > 0 && (
+                <div className="pt-2">
+                  <span className="text-zinc-400 text-xs block mb-2 font-medium">
+                    {isAr ? "الغرف المحددة بالطلب:" : "Specified Rooms:"}
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {customerRecord.room_types.map((rt: string, rIdx: number) => (
+                      <span
+                        key={rIdx}
+                        className="px-2.5 py-1 bg-zinc-800 text-zinc-200 text-xs rounded-xl font-medium border border-zinc-700/60"
+                      >
+                        {rt}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Pieces list if present */}
+              {Array.isArray(customerRecord.pieces) && customerRecord.pieces.length > 0 && (
+                <div className="pt-2">
+                  <span className="text-zinc-400 text-xs block mb-2 font-medium">
+                    {isAr ? "القطع المطلوبة:" : "Requested Pieces:"}
+                  </span>
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                    {customerRecord.pieces.map((p: any, pIdx: number) => (
+                      <div
+                        key={p.id || pIdx}
+                        className="bg-zinc-800/80 px-3 py-1.5 rounded-xl text-xs flex justify-between items-center border border-zinc-700/40"
+                      >
+                        <span className="text-zinc-200">{p.name || p.item_name}</span>
+                        <span className="text-accent-tan font-mono">x{p.quantity || 1}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </motion.div>
         </div>
@@ -361,259 +526,407 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
             transition={{ delay: 0.15 }}
             className="glass rounded-[2.5rem] p-8 md:p-10 shadow-xl border border-white/40"
           >
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-              <div>
-                <h3 className="text-2xl font-bold text-zinc-900 flex items-center gap-2">
-                  <Wrench className="w-6 h-6 text-accent-tan" />
-                  {isAr ? "حالة مراحل الإنتاج" : "Production Progress"}
-                </h3>
-                <p className="text-zinc-500 text-sm mt-1">
-                  {isAr ? "متابعة حية لمراحل تصنيع غرفتك بالمصنع" : "Live tracker of your furniture's manufacturing stages"}
-                </p>
-              </div>
-              <div className="flex items-center gap-3 bg-zinc-900 text-white rounded-2xl px-5 py-3 shadow-lg">
-                <span className="text-xs uppercase font-bold text-zinc-400 tracking-wider">
-                  {isAr ? "التقدم" : "Progress"}
-                </span>
-                <span className="text-xl font-bold font-mono text-accent-tan">
-                  {progressPercent}%
-                </span>
-              </div>
-            </div>
-
-            {/* Active Stage Countdown Timer Widget */}
-            {(() => {
-              const activeTimerStage = clientStages.find(
-                (s) => s.status === "in_progress" && s.timer_started_at,
-              );
-              const activeTimerDef = activeTimerStage
-                ? STAGE_ORDER.find((s) => s.key === activeTimerStage.stage)
-                : null;
-              const customerTimerInfo = activeTimerStage?.timer_started_at
-                ? formatCustomerRemainingTime(
-                    activeTimerStage.timer_started_at,
-                    activeTimerStage.timer_days || 7,
-                    isAr,
-                  )
-                : null;
-
-              if (!activeTimerStage || !activeTimerDef || !customerTimerInfo)
-                return null;
-
-              return (
-                <div className="mb-8 p-5 rounded-3xl bg-indigo-50/80 border border-indigo-100/80 shadow-sm">
-                  <div className="flex items-center justify-between gap-3 mb-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md">
-                        <Timer className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <span className="text-xs font-bold text-indigo-950 block">
-                          {isAr
-                            ? `المرحلة الحالية: ${activeTimerDef.ar}`
-                            : `Current Stage: ${activeTimerDef.en}`}
-                        </span>
-                        <span className="text-[11px] text-indigo-600">
-                          {isAr
-                            ? `المدة المحددة للمرحلة: ${activeTimerStage.timer_days || 7} أيام (حتى ${customerTimerInfo.targetDateFormatted})`
-                            : `Allocated duration: ${activeTimerStage.timer_days || 7} days (until ${customerTimerInfo.targetDateFormatted})`}
-                        </span>
-                      </div>
-                    </div>
-                    <span className="px-3 py-1 bg-indigo-200/80 text-indigo-900 font-mono font-bold text-xs rounded-full">
-                      {customerTimerInfo.text}
-                    </span>
-                  </div>
-
-                  <div className="w-full bg-indigo-200/60 rounded-full h-2 overflow-hidden mt-3">
-                    <div
-                      className="bg-indigo-600 h-full rounded-full transition-all duration-700"
-                      style={{ width: `${customerTimerInfo.progressPct}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Payment Collection Milestone Notice */}
-            {(() => {
-              const totalPaid = filteredPayments.reduce(
-                (sum, p) => sum + (Number(p.amount) || 0),
-                0,
-              );
-              const remainingBalance = (customerRecord.totalAmount || 0) - totalPaid;
-              if (remainingBalance <= 0) return null;
-
-              const deliveryDone = clientStages.find(
-                (s) => s.stage === "delivery" && s.status === "done",
-              );
-              const paintingDone = clientStages.find(
-                (s) => s.stage === "painting" && s.status === "done",
-              );
-              const carpentryDone = clientStages.find(
-                (s) => s.stage === "carpentry" && s.status === "done",
-              );
-
-              let notice = null;
-              if (deliveryDone) {
-                notice = {
-                  title: isAr
-                    ? "طلب سداد دفعة الاستلام النهائي"
-                    : "Final Delivery Payment Due",
-                  desc: isAr
-                    ? "طلبكم جاهز بالكامل للتسليم. يرجى سداد المبلغ المتبقي لترتيب الشحن."
-                    : "Your order is ready for delivery. Please settle the remaining balance.",
-                };
-              } else if (paintingDone) {
-                notice = {
-                  title: isAr
-                    ? "طلب سداد دفعة ما بعد الدهانات"
-                    : "Post-Painting Installment Due",
-                  desc: isAr
-                    ? "تم الانتهاء من مرحلة الدهانات بنجاح. يرجى سداد دفعة المرحلة للمتابعة."
-                    : "Painting phase is completed. Please settle the stage installment.",
-                };
-              } else if (carpentryDone) {
-                notice = {
-                  title: isAr
-                    ? "طلب سداد دفعة انتهاء النجارة"
-                    : "Post-Carpentry Installment Due",
-                  desc: isAr
-                    ? "تم الانتهاء من مرحلة النجارة بنجاح. يرجى سداد دفعة المرحلة واختيار الألوان."
-                    : "Carpentry phase is completed. Please settle the stage installment.",
-                };
-              }
-
-              if (!notice) return null;
-
-              return (
-                <div className="mb-8 p-5 rounded-3xl bg-amber-50/90 border border-amber-200 shadow-sm flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-700 flex items-center justify-center shrink-0 mt-0.5">
-                    <Sparkles className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex justify-between items-center mb-1">
-                      <h4 className="font-bold text-amber-950 text-sm">
-                        {notice.title}
-                      </h4>
-                      <span className="font-bold font-mono text-sm text-rose-600">
-                        {remainingBalance.toLocaleString()} EGP
-                      </span>
-                    </div>
-                    <p className="text-xs text-amber-800/80 leading-relaxed">
-                      {notice.desc}
+            {clientStages.length === 0 && isInspection ? (
+              /* Inspection Journey Tracker */
+              <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-2">
+                  <div>
+                    <h3 className="text-2xl font-bold text-zinc-900 flex items-center gap-2">
+                      <Calendar className="w-6 h-6 text-amber-600" />
+                      {isAr ? "مسار ومتابعة المعاينة" : "Inspection Journey & Tracker"}
+                    </h3>
+                    <p className="text-zinc-500 text-sm mt-1">
+                      {isAr
+                        ? "متابعة خطوات المعاينة وتأكيد الحجز ورفع المقاسات"
+                        : "Track your appointment, site visit & quotation steps"}
                     </p>
                   </div>
+                  <div className="flex items-center gap-3 bg-amber-500 text-white rounded-2xl px-5 py-3 shadow-lg">
+                    <span className="text-xs uppercase font-bold text-amber-100 tracking-wider">
+                      {isAr ? "حالة المعاينة" : "Status"}
+                    </span>
+                    <span className="text-sm font-bold">
+                      {customerRecord.status === "contracted"
+                        ? isAr ? "تم التعاقد" : "Contracted"
+                        : customerRecord.visitDate || customerRecord.visit_date
+                          ? isAr ? "الموعد محجوز ومؤكد" : "Visit Scheduled"
+                          : isAr ? "قيد تأكيد الموعد" : "Pending Schedule"}
+                    </span>
+                  </div>
                 </div>
-              );
-            })()}
 
-            {/* Progress Bar */}
-            <div className="w-full bg-zinc-100 rounded-full h-3 mb-10 overflow-hidden border border-zinc-200">
-              <div 
-                className="bg-gradient-to-r from-accent-tan to-zinc-900 h-full transition-all duration-1000 ease-out"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
+                {/* Visit Appointment Banner */}
+                <div className="p-5 rounded-3xl bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 border border-amber-200/80 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-800 flex items-center justify-center font-bold text-lg shrink-0">
+                      <Clock className="w-6 h-6 text-amber-700" />
+                    </div>
+                    <div>
+                      <span className="text-xs uppercase font-bold text-amber-800 block tracking-wider">
+                        {isAr ? "موعد الزيارة المحدد لرفع المقاسات:" : "Scheduled Inspection Visit:"}
+                      </span>
+                      <h4 className="text-base sm:text-lg font-bold text-amber-950 mt-0.5">
+                        {customerRecord.visitDate || customerRecord.visit_date || (isAr ? "جاري التنسيق والتأكيد معكم" : "To be confirmed")}
+                        {(customerRecord.visitTime || customerRecord.visit_time)
+                          ? ` - الساعة ${customerRecord.visitTime || customerRecord.visit_time}`
+                          : ""}
+                      </h4>
+                    </div>
+                  </div>
+                  <span className="px-4 py-2 bg-amber-100/90 text-amber-900 text-xs font-bold rounded-2xl border border-amber-200 shrink-0">
+                    {customerRecord.address || customerRecord.deliveryAddress || customerRecord.delivery_address || (isAr ? "العنوان مسجل بالنظام" : "Registered address")}
+                  </span>
+                </div>
 
-            {/* Stages Timeline */}
-            <div className="space-y-6 relative before:absolute before:top-4 before:bottom-4 before:w-0.5 before:bg-zinc-200 ltr:before:left-5 rtl:before:right-5">
-              {STAGE_ORDER.map((stageDef, idx) => {
-                const stageRecord = clientStages.find((s) => s.stage === stageDef.key);
-                const stageStatus = stageRecord?.status || "not_started";
-                const isDone = stageStatus === "done";
-                const isInProgress = stageStatus === "in_progress";
-                const timerDetails =
-                  isInProgress && stageRecord?.timer_started_at
+                {/* Step Timeline for Inspection */}
+                <div className="space-y-5 relative before:absolute before:top-4 before:bottom-4 before:w-0.5 before:bg-zinc-200 ltr:before:left-5 rtl:before:right-5">
+                  {[
+                    {
+                      step: 1,
+                      titleAr: "تسجيل وتأكيد طلب المعاينة",
+                      titleEn: "Request Registered",
+                      descAr: "تم استلام وتسجيل بيانات طلبكم بنجاح في نظام العماري للأثاث",
+                      descEn: "Your request details have been registered in our system",
+                      done: true,
+                    },
+                    {
+                      step: 2,
+                      titleAr: "تحديد وتأكيد موعد الزيارة",
+                      titleEn: "Appointment Scheduled",
+                      descAr: customerRecord.visitDate || customerRecord.visit_date
+                        ? `${isAr ? "تم تحديد موعد الزيارة بتاريخ" : "Scheduled on"} ${customerRecord.visitDate || customerRecord.visit_date} ${(customerRecord.visitTime || customerRecord.visit_time) ? `(${customerRecord.visitTime || customerRecord.visit_time})` : ""}`
+                        : (isAr ? "يقوم فريق العمل بتنسيق وتأكيد الموعد المناسب لزيارتكم" : "Appointment being coordinated"),
+                      done: Boolean(customerRecord.visitDate || customerRecord.visit_date),
+                      inProgress: !Boolean(customerRecord.visitDate || customerRecord.visit_date),
+                    },
+                    {
+                      step: 3,
+                      titleAr: "زيارة الموقع ورفع المقاسات الهندسية",
+                      titleEn: "Site Visit & Measurements",
+                      descAr: "يقوم مهندس المعاينة بزيارة الموقع ورفع كافة المقاسات ومناقشة تفاصيل التصميم",
+                      descEn: "Our specialist visits your site, measures spaces and discusses designs",
+                      done: customerRecord.status === "contracted",
+                      inProgress: Boolean(customerRecord.visitDate || customerRecord.visit_date) && customerRecord.status !== "contracted",
+                    },
+                    {
+                      step: 4,
+                      titleAr: "إعداد المقايسة واعتماد التعاقد",
+                      titleEn: "Quotation & Contract",
+                      descAr: "تحديد المقايسة النهائية والأسعار واعتماد العقد، ثم بدء مراحل التصنيع المباشر",
+                      descEn: "Final quotation, contract signing, and start of production",
+                      done: customerRecord.status === "contracted",
+                      inProgress: false,
+                    },
+                  ].map((stepItem) => (
+                    <div key={stepItem.step} className="flex items-start gap-4 relative">
+                      <div
+                        className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 font-bold z-10 transition-all border shadow-sm ${
+                          stepItem.done
+                            ? "bg-emerald-500 text-white border-emerald-400"
+                            : stepItem.inProgress
+                              ? "bg-amber-500 text-white border-amber-400 animate-pulse ring-2 ring-amber-300"
+                              : "bg-white text-zinc-400 border-zinc-200"
+                        }`}
+                      >
+                        {stepItem.done ? "✓" : stepItem.inProgress ? "⏱" : stepItem.step}
+                      </div>
+
+                      <div className="bg-white/70 backdrop-blur-sm border border-white/80 p-5 rounded-2xl flex-1 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                        <div>
+                          <h4 className="text-base font-bold text-zinc-800">
+                            {isAr ? stepItem.titleAr : stepItem.titleEn}
+                          </h4>
+                          <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
+                            {isAr ? stepItem.descAr : stepItem.descEn}
+                          </p>
+                        </div>
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
+                            stepItem.done
+                              ? "bg-emerald-100 text-emerald-700"
+                              : stepItem.inProgress
+                                ? "bg-amber-100 text-amber-800"
+                                : "bg-zinc-100 text-zinc-500"
+                          }`}
+                        >
+                          {stepItem.done
+                            ? (isAr ? "مكتمل" : "Completed")
+                            : stepItem.inProgress
+                              ? (isAr ? "المرحلة الحالية" : "Current Step")
+                              : (isAr ? "قادمة" : "Upcoming")}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="p-4 rounded-2xl bg-zinc-100/80 border border-zinc-200 text-xs text-zinc-600 flex items-center gap-3">
+                  <Sparkles className="w-5 h-5 text-amber-500 shrink-0" />
+                  <span>
+                    {isAr
+                      ? "فريق العماري للأثاث ملتزم بأعلى معايير الجودة والالتزام بالمواعيد. يمكنكم التواصل معنا أو كتابة أي استفسار أدناه."
+                      : "Our team is committed to the highest standards of craftsmanship and punctuality. Feel free to contact us below."}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              /* Manufacturing Stages View */
+              <>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                  <div>
+                    <h3 className="text-2xl font-bold text-zinc-900 flex items-center gap-2">
+                      <Wrench className="w-6 h-6 text-accent-tan" />
+                      {isAr ? "حالة مراحل الإنتاج" : "Production Progress"}
+                    </h3>
+                    <p className="text-zinc-500 text-sm mt-1">
+                      {isAr ? "متابعة حية لمراحل تصنيع غرفتك بالمصنع" : "Live tracker of your furniture's manufacturing stages"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3 bg-zinc-900 text-white rounded-2xl px-5 py-3 shadow-lg">
+                    <span className="text-xs uppercase font-bold text-zinc-400 tracking-wider">
+                      {isAr ? "التقدم" : "Progress"}
+                    </span>
+                    <span className="text-xl font-bold font-mono text-accent-tan">
+                      {progressPercent}%
+                    </span>
+                  </div>
+                </div>
+
+                {/* Active Stage Countdown Timer Widget */}
+                {(() => {
+                  const activeTimerStage = clientStages.find(
+                    (s) => s.status === "in_progress" && s.timer_started_at,
+                  );
+                  const activeTimerDef = activeTimerStage
+                    ? STAGE_ORDER.find((s) => s.key === activeTimerStage.stage)
+                    : null;
+                  const customerTimerInfo = activeTimerStage?.timer_started_at
                     ? formatCustomerRemainingTime(
-                        stageRecord.timer_started_at,
-                        stageRecord.timer_days || 7,
+                        activeTimerStage.timer_started_at,
+                        activeTimerStage.timer_days || 7,
                         isAr,
                       )
                     : null;
 
-                return (
-                  <div key={stageDef.key} className="flex items-start gap-4 relative">
-                    {/* Circle Indicator */}
-                    <div 
-                      className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 font-bold z-10 transition-all border shadow-sm ${
-                        isDone 
-                          ? "bg-emerald-500 text-white border-emerald-400" 
-                          : isInProgress 
-                            ? "bg-indigo-600 text-white border-indigo-400 animate-pulse ring-2 ring-indigo-300" 
-                            : "bg-white text-zinc-400 border-zinc-200"
-                      }`}
-                    >
-                      {isDone ? "✓" : isInProgress ? "⏱" : idx + 1}
-                    </div>
+                  if (!activeTimerStage || !activeTimerDef || !customerTimerInfo)
+                    return null;
 
-                    <div className="bg-white/60 backdrop-blur-sm border border-white/80 p-5 rounded-2xl flex-1 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                      <div>
+                  return (
+                    <div className="mb-8 p-5 rounded-3xl bg-indigo-50/80 border border-indigo-100/80 shadow-sm">
+                      <div className="flex items-center justify-between gap-3 mb-2">
                         <div className="flex items-center gap-2">
-                          <h4 className="text-base font-bold text-zinc-800">
-                            {isAr ? stageDef.ar : stageDef.en}
-                          </h4>
-                          {timerDetails && (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 font-mono">
-                              ⏱ {timerDetails.text}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-zinc-400 mt-0.5">
-                          {isDone 
-                            ? (isAr ? "تم الانتهاء من هذه المرحلة بنجاح" : "This stage has been completed") 
-                            : isInProgress 
-                              ? (isAr ? "هذه المرحلة قيد العمل حالياً بالمصنع" : "This stage is currently in progress") 
-                              : (isAr ? "مرحلة معلقة لم تبدأ بعد" : "Pending start")}
-                        </p>
-
-                        {/* Stage Photos Gallery (Carpentry & Painting photos) */}
-                        {stageRecord?.images && stageRecord.images.length > 0 && (
-                          <div className="mt-3 pt-3 border-t border-zinc-200/60">
-                            <span className="text-[11px] font-bold text-zinc-700 mb-2 flex items-center gap-1.5">
-                              <Camera className="w-3.5 h-3.5 text-indigo-600" />
-                              {isAr ? "📸 صور تنفيذ هذه المرحلة بالمصنع:" : "📸 Stage progress photos:"}
-                            </span>
-                            <div className="flex gap-2 flex-wrap mt-1.5">
-                              {stageRecord.images.map((img: string, imgIdx: number) => (
-                                <button
-                                  key={imgIdx}
-                                  type="button"
-                                  onClick={() => setPreviewPhoto(img)}
-                                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border border-zinc-200 shadow-sm hover:scale-105 hover:shadow-md transition-all group relative cursor-pointer"
-                                >
-                                  <img
-                                    src={img}
-                                    alt={`Stage photo ${imgIdx + 1}`}
-                                    className="w-full h-full object-cover"
-                                  />
-                                  <div className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
-                                    <Eye className="w-5 h-5" />
-                                  </div>
-                                </button>
-                              ))}
-                            </div>
+                          <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md">
+                            <Timer className="w-4 h-4" />
                           </div>
-                        )}
+                          <div>
+                            <span className="text-xs font-bold text-indigo-950 block">
+                              {isAr
+                                ? `المرحلة الحالية: ${activeTimerDef.ar}`
+                                : `Current Stage: ${activeTimerDef.en}`}
+                            </span>
+                            <span className="text-[11px] text-indigo-600">
+                              {isAr
+                                ? `المدة المحددة للمرحلة: ${activeTimerStage.timer_days || 7} أيام (حتى ${customerTimerInfo.targetDateFormatted})`
+                                : `Allocated duration: ${activeTimerStage.timer_days || 7} days (until ${customerTimerInfo.targetDateFormatted})`}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="px-3 py-1 bg-indigo-200/80 text-indigo-900 font-mono font-bold text-xs rounded-full">
+                          {customerTimerInfo.text}
+                        </span>
                       </div>
-                      <span className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold ${
-                        isDone 
-                          ? "bg-emerald-100 text-emerald-700" 
-                          : isInProgress 
-                            ? "bg-indigo-100 text-indigo-700" 
-                            : "bg-zinc-100 text-zinc-500"
-                      }`}>
-                        {isDone 
-                          ? (isAr ? "مكتمل" : "Completed") 
-                          : isInProgress 
-                            ? (isAr ? "قيد التنفيذ" : "In Progress") 
-                            : (isAr ? "لم تبدأ" : "Not Started")}
-                      </span>
+
+                      <div className="w-full bg-indigo-200/60 rounded-full h-2 overflow-hidden mt-3">
+                        <div
+                          className="bg-indigo-600 h-full rounded-full transition-all duration-700"
+                          style={{ width: `${customerTimerInfo.progressPct}%` }}
+                        />
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })()}
+
+                {/* Payment Collection Milestone Notice */}
+                {(() => {
+                  const totalPaid = filteredPayments.reduce(
+                    (sum, p) => sum + (Number(p.amount) || 0),
+                    0,
+                  );
+                  const remainingBalance = (customerRecord.totalAmount || 0) - totalPaid;
+                  if (remainingBalance <= 0) return null;
+
+                  const deliveryDone = clientStages.find(
+                    (s) => s.stage === "delivery" && s.status === "done",
+                  );
+                  const paintingDone = clientStages.find(
+                    (s) => s.stage === "painting" && s.status === "done",
+                  );
+                  const carpentryDone = clientStages.find(
+                    (s) => s.stage === "carpentry" && s.status === "done",
+                  );
+
+                  let notice = null;
+                  if (deliveryDone) {
+                    notice = {
+                      title: isAr
+                        ? "طلب سداد دفعة الاستلام النهائي"
+                        : "Final Delivery Payment Due",
+                      desc: isAr
+                        ? "طلبكم جاهز بالكامل للتسليم. يرجى سداد المبلغ المتبقي لترتيب الشحن."
+                        : "Your order is ready for delivery. Please settle the remaining balance.",
+                    };
+                  } else if (paintingDone) {
+                    notice = {
+                      title: isAr
+                        ? "طلب سداد دفعة ما بعد الدهانات"
+                        : "Post-Painting Installment Due",
+                      desc: isAr
+                        ? "تم الانتهاء من مرحلة الدهانات بنجاح. يرجى سداد دفعة المرحلة للمتابعة."
+                        : "Painting phase is completed. Please settle the stage installment.",
+                    };
+                  } else if (carpentryDone) {
+                    notice = {
+                      title: isAr
+                        ? "طلب سداد دفعة انتهاء النجارة"
+                        : "Post-Carpentry Installment Due",
+                      desc: isAr
+                        ? "تم الانتهاء من مرحلة النجارة بنجاح. يرجى سداد دفعة المرحلة واختيار الألوان."
+                        : "Carpentry phase is completed. Please settle the stage installment.",
+                    };
+                  }
+
+                  if (!notice) return null;
+
+                  return (
+                    <div className="mb-8 p-5 rounded-3xl bg-amber-50/90 border border-amber-200 shadow-sm flex items-start gap-4">
+                      <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-700 flex items-center justify-center shrink-0 mt-0.5">
+                        <Sparkles className="w-5 h-5" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex justify-between items-center mb-1">
+                          <h4 className="font-bold text-amber-950 text-sm">
+                            {notice.title}
+                          </h4>
+                          <span className="font-bold font-mono text-sm text-rose-600">
+                            {remainingBalance.toLocaleString()} EGP
+                          </span>
+                        </div>
+                        <p className="text-xs text-amber-800/80 leading-relaxed">
+                          {notice.desc}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Progress Bar */}
+                <div className="w-full bg-zinc-100 rounded-full h-3 mb-10 overflow-hidden border border-zinc-200">
+                  <div 
+                    className="bg-gradient-to-r from-accent-tan to-zinc-900 h-full transition-all duration-1000 ease-out"
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+
+                {/* Stages Timeline */}
+                <div className="space-y-6 relative before:absolute before:top-4 before:bottom-4 before:w-0.5 before:bg-zinc-200 ltr:before:left-5 rtl:before:right-5">
+                  {STAGE_ORDER.map((stageDef, idx) => {
+                    const stageRecord = clientStages.find((s) => s.stage === stageDef.key);
+                    const stageStatus = stageRecord?.status || "not_started";
+                    const isDone = stageStatus === "done";
+                    const isInProgress = stageStatus === "in_progress";
+                    const timerDetails =
+                      isInProgress && stageRecord?.timer_started_at
+                        ? formatCustomerRemainingTime(
+                            stageRecord.timer_started_at,
+                            stageRecord.timer_days || 7,
+                            isAr,
+                          )
+                        : null;
+
+                    return (
+                      <div key={stageDef.key} className="flex items-start gap-4 relative">
+                        {/* Circle Indicator */}
+                        <div 
+                          className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 font-bold z-10 transition-all border shadow-sm ${
+                            isDone 
+                              ? "bg-emerald-500 text-white border-emerald-400" 
+                              : isInProgress 
+                                ? "bg-indigo-600 text-white border-indigo-400 animate-pulse ring-2 ring-indigo-300" 
+                                : "bg-white text-zinc-400 border-zinc-200"
+                          }`}
+                        >
+                          {isDone ? "✓" : isInProgress ? "⏱" : idx + 1}
+                        </div>
+
+                        <div className="bg-white/60 backdrop-blur-sm border border-white/80 p-5 rounded-2xl flex-1 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-base font-bold text-zinc-800">
+                                {isAr ? stageDef.ar : stageDef.en}
+                              </h4>
+                              {timerDetails && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 font-mono">
+                                  ⏱ {timerDetails.text}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-zinc-400 mt-0.5">
+                              {isDone 
+                                ? (isAr ? "تم الانتهاء من هذه المرحلة بنجاح" : "This stage has been completed") 
+                                : isInProgress 
+                                  ? (isAr ? "هذه المرحلة قيد العمل حالياً بالمصنع" : "This stage is currently in progress") 
+                                  : (isAr ? "مرحلة معلقة لم تبدأ بعد" : "Pending start")}
+                            </p>
+
+                            {/* Stage Photos Gallery (Carpentry & Painting photos) */}
+                            {stageRecord?.images && stageRecord.images.length > 0 && (
+                              <div className="mt-3 pt-3 border-t border-zinc-200/60">
+                                <span className="text-[11px] font-bold text-zinc-700 mb-2 flex items-center gap-1.5">
+                                  <Camera className="w-3.5 h-3.5 text-indigo-600" />
+                                  {isAr ? "📸 صور تنفيذ هذه المرحلة بالمصنع:" : "📸 Stage progress photos:"}
+                                </span>
+                                <div className="flex gap-2 flex-wrap mt-1.5">
+                                  {stageRecord.images.map((img: string, imgIdx: number) => (
+                                    <button
+                                      key={imgIdx}
+                                      type="button"
+                                      onClick={() => setPreviewPhoto(img)}
+                                      className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border border-zinc-200 shadow-sm hover:scale-105 hover:shadow-md transition-all group relative cursor-pointer"
+                                    >
+                                      <img
+                                        src={img}
+                                        alt={`Stage photo ${imgIdx + 1}`}
+                                        className="w-full h-full object-cover"
+                                      />
+                                      <div className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
+                                        <Eye className="w-5 h-5" />
+                                      </div>
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                          <span className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold ${
+                            isDone 
+                              ? "bg-emerald-100 text-emerald-700" 
+                              : isInProgress 
+                                ? "bg-indigo-100 text-indigo-700" 
+                                : "bg-zinc-100 text-zinc-500"
+                          }`}>
+                            {isDone 
+                              ? (isAr ? "مكتمل" : "Completed") 
+                              : isInProgress 
+                                ? (isAr ? "قيد التنفيذ" : "In Progress") 
+                                : (isAr ? "لم تبدأ" : "Not Started")}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </motion.div>
 
           {/* Payments Card */}
@@ -657,7 +970,11 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
             ) : (
               <div className="bg-white/40 border border-zinc-100 rounded-2xl py-12 text-center text-zinc-400 font-semibold">
                 <Coins className="w-10 h-10 text-zinc-200 mx-auto mb-2" />
-                {isAr ? "لا توجد دفعات مسجلة حتى الآن" : "No recorded payments yet"}
+                {isAr
+                  ? isInspection
+                    ? "لا توجد دفعات مسجلة حتى الآن (يتم سداد دفعة التعاقد بعد اعتماد المقايسة)"
+                    : "لا توجد دفعات مسجلة حتى الآن"
+                  : "No recorded payments yet"}
               </div>
             )}
           </motion.div>

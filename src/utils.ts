@@ -2,7 +2,7 @@
 // normalization, DB<->UI record mapping, JSON parsing helpers, and the
 // notification sound player. Extracted from App.tsx - no React/JSX here.
 
-import type { CustomerRecord, Inspection, FurniturePiece } from "./types";
+import type { CustomerRecord, Inspection, FurniturePiece, ContractAddition } from "./types";
 import { toTimestamp, toSortableDateValue } from "./types";
 
 export const normalizePhone = (p: any) => {
@@ -138,6 +138,7 @@ export const mapInspectionFromDB = (dbInsp: any): Inspection =>
     contractDate: dbInsp.contract_date,
     contractUrl: dbInsp.contract_url,
     createdAt: toTimestamp(dbInsp.created_at),
+    additions: parseMaybeJsonArray<ContractAddition>(dbInsp.additions) || [],
     ...((dbInsp as any).finalized_at
       ? { finalizedAt: toTimestamp((dbInsp as any).finalized_at) }
       : {}),

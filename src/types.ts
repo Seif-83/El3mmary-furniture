@@ -88,6 +88,16 @@ export interface Inspection {
   contractDate?: string;
   contractUrl?: string;
   payments?: { amount: number; date: string; stage: string }[];
+  additions?: ContractAddition[];
+}
+
+export interface ContractAddition {
+  id: string;
+  title: string;
+  amount: number;
+  date: string;
+  notes?: string;
+  createdAt?: string;
 }
 
 export type RoomDraftItem = {

@@ -15,12 +15,22 @@ import {
   Receipt,
   Calendar,
   Users,
+  PlusCircle,
+  TrendingUp,
+  DollarSign,
+  ClipboardList,
+  Layers,
+  ArrowUpRight,
+  Eye,
+  Check,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
 import { SyncManager } from "../services/sync";
-import { InvoiceService } from "../services/data";
-import type { Inspection } from "../types";
+import { InvoiceService, OrderService, StageService } from "../services/data";
+import { db } from "../services/db";
+import { STAGE_ORDER } from "../constants";
+import type { Inspection, ContractAddition, FurniturePiece } from "../types";
 
 export interface PaymentRecord {
   id: string;
@@ -77,6 +87,7 @@ export const PaymentsPage: React.FC<{
   t: Record<string, string>;
   onRefresh: () => Promise<void>;
   onSendWhatsApp: (phone: string, msg: string) => void;
+  onOpenInspection?: (customer: Inspection) => void;
 }> = ({
   contractedCustomers,
   stages = [],
@@ -85,6 +96,7 @@ export const PaymentsPage: React.FC<{
   t,
   onRefresh,
   onSendWhatsApp,
+  onOpenInspection,
 }) => {
   // Modal states
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -92,6 +104,23 @@ export const PaymentsPage: React.FC<{
   const [paymentAmount, setPaymentAmount] = useState<number | "">("");
   const [paymentStage, setPaymentStage] = useState<string>("التعاقد");
   const [isSaving, setIsSaving] = useState(false);
+
+  // Contract Additions Modal States
+  const [isAdditionModalOpen, setIsAdditionModalOpen] = useState(false);
+  const [selectedAdditionCustomer, setSelectedAdditionCustomer] = useState<Inspection | null>(null);
+  const [additionAmount, setAdditionAmount] = useState<number | "">("");
+  const [additionTitle, setAdditionTitle] = useState<string>("");
+  const [additionNotes, setAdditionNotes] = useState<string>("");
+  const [moveToInspectionOnAdd, setMoveToInspectionOnAdd] = useState<boolean>(true);
+  const [isSavingAddition, setIsSavingAddition] = useState(false);
+
+  // Admin Expenses Details Modal States
+  const [isExpensesModalOpen, setIsExpensesModalOpen] = useState(false);
+  const [selectedExpenseCustomer, setSelectedExpenseCustomer] = useState<Inspection | null>(null);
+  const [newExpenseStageKey, setNewExpenseStageKey] = useState<string>("carpentry");
+  const [newExpenseDestination, setNewExpenseDestination] = useState<string>("");
+  const [newExpenseAmount, setNewExpenseAmount] = useState<number | "">("");
+  const [isSavingExpense, setIsSavingExpense] = useState(false);
 
   // Edit modal states
   const [editingPayment, setEditingPayment] = useState<PaymentRecord | null>(null);
@@ -267,6 +296,319 @@ export const PaymentsPage: React.FC<{
     }
 
     return breakdown;
+  };
+
+  // Customer stages & expense calculations
+  const getCustomerStages = (customer: Inspection) => {
+    return stages.filter((stRec: any) => {
+      if (stRec.visit_id && stRec.visit_id === customer.id) return true;
+      if (!customer.phone) return false;
+      if (stRec.client?.phones?.includes(customer.phone)) return true;
+      const normC = customer.phone.replace(/\D/g, "");
+      if (!normC) return false;
+      return (stRec.client?.phones || []).some((p: string) => {
+        const normP = p.replace(/\D/g, "");
+        return (
+          normP === normC ||
+          (normP.length >= 8 &&
+            normC.length >= 8 &&
+            (normP.endsWith(normC) || normC.endsWith(normP)))
+        );
+      });
+    });
+  };
+
+  const getCustomerExpenses = (customer: Inspection) => {
+    const custStages = getCustomerStages(customer);
+    const items: {
+      id: string;
+      stageKey: string;
+      stageName: string;
+      destination: string;
+      amount: number;
+      stageId: string;
+      stageIndex: number;
+    }[] = [];
+
+    custStages.forEach((stRec) => {
+      const stDef = STAGE_ORDER.find((s) => s.key === stRec.stage);
+      const stageName = stDef ? (lang === "ar" ? stDef.ar : stDef.en) : stRec.stage;
+      const exps = (stRec.expenses || []) as { destination: string; amount: number }[];
+      exps.forEach((exp, idx) => {
+        const amt = Number(exp.amount) || 0;
+        if (amt > 0 || (exp.destination && exp.destination.trim() !== "")) {
+          items.push({
+            id: `${stRec.id}-${idx}`,
+            stageKey: stRec.stage,
+            stageName,
+            destination: exp.destination || (lang === "ar" ? "بند مصروف" : "Expense item"),
+            amount: amt,
+            stageId: stRec.id,
+            stageIndex: idx,
+          });
+        }
+      });
+    });
+
+    return items;
+  };
+
+  const getCustomerTotalExpenses = (customer: Inspection): number => {
+    return getCustomerExpenses(customer).reduce((sum, item) => sum + item.amount, 0);
+  };
+
+  const getCustomerNetAfterProduction = (customer: Inspection): number => {
+    const total = customer.totalAmount || 0;
+    const totalExpenses = getCustomerTotalExpenses(customer);
+    return total - totalExpenses;
+  };
+
+  // Add contract addition modal handler
+  const handleOpenAdditionModal = (customer: Inspection) => {
+    setSelectedAdditionCustomer(customer);
+    setAdditionAmount("");
+    setAdditionTitle(lang === "ar" ? "إضافة قماش" : "Fabric Addition");
+    setAdditionNotes("");
+    const isFirstTime = !customer.additions || customer.additions.length === 0;
+    setMoveToInspectionOnAdd(isFirstTime);
+    setIsAdditionModalOpen(true);
+  };
+
+  // Save contract addition
+  const handleSaveContractAddition = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedAdditionCustomer || !additionAmount || Number(additionAmount) <= 0) {
+      toast.error(
+        lang === "ar"
+          ? "يرجى إدخال مبلغ الإضافة بشكل صحيح"
+          : "Please enter a valid addition amount",
+      );
+      return;
+    }
+
+    setIsSavingAddition(true);
+    try {
+      const addAmt = Number(additionAmount);
+      const currentTotal = Number(selectedAdditionCustomer.totalAmount) || 0;
+      const newTotal = currentTotal + addAmt;
+      const title =
+        additionTitle.trim() || (lang === "ar" ? "إضافة للتعاقد" : "Contract Addition");
+      const noteDetails = additionNotes.trim();
+
+      const newAddition: ContractAddition = {
+        id: crypto.randomUUID(),
+        title,
+        amount: addAmt,
+        date: new Date().toISOString().split("T")[0],
+        notes: noteDetails || undefined,
+        createdAt: new Date().toISOString(),
+      };
+
+      const existingAdditions = Array.isArray(selectedAdditionCustomer.additions)
+        ? selectedAdditionCustomer.additions
+        : [];
+      const isFirstAddition = existingAdditions.length === 0;
+      const updatedAdditions = [...existingAdditions, newAddition];
+
+      // إضافة بند للقطع pieces ليظهر في المقايسة وتفاصيل المعاينة
+      const newPiece: FurniturePiece = {
+        name: title,
+        price: addAmt,
+        quantity: 1,
+        details: noteDetails || (lang === "ar" ? "إضافة تعاقد" : "Contract Addition"),
+      };
+      const existingPieces = Array.isArray(selectedAdditionCustomer.pieces)
+        ? selectedAdditionCustomer.pieces
+        : [];
+      const updatedPieces = [...existingPieces, newPiece];
+
+      // إضافة نص في الملاحظات
+      const additionStamp = `[إضافة تعاقد]: ${title} (+${addAmt.toLocaleString()} ج.م) بتاريخ ${newAddition.date}`;
+      const updatedNotes = selectedAdditionCustomer.notes
+        ? `${selectedAdditionCustomer.notes}\n${additionStamp}`
+        : additionStamp;
+
+      // 1. تحديث جدول contracted_customers
+      await OrderService.updateContracted(selectedAdditionCustomer.id, {
+        total_amount: newTotal,
+        pieces: updatedPieces,
+        additions: updatedAdditions,
+        notes: updatedNotes,
+      });
+
+      // 2. مزامنة مع جدول inspections أو إنشاؤه إن لزم
+      try {
+        const localInsp = await db.inspections.get(selectedAdditionCustomer.id);
+        if (localInsp) {
+          await OrderService.updateInspection(selectedAdditionCustomer.id, {
+            total_amount: newTotal,
+            pieces: updatedPieces,
+            additions: updatedAdditions,
+            notes: updatedNotes,
+          });
+        } else if (moveToInspectionOnAdd || isFirstAddition) {
+          await OrderService.insertInspection({
+            id: selectedAdditionCustomer.id,
+            customer_name: selectedAdditionCustomer.customerName,
+            phone: selectedAdditionCustomer.phone,
+            address: selectedAdditionCustomer.address,
+            delivery_address: selectedAdditionCustomer.deliveryAddress,
+            governorate: selectedAdditionCustomer.governorate,
+            visit_date:
+              selectedAdditionCustomer.visitDate ||
+              new Date().toISOString().split("T")[0],
+            visit_time: selectedAdditionCustomer.visitTime,
+            notes: updatedNotes,
+            rooms: selectedAdditionCustomer.rooms || 1,
+            pieces: updatedPieces,
+            total_amount: newTotal,
+            status: "contracted",
+            created_at: new Date().toISOString(),
+          });
+        }
+      } catch (err) {
+        console.warn("Could not sync with inspections table:", err);
+      }
+
+      // 3. تسجيل النشاط
+      await SyncManager.logActivity(
+        "contract_addition",
+        `${lang === "ar" ? "إضافة للتعاقد بقيمة" : "Contract addition of"} ${addAmt.toLocaleString()} ${lang === "ar" ? "ج.م للعميل" : "EGP for"} ${selectedAdditionCustomer.customerName} (${title})`,
+        true,
+        {
+          customerId: selectedAdditionCustomer.id,
+          title,
+          amount: addAmt,
+          newTotal,
+        },
+      );
+
+      // تحديث البيانات
+      if (onRefresh) await onRefresh();
+      await fetchPayments();
+
+      const customerPayments = getCustomerPayments(selectedAdditionCustomer.id);
+      const paid = customerPayments.reduce(
+        (s, p) => s + (Number(p.amount) || 0),
+        0,
+      );
+      const newRemaining = newTotal - paid;
+
+      toast.success(
+        lang === "ar"
+          ? `تمت إضافة (${addAmt.toLocaleString()} ج.م) بنجاح. إجمالي التعاقد الجديد: ${newTotal.toLocaleString()} ج.م، والمتبقي: ${newRemaining.toLocaleString()} ج.م`
+          : `Added ${addAmt.toLocaleString()} EGP successfully. New total: ${newTotal.toLocaleString()} EGP, remaining: ${newRemaining.toLocaleString()} EGP`,
+      );
+
+      setIsAdditionModalOpen(false);
+
+      // إذا اختار تحويل العميل للمعاينة للاستكمال مع العميل (أو في أول إضافة)
+      if ((moveToInspectionOnAdd || isFirstAddition) && onOpenInspection) {
+        const updatedCustObj: Inspection = {
+          ...selectedAdditionCustomer,
+          totalAmount: newTotal,
+          pieces: updatedPieces,
+          additions: updatedAdditions,
+          notes: updatedNotes,
+        };
+        toast(
+          lang === "ar"
+            ? "جاري الانتقال لشاشة المعاينة لاستكمال التفاصيل مع العميل..."
+            : "Opening inspection to resume details with customer...",
+          { icon: "📋" },
+        );
+        setTimeout(() => {
+          onOpenInspection(updatedCustObj);
+        }, 250);
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to add contract addition");
+    } finally {
+      setIsSavingAddition(false);
+    }
+  };
+
+  // Add / Manage stage expense from Payments view
+  const handleAddContractExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (
+      !selectedExpenseCustomer ||
+      !newExpenseAmount ||
+      Number(newExpenseAmount) <= 0
+    ) {
+      toast.error(
+        lang === "ar" ? "يرجى إدخال مبلغ المصروف" : "Please enter expense amount",
+      );
+      return;
+    }
+
+    setIsSavingExpense(true);
+    try {
+      const custStages = getCustomerStages(selectedExpenseCustomer);
+      let targetStage = custStages.find((s) => s.stage === newExpenseStageKey);
+
+      if (!targetStage && custStages.length > 0) {
+        targetStage = custStages[0];
+      }
+
+      if (!targetStage) {
+        toast.error(
+          lang === "ar"
+            ? "لم يتم العثور على مرحلة إنتاج لهذا العقد بعد. تأكد من إدراجه في الإنتاج أولاً."
+            : "No production stage found for this contract yet.",
+        );
+        setIsSavingExpense(false);
+        return;
+      }
+
+      const existingExps = (targetStage.expenses || []) as {
+        destination: string;
+        amount: number;
+      }[];
+      const updatedExps = [
+        ...existingExps,
+        {
+          destination:
+            newExpenseDestination.trim() ||
+            (lang === "ar" ? "مصروف إنتاج" : "Production expense"),
+          amount: Number(newExpenseAmount),
+        },
+      ];
+
+      await StageService.updateStageExpenses(targetStage.id, updatedExps);
+      if (onRefresh) await onRefresh();
+
+      toast.success(
+        lang === "ar"
+          ? "تم إضافة المصروف بنجاح ويخصم تلقائياً من إجمالي العقد"
+          : "Expense added and deducted from contract total",
+      );
+      setNewExpenseDestination("");
+      setNewExpenseAmount("");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to save expense");
+    } finally {
+      setIsSavingExpense(false);
+    }
+  };
+
+  const handleDeleteContractExpense = async (
+    stageId: string,
+    expIndex: number,
+  ) => {
+    try {
+      const targetStage = stages.find((s) => s.id === stageId);
+      if (!targetStage) return;
+      const exps = [...(targetStage.expenses || [])];
+      exps.splice(expIndex, 1);
+      await StageService.updateStageExpenses(stageId, exps);
+      if (onRefresh) await onRefresh();
+      toast.success(
+        lang === "ar" ? "تم حذف المصروف بنجاح" : "Expense deleted successfully",
+      );
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete expense");
+    }
   };
 
   const totalContractValue = contractedCustomers.reduce(
@@ -584,10 +926,15 @@ export const PaymentsPage: React.FC<{
                     <tr className="border-b border-black/5 text-[10px] font-bold uppercase text-zinc-400 tracking-widest">
                       <th className="px-6 py-4">{lang === "ar" ? "العميل" : "Customer"}</th>
                       <th className="px-6 py-4">{lang === "ar" ? "الهاتف" : "Phone"}</th>
-                      <th className="px-6 py-4">{lang === "ar" ? "الإجمالي" : "Total"}</th>
+                      <th className="px-6 py-4">{lang === "ar" ? "إجمالي التعاقد" : "Contract Total"}</th>
                       <th className="px-6 py-4 text-emerald-600">{lang === "ar" ? "المدفوع" : "Paid"}</th>
                       <th className="px-6 py-4 text-rose-600">{lang === "ar" ? "المتبقي" : "Remaining"}</th>
-                      <th className="px-6 py-4">{lang === "ar" ? "المراحل الأربعة وسجل الدفعات" : "Stages & Payments"}</th>
+                      {isAdmin && (
+                        <th className="px-6 py-4 text-indigo-700 font-extrabold">
+                          {lang === "ar" ? "المصروفات والصافي بعد الإنتاج" : "Expenses & Net (Admin)"}
+                        </th>
+                      )}
+                      <th className="px-6 py-4">{lang === "ar" ? "المراحل وسجل الدفعات" : "Stages & Payments"}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -603,6 +950,16 @@ export const PaymentsPage: React.FC<{
                         total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
                       const collectionTrigger = getPendingCollectionTrigger(customer);
                       const breakdown = getCustomerPaymentBreakdown(customer.id);
+
+                      // Admin calculations
+                      const customerExpenses = getCustomerExpenses(customer);
+                      const totalExpenses = getCustomerTotalExpenses(customer);
+                      const netAfterProduction = getCustomerNetAfterProduction(customer);
+
+                      // Additions info
+                      const totalAdditions = Array.isArray(customer.additions)
+                        ? customer.additions.reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
+                        : 0;
 
                       return (
                         <tr
@@ -626,20 +983,44 @@ export const PaymentsPage: React.FC<{
                             {customer.phone}
                           </td>
 
-                          {/* Total Contract */}
-                          <td className="px-6 py-4 font-bold text-zinc-900 whitespace-nowrap">
-                            {total.toLocaleString()} EGP
+                          {/* Total Contract + Additions */}
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="font-bold text-zinc-900 font-mono text-sm">
+                              {total.toLocaleString()} EGP
+                            </div>
+                            {totalAdditions > 0 && (
+                              <div className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md mt-1 border border-emerald-200">
+                                <span>+{totalAdditions.toLocaleString()} ج.م إضافات</span>
+                              </div>
+                            )}
+                            {isAdmin && (
+                              <div className="mt-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenAdditionModal(customer)}
+                                  className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200/80 px-2.5 py-1 rounded-lg transition-colors cursor-pointer shadow-xs"
+                                  title={
+                                    lang === "ar"
+                                      ? "إضافة بند أو زيادة للتعاقد (قماش، تعديل...) وتدخل تلقائياً في الإجمالي"
+                                      : "Add Contract Addition / Extra Item"
+                                  }
+                                >
+                                  <PlusCircle className="w-3 h-3 text-blue-600" />
+                                  <span>{lang === "ar" ? "+ إضافة للتعاقد" : "+ Add Item"}</span>
+                                </button>
+                              </div>
+                            )}
                           </td>
 
                           {/* Paid */}
-                          <td className="px-6 py-4 font-bold text-emerald-600 whitespace-nowrap">
+                          <td className="px-6 py-4 font-bold text-emerald-600 whitespace-nowrap font-mono">
                             {paid.toLocaleString()} EGP
                           </td>
 
                           {/* Remaining */}
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span
-                              className={`font-bold ${remaining > 0 ? "text-rose-600" : "text-emerald-600"}`}
+                              className={`font-bold font-mono ${remaining > 0 ? "text-rose-600" : "text-emerald-600"}`}
                             >
                               {remaining.toLocaleString()} EGP
                             </span>
@@ -650,6 +1031,54 @@ export const PaymentsPage: React.FC<{
                               />
                             </div>
                           </td>
+
+                          {/* Admin: Expenses & Net after production */}
+                          {isAdmin && (
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="space-y-1.5 bg-white/70 p-2.5 rounded-2xl border border-zinc-200/70 shadow-xs min-w-[190px]">
+                                <div className="flex justify-between items-center text-xs">
+                                  <span className="text-zinc-500 font-semibold flex items-center gap-1">
+                                    <Layers className="w-3 h-3 text-zinc-400" />
+                                    {lang === "ar" ? "المصروفات:" : "Expenses:"}
+                                  </span>
+                                  <span className="font-bold font-mono text-zinc-800">
+                                    {totalExpenses.toLocaleString()} ج.م
+                                  </span>
+                                </div>
+                                <div className="flex justify-between items-center text-xs pt-1 border-t border-zinc-100">
+                                  <span className="text-zinc-600 font-bold flex items-center gap-1">
+                                    <TrendingUp className="w-3 h-3 text-indigo-500" />
+                                    {lang === "ar" ? "صافي بعد الإنتاج:" : "Net:"}
+                                  </span>
+                                  <span
+                                    className={`font-bold font-mono px-2 py-0.5 rounded-lg border text-xs ${
+                                      netAfterProduction >= 0
+                                        ? "bg-emerald-50 text-emerald-700 border-emerald-200/80"
+                                        : "bg-rose-50 text-rose-700 border-rose-200/80"
+                                    }`}
+                                  >
+                                    {netAfterProduction.toLocaleString()} ج.م
+                                  </span>
+                                </div>
+                                <div className="pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedExpenseCustomer(customer);
+                                      setIsExpensesModalOpen(true);
+                                    }}
+                                    className="w-full inline-flex items-center justify-center gap-1 text-[10px] font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-50/80 hover:bg-indigo-100 border border-indigo-200/70 py-1 rounded-lg transition-colors cursor-pointer"
+                                  >
+                                    <DollarSign className="w-3 h-3 text-indigo-600" />
+                                    <span>{lang === "ar" ? "عرض / إدارة المصروفات" : "Manage Expenses"}</span>
+                                    <span className="bg-indigo-200/60 px-1.5 py-0.2 rounded-full font-mono text-[9px]">
+                                      {customerExpenses.length}
+                                    </span>
+                                  </button>
+                                </div>
+                              </div>
+                            </td>
+                          )}
 
                           {/* Stages Breakdown & History Actions */}
                           <td className="px-6 py-4">
@@ -674,8 +1103,8 @@ export const PaymentsPage: React.FC<{
                                 )}
                               </div>
 
-                              {/* Action Buttons: Add Payment & View History */}
-                              <div className="flex items-center gap-2 pt-1">
+                              {/* Action Buttons: Add Payment & View History & Resume Inspection */}
+                              <div className="flex items-center gap-2 pt-1 flex-wrap">
                                 {isAdmin && remaining > 0 && (
                                   <button
                                     onClick={() =>
@@ -706,6 +1135,22 @@ export const PaymentsPage: React.FC<{
                                     ? `سجل الدفعات (${customerPayments.length})`
                                     : `History (${customerPayments.length})`}
                                 </button>
+
+                                {onOpenInspection && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onOpenInspection(customer)}
+                                    className="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200/80 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                                    title={
+                                      lang === "ar"
+                                        ? "تحويل للمعاينة واستكمال تفاصيل القطع والغرف مع العميل"
+                                        : "Resume Inspection with Customer"
+                                    }
+                                  >
+                                    <ClipboardList className="w-3.5 h-3.5 text-amber-700" />
+                                    <span>{lang === "ar" ? "استكمال المعاينة" : "Resume Visit"}</span>
+                                  </button>
+                                )}
                               </div>
                             </div>
                           </td>
@@ -731,6 +1176,14 @@ export const PaymentsPage: React.FC<{
                   total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
                 const collectionTrigger = getPendingCollectionTrigger(customer);
                 const breakdown = getCustomerPaymentBreakdown(customer.id);
+
+                // Admin calculations
+                const customerExpenses = getCustomerExpenses(customer);
+                const totalExpenses = getCustomerTotalExpenses(customer);
+                const netAfterProduction = getCustomerNetAfterProduction(customer);
+                const totalAdditions = Array.isArray(customer.additions)
+                  ? customer.additions.reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
+                  : 0;
 
                 return (
                   <div
@@ -766,32 +1219,86 @@ export const PaymentsPage: React.FC<{
                     </div>
 
                     <div className="space-y-2.5 pt-3 border-t border-zinc-100">
+                      {/* Total Contract + Additions */}
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-zinc-400 font-bold uppercase text-xs">
-                          {lang === "ar" ? "الإجمالي" : "Total"}
+                          {lang === "ar" ? "إجمالي التعاقد" : "Total"}
                         </span>
-                        <span className="font-bold text-zinc-900">
-                          {total.toLocaleString()} EGP
-                        </span>
+                        <div className="text-right">
+                          <span className="font-bold text-zinc-900 font-mono">
+                            {total.toLocaleString()} EGP
+                          </span>
+                          {totalAdditions > 0 && (
+                            <span className="block text-[10px] text-emerald-700 font-bold">
+                              +{totalAdditions.toLocaleString()} ج.م إضافات
+                            </span>
+                          )}
+                        </div>
                       </div>
+
+                      {/* Paid */}
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-zinc-400 font-bold uppercase text-xs">
                           {lang === "ar" ? "المدفوع" : "Paid"}
                         </span>
-                        <span className="font-bold text-emerald-600">
+                        <span className="font-bold text-emerald-600 font-mono">
                           {paid.toLocaleString()} EGP
                         </span>
                       </div>
+
+                      {/* Remaining */}
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-zinc-400 font-bold uppercase text-xs">
                           {lang === "ar" ? "المتبقي" : "Remaining"}
                         </span>
                         <span
-                          className={`font-bold ${remaining > 0 ? "text-rose-600" : "text-emerald-600"}`}
+                          className={`font-bold font-mono ${remaining > 0 ? "text-rose-600" : "text-emerald-600"}`}
                         >
                           {remaining.toLocaleString()} EGP
                         </span>
                       </div>
+
+                      {/* Admin Expenses Card on Mobile */}
+                      {isAdmin && (
+                        <div className="my-2 p-3 bg-zinc-50/80 rounded-2xl border border-zinc-200/70 space-y-2">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-zinc-500 font-semibold">
+                              {lang === "ar" ? "مصروفات الإنتاج:" : "Expenses:"}
+                            </span>
+                            <span className="font-bold font-mono text-zinc-800">
+                              {totalExpenses.toLocaleString()} ج.م
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center text-xs pt-1 border-t border-zinc-200/50">
+                            <span className="text-zinc-700 font-bold">
+                              {lang === "ar" ? "صافي بعد الإنتاج:" : "Net:"}
+                            </span>
+                            <span
+                              className={`font-bold font-mono px-2 py-0.5 rounded-lg border text-xs ${
+                                netAfterProduction >= 0
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                  : "bg-rose-50 text-rose-700 border-rose-200"
+                              }`}
+                            >
+                              {netAfterProduction.toLocaleString()} ج.م
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedExpenseCustomer(customer);
+                              setIsExpensesModalOpen(true);
+                            }}
+                            className="w-full mt-1 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <DollarSign className="w-3.5 h-3.5" />
+                            <span>{lang === "ar" ? "إدارة المصروفات" : "Manage Expenses"}</span>
+                            <span className="bg-indigo-200 text-indigo-800 text-[10px] px-1.5 rounded-full font-mono">
+                              {customerExpenses.length}
+                            </span>
+                          </button>
+                        </div>
+                      )}
 
                       {/* Stages Breakdown */}
                       <div className="pt-2 border-t border-zinc-100">
@@ -819,7 +1326,29 @@ export const PaymentsPage: React.FC<{
                       </div>
 
                       {/* Mobile Actions */}
-                      <div className="flex gap-2 pt-3">
+                      <div className="flex flex-wrap gap-2 pt-3">
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenAdditionModal(customer)}
+                            className="flex-1 py-2.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-xl text-xs font-bold uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                          >
+                            <PlusCircle className="w-3.5 h-3.5" />
+                            <span>{lang === "ar" ? "إضافة للتعاقد" : "Add Item"}</span>
+                          </button>
+                        )}
+
+                        {onOpenInspection && (
+                          <button
+                            type="button"
+                            onClick={() => onOpenInspection(customer)}
+                            className="flex-1 py-2.5 bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200 rounded-xl text-xs font-bold uppercase transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                          >
+                            <ClipboardList className="w-3.5 h-3.5" />
+                            <span>{lang === "ar" ? "المعاينة" : "Visit"}</span>
+                          </button>
+                        )}
+
                         {isAdmin && remaining > 0 && (
                           <button
                             onClick={() =>
@@ -828,7 +1357,7 @@ export const PaymentsPage: React.FC<{
                                 collectionTrigger?.installment || "التعاقد",
                               )
                             }
-                            className="flex-1 bg-zinc-900 text-white px-3 py-2.5 rounded-xl text-xs font-bold uppercase transition-all shadow-md flex justify-center items-center gap-1.5 cursor-pointer"
+                            className="w-full bg-zinc-900 text-white px-3 py-2.5 rounded-xl text-xs font-bold uppercase transition-all shadow-md flex justify-center items-center gap-1.5 cursor-pointer"
                           >
                             <Plus className="w-3.5 h-3.5" />
                             {collectionTrigger
@@ -840,12 +1369,17 @@ export const PaymentsPage: React.FC<{
                                 : "Add Payment"}
                           </button>
                         )}
+
                         <button
                           onClick={() => setHistoryCustomer(customer)}
-                          className="bg-white border border-zinc-200 text-zinc-700 px-3 py-2.5 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                          className="w-full bg-white border border-zinc-200 text-zinc-700 px-3 py-2.5 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
                         >
                           <History className="w-3.5 h-3.5 text-zinc-500" />
-                          <span>{customerPayments.length}</span>
+                          <span>
+                            {lang === "ar"
+                              ? `سجل الدفعات (${customerPayments.length})`
+                              : `History (${customerPayments.length})`}
+                          </span>
                         </button>
                       </div>
                     </div>
@@ -1408,6 +1942,455 @@ export const PaymentsPage: React.FC<{
                       : "Yes, Delete"}
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+        {/* 4. Add Contract Addition Modal */}
+        {isAdditionModalOpen && selectedAdditionCustomer && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAdditionModalOpen(false)}
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative bg-[#f2eee8] rounded-[2.5rem] p-6 md:p-8 max-w-lg w-full shadow-2xl border border-white/50 max-h-[92vh] overflow-y-auto"
+              dir={lang === "ar" ? "rtl" : "ltr"}
+            >
+              <button
+                type="button"
+                onClick={() => setIsAdditionModalOpen(false)}
+                className="absolute top-6 left-6 rtl:right-auto rtl:left-6 p-2 bg-white/50 hover:bg-white rounded-full transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5 text-zinc-500" />
+              </button>
+              <h2 className="text-xl md:text-2xl font-bold mb-4 text-zinc-900 flex items-center gap-2">
+                <PlusCircle className="w-6 h-6 text-blue-600" />
+                <span>{lang === "ar" ? "إضافة بند / زيادة للتعاقد" : "Add Contract Addition"}</span>
+              </h2>
+
+              {/* Current Contract Status Box */}
+              {(() => {
+                const currentTotal = Number(selectedAdditionCustomer.totalAmount) || 0;
+                const custPayments = getCustomerPayments(selectedAdditionCustomer.id);
+                const currentPaid = custPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+                const currentRemaining = currentTotal - currentPaid;
+                const addAmtNum = Number(additionAmount) || 0;
+                const newTotalCalculated = currentTotal + addAmtNum;
+                const newRemainingCalculated = currentRemaining + addAmtNum;
+
+                return (
+                  <div className="space-y-4">
+                    <div className="p-4 bg-white/70 rounded-2xl border border-white shadow-xs">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <p className="font-bold text-zinc-900 text-base">
+                            {selectedAdditionCustomer.customerName}
+                          </p>
+                          <p className="text-xs text-zinc-500 font-mono">
+                            {selectedAdditionCustomer.phone}
+                          </p>
+                        </div>
+                        <span className="text-[11px] font-bold px-2.5 py-1 bg-blue-100 text-blue-800 rounded-full">
+                          {lang === "ar" ? "تعاقد ساري" : "Contract"}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 pt-2 border-t border-zinc-100 text-center">
+                        <div className="p-2 bg-zinc-50 rounded-xl">
+                          <span className="block text-[10px] text-zinc-400 font-bold uppercase">
+                            {lang === "ar" ? "إجمالي العقد الحالي" : "Current Total"}
+                          </span>
+                          <span className="font-bold font-mono text-zinc-800 text-xs">
+                            {currentTotal.toLocaleString()} ج.م
+                          </span>
+                        </div>
+                        <div className="p-2 bg-emerald-50 rounded-xl">
+                          <span className="block text-[10px] text-emerald-600 font-bold uppercase">
+                            {lang === "ar" ? "المدفوع" : "Paid"}
+                          </span>
+                          <span className="font-bold font-mono text-emerald-700 text-xs">
+                            {currentPaid.toLocaleString()} ج.م
+                          </span>
+                        </div>
+                        <div className="p-2 bg-rose-50 rounded-xl">
+                          <span className="block text-[10px] text-rose-600 font-bold uppercase">
+                            {lang === "ar" ? "المتبقي حالياً" : "Remaining"}
+                          </span>
+                          <span className="font-bold font-mono text-rose-700 text-xs">
+                            {currentRemaining.toLocaleString()} ج.م
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <form onSubmit={handleSaveContractAddition} className="space-y-4">
+                      {/* Addition Amount */}
+                      <div>
+                        <label className="block text-xs font-bold uppercase text-zinc-600 mb-1.5 px-1">
+                          {lang === "ar" ? "سعر الإضافة / الزيادة (ج.م) *" : "Addition Price (EGP) *"}
+                        </label>
+                        <input
+                          type="number"
+                          required
+                          min="1"
+                          placeholder="مثال: 3200"
+                          value={additionAmount}
+                          onChange={(e) =>
+                            setAdditionAmount(Number(e.target.value) || "")
+                          }
+                          className="w-full px-5 py-3.5 bg-white/90 border border-white rounded-2xl outline-none focus:ring-2 focus:ring-blue-600 text-xl font-bold font-mono transition-all"
+                        />
+                        <p className="text-[11px] text-zinc-500 mt-1 px-1">
+                          {lang === "ar"
+                            ? "يدخل هذا المبلغ تلقائياً على إجمالي التعاقد ويزيد المتبقي بمقداره."
+                            : "This amount will be automatically added to the contract total."}
+                        </p>
+                      </div>
+
+                      {/* Addition Title */}
+                      <div>
+                        <label className="block text-xs font-bold uppercase text-zinc-600 mb-1.5 px-1">
+                          {lang === "ar" ? "بيان / اسم الإضافة *" : "Addition Item Name *"}
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder={lang === "ar" ? "مثال: قماش إضافي، تعديل، أرفف..." : "e.g. Extra Fabric, Wood Addon..."}
+                          value={additionTitle}
+                          onChange={(e) => setAdditionTitle(e.target.value)}
+                          className="w-full px-5 py-3 bg-white/90 border border-white rounded-2xl outline-none focus:ring-2 focus:ring-blue-600 font-bold text-sm transition-all"
+                        />
+                        {/* Quick Presets */}
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {["قماش إضافي", "تنجيد وزيادة قماش", "تعديل خشب", "إكسسوارات إضافية"].map(
+                            (preset) => (
+                              <button
+                                key={preset}
+                                type="button"
+                                onClick={() => setAdditionTitle(preset)}
+                                className="text-[11px] px-2.5 py-1 bg-white hover:bg-zinc-100 rounded-lg border border-zinc-200 text-zinc-600 font-semibold transition-colors"
+                              >
+                                {preset}
+                              </button>
+                            ),
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Additional Notes */}
+                      <div>
+                        <label className="block text-xs font-bold uppercase text-zinc-600 mb-1.5 px-1">
+                          {lang === "ar" ? "ملاحظات وتفاصيل إضافية" : "Additional Notes"}
+                        </label>
+                        <input
+                          type="text"
+                          placeholder={lang === "ar" ? "نوع القماش، اللون، المقاس..." : "Fabric type, color, dimensions..."}
+                          value={additionNotes}
+                          onChange={(e) => setAdditionNotes(e.target.value)}
+                          className="w-full px-5 py-3 bg-white/90 border border-white rounded-2xl outline-none focus:ring-2 focus:ring-blue-600 text-xs transition-all"
+                        />
+                      </div>
+
+                      {/* Live Calculation Preview */}
+                      {addAmtNum > 0 && (
+                        <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl space-y-1.5 animate-fadeIn">
+                          <div className="text-[11px] font-bold text-emerald-900 uppercase">
+                            {lang === "ar" ? "معاينة الحساب بعد الإضافة:" : "Updated Calculation Preview:"}
+                          </div>
+                          <div className="flex justify-between items-center text-xs text-emerald-950 font-bold">
+                            <span>{lang === "ar" ? "إجمالي التعاقد الجديد:" : "New Contract Total:"}</span>
+                            <span className="font-mono text-sm">{newTotalCalculated.toLocaleString()} ج.م</span>
+                          </div>
+                          <div className="flex justify-between items-center text-xs text-rose-700 font-bold">
+                            <span>{lang === "ar" ? "المتبقي الجديد المطلوب تحصيله:" : "New Remaining Due:"}</span>
+                            <span className="font-mono text-sm">{newRemainingCalculated.toLocaleString()} ج.م</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Move to Inspection Checkbox */}
+                      <label className="flex items-start gap-3 p-3.5 bg-amber-500/10 rounded-2xl border border-amber-500/20 cursor-pointer transition-all hover:bg-amber-500/15">
+                        <input
+                          type="checkbox"
+                          checked={moveToInspectionOnAdd}
+                          onChange={(e) => setMoveToInspectionOnAdd(e.target.checked)}
+                          className="mt-0.5 w-4 h-4 rounded text-zinc-900 focus:ring-zinc-800 cursor-pointer"
+                        />
+                        <div className="text-xs">
+                          <span className="font-bold text-amber-950 block">
+                            {lang === "ar"
+                              ? "تحويل العميل للمعاينة للاستكمال أثناء المعاينة"
+                              : "Transfer to inspection & continue visit"}
+                          </span>
+                          <span className="text-amber-900/80 text-[11px] block mt-0.5 leading-snug">
+                            {lang === "ar"
+                              ? "سيتم فتح شاشة المعاينة تلقائياً لإدخال واستكمال تفاصيل القطع والمقاسات مع العميل."
+                              : "Inspection window will open automatically to finalize room pieces with customer."}
+                          </span>
+                        </div>
+                      </label>
+
+                      {/* Action Buttons */}
+                      <div className="flex gap-3 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsAdditionModalOpen(false)}
+                          disabled={isSavingAddition}
+                          className="flex-1 py-3.5 bg-zinc-200/80 hover:bg-zinc-300 text-zinc-700 rounded-2xl font-bold text-xs transition-all cursor-pointer"
+                        >
+                          {lang === "ar" ? "إلغاء" : "Cancel"}
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={isSavingAddition || !additionAmount || Number(additionAmount) <= 0}
+                          className="flex-1 py-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-xs transition-all shadow-md disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                        >
+                          {isSavingAddition ? (
+                            <span>{lang === "ar" ? "جاري الحفظ..." : "Saving..."}</span>
+                          ) : (
+                            <>
+                              <Check className="w-4 h-4" />
+                              <span>{lang === "ar" ? "حفظ وتحديث إجمالي العقد" : "Save Addition"}</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                );
+              })()}
+            </motion.div>
+          </div>
+        )}
+
+        {/* 5. Admin Contract Expenses Details & Management Modal */}
+        {isExpensesModalOpen && selectedExpenseCustomer && isAdmin && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsExpensesModalOpen(false)}
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative bg-[#f2eee8] rounded-[2.5rem] p-6 md:p-8 max-w-2xl w-full shadow-2xl border border-white/50 max-h-[92vh] overflow-y-auto"
+              dir={lang === "ar" ? "rtl" : "ltr"}
+            >
+              <button
+                type="button"
+                onClick={() => setIsExpensesModalOpen(false)}
+                className="absolute top-6 left-6 rtl:right-auto rtl:left-6 p-2 bg-white/50 hover:bg-white rounded-full transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5 text-zinc-500" />
+              </button>
+
+              <h2 className="text-xl md:text-2xl font-bold mb-4 text-zinc-900 flex items-center gap-2">
+                <DollarSign className="w-6 h-6 text-indigo-600" />
+                <span>{lang === "ar" ? "مصروفات التعاقد وصافي بعد الإنتاج" : "Contract Expenses & Net Profit"}</span>
+              </h2>
+
+              {(() => {
+                const total = selectedExpenseCustomer.totalAmount || 0;
+                const expenses = getCustomerExpenses(selectedExpenseCustomer);
+                const totalExpenses = getCustomerTotalExpenses(selectedExpenseCustomer);
+                const net = total - totalExpenses;
+
+                return (
+                  <div className="space-y-5">
+                    {/* Customer & Profit Summary */}
+                    <div className="p-4 bg-white/80 rounded-2xl border border-white shadow-xs">
+                      <div className="flex justify-between items-start mb-3">
+                        <div>
+                          <h4 className="font-bold text-zinc-900 text-base">
+                            {selectedExpenseCustomer.customerName}
+                          </h4>
+                          <p className="text-xs text-zinc-500 font-mono">
+                            {selectedExpenseCustomer.phone}
+                          </p>
+                        </div>
+                        <span className="text-[10px] font-extrabold uppercase px-2.5 py-1 bg-indigo-100 text-indigo-800 rounded-full">
+                          {lang === "ar" ? "لوحة الإدارة فقط" : "Admin Only"}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
+                        <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-100">
+                          <span className="block text-[10px] text-zinc-400 font-bold uppercase">
+                            {lang === "ar" ? "إجمالي مبلغ العقد" : "Contract Total"}
+                          </span>
+                          <span className="font-bold font-mono text-zinc-900 text-sm">
+                            {total.toLocaleString()} ج.م
+                          </span>
+                        </div>
+                        <div className="p-3 bg-rose-50 rounded-xl border border-rose-100">
+                          <span className="block text-[10px] text-rose-600 font-bold uppercase">
+                            {lang === "ar" ? "إجمالي المصروفات" : "Total Expenses"}
+                          </span>
+                          <span className="font-bold font-mono text-rose-700 text-sm">
+                            {totalExpenses.toLocaleString()} ج.م
+                          </span>
+                        </div>
+                        <div
+                          className={`p-3 rounded-xl border ${
+                            net >= 0
+                              ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                              : "bg-amber-50 border-amber-200 text-amber-800"
+                          }`}
+                        >
+                          <span className="block text-[10px] font-bold uppercase opacity-80">
+                            {lang === "ar" ? "صافي بعد الإنتاج" : "Net After Production"}
+                          </span>
+                          <span className="font-extrabold font-mono text-base">
+                            {net.toLocaleString()} ج.م
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Expenses List */}
+                    <div className="space-y-3">
+                      <h4 className="text-xs font-bold uppercase text-zinc-600 flex items-center justify-between px-1">
+                        <span>{lang === "ar" ? "بنود المصروفات المسجلة في المراحل:" : "Recorded Phase Expenses:"}</span>
+                        <span className="font-mono text-zinc-400">{expenses.length} {lang === "ar" ? "بند" : "items"}</span>
+                      </h4>
+
+                      {expenses.length > 0 ? (
+                        <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                          {expenses.map((exp) => (
+                            <div
+                              key={exp.id}
+                              className="p-3 bg-white/70 rounded-xl border border-zinc-200/60 flex items-center justify-between hover:bg-white transition-colors"
+                            >
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200/60">
+                                    {exp.stageName}
+                                  </span>
+                                  <span className="text-xs font-bold text-zinc-800">
+                                    {exp.destination}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className="font-bold font-mono text-rose-600 text-sm">
+                                  {exp.amount.toLocaleString()} ج.م
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleDeleteContractExpense(exp.stageId, exp.stageIndex)
+                                  }
+                                  className="p-1.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                  title={lang === "ar" ? "حذف المصروف" : "Delete Expense"}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="p-6 bg-white/40 rounded-2xl text-center text-zinc-400 text-xs">
+                          {lang === "ar"
+                            ? "لا توجد مصروفات مسجلة لهذا العقد بعد. يمكنك إضافة مصروف جديد بالأسفل."
+                            : "No expenses recorded for this contract yet."}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Add New Expense Form */}
+                    <form
+                      onSubmit={handleAddContractExpense}
+                      className="p-4 bg-white/90 rounded-2xl border border-zinc-200 space-y-3"
+                    >
+                      <div className="text-xs font-bold text-zinc-800 uppercase flex items-center gap-1.5">
+                        <Plus className="w-4 h-4 text-indigo-600" />
+                        <span>{lang === "ar" ? "إضافة مصروف جديد للتعاقد" : "Add New Expense"}</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                        <div>
+                          <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">
+                            {lang === "ar" ? "المرحلة" : "Stage"}
+                          </label>
+                          <select
+                            value={newExpenseStageKey}
+                            onChange={(e) => setNewExpenseStageKey(e.target.value)}
+                            className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-bold outline-none focus:ring-1 focus:ring-indigo-500"
+                          >
+                            {STAGE_ORDER.map((st) => (
+                              <option key={st.key} value={st.key}>
+                                {lang === "ar" ? st.ar : st.en}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">
+                            {lang === "ar" ? "جهة الصرف" : "Destination"}
+                          </label>
+                          <input
+                            type="text"
+                            placeholder={lang === "ar" ? "مثال: ورشة نجارة، دهان، نقل..." : "e.g. Carpentry workshop..."}
+                            value={newExpenseDestination}
+                            onChange={(e) => setNewExpenseDestination(e.target.value)}
+                            className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-semibold outline-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">
+                            {lang === "ar" ? "المبلغ (ج.م) *" : "Amount *"}
+                          </label>
+                          <input
+                            type="number"
+                            required
+                            min="1"
+                            placeholder="0"
+                            value={newExpenseAmount}
+                            onChange={(e) =>
+                              setNewExpenseAmount(Number(e.target.value) || "")
+                            }
+                            className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-bold font-mono outline-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end pt-1">
+                        <button
+                          type="submit"
+                          disabled={
+                            isSavingExpense ||
+                            !newExpenseAmount ||
+                            Number(newExpenseAmount) <= 0
+                          }
+                          className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                        >
+                          {isSavingExpense ? (
+                            <span>{lang === "ar" ? "جاري الحفظ..." : "Saving..."}</span>
+                          ) : (
+                            <>
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>{lang === "ar" ? "إضافة المصروف وخصمه" : "Add Expense"}</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                );
+              })()}
             </motion.div>
           </div>
         )}
