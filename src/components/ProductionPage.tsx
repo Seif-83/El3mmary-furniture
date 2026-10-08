@@ -30,7 +30,8 @@ import {
 import toast from "react-hot-toast";
 import type { Inspection } from "../types";
 import { STAGE_ORDER } from "../constants";
-import { InvoiceService, StageService } from "../services/data";
+import { InvoiceService, StageService, CustomerService } from "../services/data";
+import { getOrderStages, isPhoneMatch } from "../utils";
 import {
   exportExpensesToExcel,
   exportElementToImage,
@@ -388,15 +389,7 @@ export const ProductionPage: React.FC<{
   const showCityFilter = hasAlex && hasCairo;
 
   const isOrderCompleted = (order: Inspection) => {
-    const orderPhone = order.phone;
-    const matchingStage = orderPhone
-      ? stages.find((s: any) => s.client?.phones?.includes(orderPhone))
-      : null;
-    const orderClientId = matchingStage?.client_id || null;
-    const orderStages = orderClientId
-      ? stages.filter((s: any) => s.client_id === orderClientId)
-      : [];
-
+    const orderStages = getOrderStages(order, stages);
     if (orderStages.length === 0) return false;
 
     // Delivery is the final stage
@@ -410,14 +403,7 @@ export const ProductionPage: React.FC<{
   };
 
   const isOrderReceived = (order: Inspection) => {
-    const orderPhone = order.phone;
-    const matchingStage = orderPhone
-      ? stages.find((s: any) => s.client?.phones?.includes(orderPhone))
-      : null;
-    const orderClientId = matchingStage?.client_id || null;
-    const orderStages = orderClientId
-      ? stages.filter((s: any) => s.client_id === orderClientId)
-      : [];
+    const orderStages = getOrderStages(order, stages);
     const receivedStage = orderStages.find((s: any) => s.stage === "received");
     return receivedStage?.status === "done";
   };
@@ -480,14 +466,7 @@ export const ProductionPage: React.FC<{
       return false;
     }
 
-    const orderPhone = order.phone;
-    const matchingStage = orderPhone
-      ? stages.find((s: any) => s.client?.phones?.includes(orderPhone))
-      : null;
-    const orderClientId = matchingStage?.client_id || null;
-    const orderStages = orderClientId
-      ? stages.filter((s: any) => s.client_id === orderClientId)
-      : [];
+    const orderStages = getOrderStages(order, stages);
 
     if (timeFilter !== "all") {
       if (timeFilter === "storage") {
@@ -557,14 +536,11 @@ export const ProductionPage: React.FC<{
 
       // Find matching order in allProductionData
       const matchingOrder = allProductionData.find((o) => {
-        if (!o.phone) return false;
-        if (stRec.client?.phones?.includes(o.phone)) return true;
-        const normO = o.phone.replace(/\D/g, "");
-        if (!normO) return false;
-        return (stRec.client?.phones || []).some((p: string) => {
-          const normP = p.replace(/\D/g, "");
-          return normP === normO || normP.endsWith(normO) || normO.endsWith(normP);
-        });
+        if (stRec.client_id && (o.id === stRec.client_id || (o as any).clientId === stRec.client_id)) return true;
+        if (stRec.visit_id && o.id === stRec.visit_id) return true;
+        if (o.phone && stRec.client?.phones && isPhoneMatch(o.phone, stRec.client.phones)) return true;
+        if (o.customerName && stRec.client?.name && o.customerName.trim().toLowerCase() === stRec.client.name.trim().toLowerCase()) return true;
+        return false;
       });
 
       const customerName = matchingOrder?.customerName || (lang === "ar" ? "طلب إنتاج" : "Production Order");
@@ -734,13 +710,96 @@ export const ProductionPage: React.FC<{
     }
   };
 
+  // Helper to ensure customer and stages exist, then confirm intake
+  const handleConfirmIntake = async (order: Inspection, currentStages: any[]) => {
+    const receivedStage = currentStages.find((s: any) => s.stage === "received");
+    if (receivedStage) {
+      onStageUpdate(receivedStage.id, "done");
+      toast.success(
+        lang === "ar"
+          ? "تم الاستلام بنجاح وتم نقل الطلب إلى الإنتاج"
+          : "Intake confirmed, moved to production",
+      );
+      return;
+    }
+
+    try {
+      const phone = order.phone?.trim();
+      const name = order.customerName?.trim();
+      let localClient = phone ? await CustomerService.getClientByPhone(phone) : null;
+      let clientId = localClient?.id || (order as any).clientId || order.id || crypto.randomUUID();
+      if (!localClient && phone) {
+        await CustomerService.saveClient({
+          id: clientId,
+          name: name || phone,
+          phones: [phone],
+        });
+      }
+      const stagesPayload = STAGE_ORDER.map((stage) => ({
+        id: crypto.randomUUID(),
+        client_id: clientId,
+        visit_id: order.id || null,
+        stage: stage.key,
+        status: stage.key === "received" ? "done" : "not_started",
+        completed_at: stage.key === "received" ? new Date().toISOString() : null,
+        created_at: new Date().toISOString(),
+      }));
+      await StageService.insertMultiple(stagesPayload);
+      if (onRefresh) await onRefresh();
+      toast.success(
+        lang === "ar"
+          ? "تم الاستلام بنجاح وتم نقل الطلب إلى الإنتاج"
+          : "Intake confirmed, moved to production",
+      );
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to confirm intake");
+    }
+  };
+
   // Check stage click behavior
-  const handleStageClick = (
+  const handleStageClick = async (
     stageRecord: any,
     stageDef: (typeof STAGE_ORDER)[number],
     order: Inspection,
   ) => {
-    if (!canEditStages || !stageRecord) return;
+    if (!canEditStages) return;
+
+    if (!stageRecord) {
+      try {
+        const phone = order.phone?.trim();
+        const name = order.customerName?.trim();
+        let localClient = phone ? await CustomerService.getClientByPhone(phone) : null;
+        let clientId = localClient?.id || (order as any).clientId || order.id || crypto.randomUUID();
+        if (!localClient && phone) {
+          await CustomerService.saveClient({
+            id: clientId,
+            name: name || phone,
+            phones: [phone],
+          });
+        }
+        const targetStatus = isAdmin ? "done" : (isTimedStage(stageDef.key) ? "in_progress" : "done");
+        const stagesPayload = STAGE_ORDER.map((stage) => ({
+          id: crypto.randomUUID(),
+          client_id: clientId,
+          visit_id: order.id || null,
+          stage: stage.key,
+          status: stage.key === stageDef.key ? targetStatus : "not_started",
+          completed_at: stage.key === stageDef.key && targetStatus === "done" ? new Date().toISOString() : null,
+          created_at: new Date().toISOString(),
+        }));
+        await StageService.insertMultiple(stagesPayload);
+        if (onRefresh) await onRefresh();
+        toast.success(
+          lang === "ar"
+            ? `تم تحديث مرحلة ${stageDef.ar}`
+            : `Stage ${stageDef.en} updated`,
+        );
+      } catch (err: any) {
+        toast.error(err?.message || "Failed to update stage");
+      }
+      return;
+    }
+
     const isDone = stageRecord.status === "done";
     const isInProgress = stageRecord.status === "in_progress";
     const isTimed = isTimedStage(stageDef.key);
@@ -1382,14 +1441,7 @@ export const ProductionPage: React.FC<{
       {filteredProductionData.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
           {filteredProductionData.map((order) => {
-            const orderPhone = order.phone;
-            const matchingStage = orderPhone
-              ? stages.find((s: any) => s.client?.phones?.includes(orderPhone))
-              : null;
-            const orderClientId = matchingStage?.client_id || null;
-            const orderStages = orderClientId
-              ? stages.filter((s: any) => s.client_id === orderClientId)
-              : [];
+            const orderStages = getOrderStages(order, stages);
 
             // Find currently active in-progress stage
             const activeInProgressStage = orderStages.find(
@@ -1515,17 +1567,7 @@ export const ProductionPage: React.FC<{
                       {canEditStages && (
                         <button
                           type="button"
-                          onClick={() => {
-                            const receivedStage = orderStages.find((s: any) => s.stage === "received");
-                            if (receivedStage) {
-                              onStageUpdate(receivedStage.id, "done");
-                              toast.success(
-                                lang === "ar"
-                                  ? "تم الاستلام بنجاح وتم نقل الطلب إلى الإنتاج"
-                                  : "Intake confirmed, moved to production",
-                              );
-                            }
-                          }}
+                          onClick={() => handleConfirmIntake(order, orderStages)}
                           className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700 text-white py-2 px-3.5 rounded-xl text-xs font-bold shadow-md transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
                         >
                           <CheckCircle2 className="w-3.5 h-3.5" />
@@ -1717,7 +1759,6 @@ export const ProductionPage: React.FC<{
 
                       const clickable =
                         canEditStages &&
-                        !!stageRecord &&
                         (isAdmin || !isDone);
 
                       const circleColor = isDone

@@ -31,6 +31,7 @@ import { InvoiceService, OrderService, StageService } from "../services/data";
 import { db } from "../services/db";
 import { STAGE_ORDER } from "../constants";
 import type { Inspection, ContractAddition, FurniturePiece } from "../types";
+import { getOrderStages } from "../utils";
 
 export interface PaymentRecord {
   id: string;
@@ -185,14 +186,7 @@ export const PaymentsPage: React.FC<{
   };
 
   const getPendingCollectionTrigger = (customer: Inspection) => {
-    const customerPhone = customer.phone;
-    const matchingStage = customerPhone
-      ? stages.find((s: any) => s.client?.phones?.includes(customerPhone))
-      : null;
-    const clientId = matchingStage?.client_id || null;
-    const customerStages = clientId
-      ? stages.filter((s: any) => s.client_id === clientId)
-      : [];
+    const customerStages = getOrderStages(customer, stages);
 
     const total = customer.totalAmount || 0;
     const customerPayments = getCustomerPayments(customer.id);
@@ -300,22 +294,7 @@ export const PaymentsPage: React.FC<{
 
   // Customer stages & expense calculations
   const getCustomerStages = (customer: Inspection) => {
-    return stages.filter((stRec: any) => {
-      if (stRec.visit_id && stRec.visit_id === customer.id) return true;
-      if (!customer.phone) return false;
-      if (stRec.client?.phones?.includes(customer.phone)) return true;
-      const normC = customer.phone.replace(/\D/g, "");
-      if (!normC) return false;
-      return (stRec.client?.phones || []).some((p: string) => {
-        const normP = p.replace(/\D/g, "");
-        return (
-          normP === normC ||
-          (normP.length >= 8 &&
-            normC.length >= 8 &&
-            (normP.endsWith(normC) || normC.endsWith(normP)))
-        );
-      });
-    });
+    return getOrderStages(customer, stages);
   };
 
   const getCustomerExpenses = (customer: Inspection) => {

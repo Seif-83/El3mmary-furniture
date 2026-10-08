@@ -1,6 +1,7 @@
 import { db, type LocalProductionStage } from "./db";
 import { SyncManager } from "./sync";
 import { supabase } from "../lib/supabase";
+import { isPhoneMatch, extractCleanPhones } from "../utils";
 
 export class CustomerService {
   static async getAll() {
@@ -18,8 +19,10 @@ export class CustomerService {
     address?: string;
     governorate?: string;
   }) {
+    const cleanPhones = extractCleanPhones(client.phones);
     const record = {
       ...client,
+      phones: cleanPhones.length > 0 ? cleanPhones : client.phones,
       created_at: new Date().toISOString(),
       last_modified: Date.now(),
     };
@@ -28,7 +31,7 @@ export class CustomerService {
     await SyncManager.queueOperation("INSERT", "clients", client.id, {
       id: client.id,
       name: client.name,
-      phones: client.phones,
+      phones: record.phones,
       address: client.address,
       governorate: client.governorate,
       created_at: record.created_at,
@@ -40,7 +43,8 @@ export class CustomerService {
   }
 
   static async getClientByPhone(phone: string) {
-    return db.clients.filter((c) => c.phones.includes(phone)).first();
+    const clients = await db.clients.toArray();
+    return clients.find((c) => isPhoneMatch(c.phones, phone));
   }
 
   static async insert(customer: any) {
@@ -247,13 +251,21 @@ export class StageService {
     const clientsList = await db.clients.toArray();
     const clientMap = new Map(clientsList.map((c) => [c.id, c]));
 
-    // Join stage records with clients phones to mimic Supabase relation result
-    return stagesList.map((s) => ({
-      ...s,
-      client: s.client_id
-        ? { phones: clientMap.get(s.client_id)?.phones || [] }
-        : undefined,
-    }));
+    // Join stage records with clients phones & names to mimic Supabase relation result
+    return stagesList.map((s) => {
+      const client = s.client_id ? clientMap.get(s.client_id) : undefined;
+      const cleanPhones = client ? extractCleanPhones(client.phones) : [];
+      return {
+        ...s,
+        client: client
+          ? {
+              id: client.id,
+              name: client.name,
+              phones: cleanPhones.length > 0 ? cleanPhones : (client.phones || []),
+            }
+          : undefined,
+      };
+    });
   }
 
   static async insertMultiple(stages: any[]) {

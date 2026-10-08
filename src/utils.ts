@@ -248,3 +248,87 @@ export const playSound = async (type: "success" | "error" | "delete") => {
     }
   } catch {}
 };
+
+export const extractCleanPhones = (phones: any): string[] => {
+  if (!phones) return [];
+  const arr = Array.isArray(phones) ? phones : [phones];
+  return arr
+    .flatMap((item) =>
+      typeof item === "string" ? item.split(/[,/;\s]+/) : [String(item)],
+    )
+    .map((p) => p.trim())
+    .filter(Boolean);
+};
+
+export const isPhoneMatch = (phoneA: any, phoneB: any): boolean => {
+  if (!phoneA || !phoneB) return false;
+  const phonesA = extractCleanPhones(phoneA);
+  const phonesB = extractCleanPhones(phoneB);
+
+  for (const a of phonesA) {
+    const normA = normalizePhone(a);
+    if (!normA) continue;
+    for (const b of phonesB) {
+      const normB = normalizePhone(b);
+      if (!normB) continue;
+      if (normA === normB) return true;
+      // Match Egyptian mobile numbers (last 9 digits, e.g. 1006182278)
+      if (normA.length >= 9 && normB.length >= 9) {
+        if (normA.slice(-9) === normB.slice(-9)) return true;
+      }
+      // Substring match for length >= 8 if one ends with the other
+      if (normA.length >= 8 && normB.length >= 8) {
+        if (normA.endsWith(normB) || normB.endsWith(normA)) return true;
+      }
+    }
+  }
+  return false;
+};
+
+export const getOrderStages = (order: any, allStages: any[]): any[] => {
+  if (!order || !Array.isArray(allStages) || allStages.length === 0) return [];
+
+  // 1. Explicit client ID match
+  const targetClientId = order.clientId || null;
+  if (targetClientId) {
+    const matched = allStages.filter((s: any) => s.client_id === targetClientId);
+    if (matched.length > 0) return matched;
+  }
+
+  // 2. Direct ID / Visit ID match
+  if (order.id) {
+    const directMatches = allStages.filter(
+      (s: any) =>
+        (s.client_id && s.client_id === order.id) ||
+        (s.visit_id && s.visit_id === order.id),
+    );
+    if (directMatches.length > 0) return directMatches;
+  }
+
+  // 3. Match by phone
+  let foundStage = allStages.find((s: any) => {
+    if (!order.phone) return false;
+    const stagePhones = s.client?.phones;
+    return isPhoneMatch(order.phone, stagePhones);
+  });
+
+  // 4. Match by customer name if phone didn't match
+  if (!foundStage && order.customerName) {
+    const orderNameNorm = order.customerName.trim().toLowerCase();
+    foundStage = allStages.find((s: any) => {
+      const clientName = s.client?.name?.trim()?.toLowerCase();
+      return (
+        clientName &&
+        (clientName === orderNameNorm ||
+          clientName.includes(orderNameNorm) ||
+          orderNameNorm.includes(clientName))
+      );
+    });
+  }
+
+  if (foundStage?.client_id) {
+    return allStages.filter((s: any) => s.client_id === foundStage.client_id);
+  }
+
+  return [];
+};

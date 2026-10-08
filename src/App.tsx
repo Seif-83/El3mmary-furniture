@@ -98,6 +98,7 @@ import {
   withoutRoomTypesAndAroVeneer,
   playSound,
   formatTime12,
+  getOrderStages,
 } from "./utils";
 import { ProductionPage } from "./components/ProductionPage";
 import { PaymentsPage, type PaymentRecord } from "./components/PaymentsPage";
@@ -506,8 +507,7 @@ export default function App() {
     let inProgress = 0;
 
     branchOrders.forEach((order) => {
-      const orderPhone = order.phone;
-      const orderStages = stages.filter((s: any) => s.client?.phones?.includes(orderPhone));
+      const orderStages = getOrderStages(order, stages);
       if (orderStages.length > 0) {
         const allDone = orderStages.every((s: any) => s.status === "done");
         if (allDone) {
@@ -6251,14 +6251,7 @@ export default function App() {
                                     ? "إنتاج فعلي"
                                     : "In Production",
                                 value: contractedCustomers.filter((order) => {
-                                  const orderPhone = order.phone;
-                                  const matchingStage = orderPhone
-                                    ? stages.find((s: any) => s.client?.phones?.includes(orderPhone))
-                                    : null;
-                                  const orderClientId = matchingStage?.client_id || null;
-                                  const orderStages = orderClientId
-                                    ? stages.filter((s: any) => s.client_id === orderClientId)
-                                    : [];
+                                  const orderStages = getOrderStages(order, stages);
                                   return !STAGE_ORDER.every((stageDef) => {
                                     const stageRecord = orderStages.find((s: any) => s.stage === stageDef.key);
                                     return stageRecord?.status === "done";
