@@ -59,9 +59,11 @@ if (useMockSupabase) {
   const mockFrom = (_table: string) => createMockQuery();
   const mockAuth = {
     getSession: async () => ({ data: { session: null }, error: null }),
-    onAuthStateChange: (_cb: any) => ({
-      data: { subscription: { unsubscribe: () => {} } },
-    }),
+    onAuthStateChange: (cb: any) => {
+      // Fire immediately with no session so the app exits the auth-checking loading state
+      setTimeout(() => cb("INITIAL_SESSION", null), 0);
+      return { data: { subscription: { unsubscribe: () => {} } } };
+    },
     signInWithPassword: async () => ({
       data: null,
       error: {
