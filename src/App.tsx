@@ -46,6 +46,7 @@ import {
   Sparkles,
   MessageSquare,
   Clock,
+  Coins,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { supabase, supabaseAdmin, SUPABASE_CONFIGURED } from "./lib/supabase";
@@ -492,6 +493,7 @@ export default function App() {
     pieces: [],
     totalAmount: 0,
   });
+  const [inspectionPricingMode, setInspectionPricingMode] = useState<"detailed" | "total">("detailed");
 
   const [stages, setStages] = useState<any[]>([]);
   const [settings, setSettings] = useState<Record<string, string>>({});
@@ -2244,6 +2246,20 @@ export default function App() {
         }
       }
 
+      // 2b. If still not found, search local non_contracted_customers table
+      if (!match) {
+        const localNonContracted = await OrderService.getNonContracted();
+        const matchedNonContracted = localNonContracted.find(
+          (c: any) => normalizePhone(c.phone) === normalized,
+        );
+        if (matchedNonContracted) {
+          match = {
+            ...mapInspectionFromDB(matchedNonContracted),
+            isInspection: true,
+          };
+        }
+      }
+
       let fetchedPayments: any[] = [];
       let fetchedStages: any[] = [];
 
@@ -2332,6 +2348,30 @@ export default function App() {
             }
           } catch (inspErr) {
             console.warn("Remote inspections check error:", inspErr);
+          }
+        }
+
+        // 3c. If still not found, check remote non_contracted_customers table
+        if (!match) {
+          try {
+            const { data: remoteNonContracted, error: ncError } = await supabase
+              .from("non_contracted_customers")
+              .select("*")
+              .or(`phone.eq.${normalized},phone.eq.${rawPhone}`);
+
+            if (!ncError && remoteNonContracted && remoteNonContracted.length > 0) {
+              const matchedNc =
+                remoteNonContracted.find(
+                  (r: any) => normalizePhone(r.phone) === normalized,
+                ) || remoteNonContracted[0];
+
+              match = {
+                ...mapInspectionFromDB(matchedNc),
+                isInspection: true,
+              };
+            }
+          } catch (ncErr) {
+            console.warn("Remote non_contracted_customers check error:", ncErr);
           }
         }
       }
@@ -3455,6 +3495,74 @@ export default function App() {
       return total;
     }
     return pieces.reduce((sum, p) => sum + pieceTotal(p), 0);
+  };
+
+  const addPieceRow = (name: string = "", price: number = 0) => {
+    setInspectionFormData((prev) => {
+      const pieces = [
+        ...(prev.pieces || []),
+        {
+          name,
+          price,
+          quantity: 1,
+          details: "",
+          room_type: prev.room_types?.[0] || "general",
+          room_instance_id: prev.room_types?.[0] || "general",
+        },
+      ];
+      const totalAmount = pieces.reduce(
+        (sum, p) => sum + (Number(p.price) || 0) * (Number(p.quantity) || 1),
+        0,
+      );
+      return {
+        ...prev,
+        pieces,
+        totalAmount,
+      };
+    });
+  };
+
+  const updatePieceRow = (
+    index: number,
+    field: "name" | "price" | "quantity" | "details",
+    value: any,
+  ) => {
+    setInspectionFormData((prev) => {
+      const pieces = [...(prev.pieces || [])];
+      if (!pieces[index]) return prev;
+      pieces[index] = { ...pieces[index], [field]: value };
+      const totalAmount = pieces.reduce(
+        (sum, p) => sum + (Number(p.price) || 0) * (Number(p.quantity) || 1),
+        0,
+      );
+      return {
+        ...prev,
+        pieces,
+        totalAmount,
+      };
+    });
+  };
+
+  const removePieceRow = (index: number) => {
+    setInspectionFormData((prev) => {
+      const pieces = (prev.pieces || []).filter((_, i) => i !== index);
+      const totalAmount = pieces.reduce(
+        (sum, p) => sum + (Number(p.price) || 0) * (Number(p.quantity) || 1),
+        0,
+      );
+      return {
+        ...prev,
+        pieces,
+        totalAmount,
+      };
+    });
+  };
+
+  const setDirectTotalAmount = (amount: number) => {
+    setInspectionFormData((prev) => ({
+      ...prev,
+      totalAmount: amount,
+    }));
   };
 
   const addPiece = (
@@ -6694,6 +6802,7 @@ export default function App() {
                         stages={stages}
                         lang={lang}
                         isAdmin={isAdminUser}
+                        isFactorySupervisor={isFactorySupervisor}
                         t={t}
                         onRefresh={refreshAllData}
                         onSendWhatsApp={sendWhatsAppMessage}
@@ -7808,23 +7917,278 @@ export default function App() {
 
                 {inspectionStep === 2 && (
                   <div className="space-y-6">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold uppercase text-zinc-400 px-1">
-                        {t.rooms}
-                      </label>
-                      <input
-                        readOnly
-                        type="number"
-                        className="w-full px-5 py-4 bg-black/10 border border-black/10 rounded-2xl text-zinc-500"
-                        value={inspectionFormData.room_types?.length || 0}
-                      />
+                    {/* ── 1. Prominent Total Price Card (مربع السعر الإجمالي البارز) ── */}
+                    <div className="rounded-[2.2rem] bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-800 text-white p-6 sm:p-7 shadow-2xl border-2 border-amber-400/50 relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-48 h-48 bg-amber-500/10 rounded-full -mr-24 -mt-24 blur-3xl pointer-events-none" />
+
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5 relative z-10">
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="w-3 h-3 rounded-full bg-amber-400 animate-pulse" />
+                            <span className="text-xs uppercase font-extrabold tracking-wider text-amber-300">
+                              {lang === "ar" ? "السعر الإجمالي للمعاينة" : "Total Inspection Price"}
+                            </span>
+                          </div>
+                          <p className="text-xs text-zinc-300 leading-relaxed max-w-sm">
+                            {inspectionPricingMode === "total"
+                              ? (lang === "ar"
+                                  ? "أدخل السعر الإجمالي مباشرة في المربع دون الحاجة لكتابة تفاصيل القطع."
+                                  : "Enter the total price directly without piece details.")
+                              : (lang === "ar"
+                                  ? "يتم جمع السعر الإجمالي تلقائياً من مجموع أسعار القطع بالجدول أدناه."
+                                  : "Auto-calculated from piece prices in the table below.")}
+                          </p>
+                        </div>
+
+                        {/* Large, Prominent Number / Input */}
+                        <div className="shrink-0">
+                          {inspectionPricingMode === "total" ? (
+                            <div className="flex items-center bg-zinc-900 border-2 border-amber-400 rounded-2xl px-4 py-3 shadow-[0_0_25px_rgba(251,191,36,0.25)] focus-within:ring-4 focus-within:ring-amber-400/30 transition-all">
+                              <input
+                                type="number"
+                                min={0}
+                                value={inspectionFormData.totalAmount || ""}
+                                onChange={(e) => setDirectTotalAmount(Number(e.target.value) || 0)}
+                                placeholder="0"
+                                className="w-36 sm:w-48 bg-transparent text-2xl sm:text-3xl font-black text-amber-300 outline-none text-right font-mono"
+                                autoFocus
+                              />
+                              <span className="ms-3 text-xs sm:text-sm font-bold text-amber-200 shrink-0">
+                                {lang === "ar" ? "ج.م" : "EGP"}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex items-baseline gap-2 bg-zinc-900/90 border border-amber-400/60 rounded-2xl px-5 py-3 shadow-lg">
+                              <span className="text-3xl sm:text-4xl font-black text-amber-400 font-mono tracking-tight">
+                                {(inspectionFormData.totalAmount || 0).toLocaleString()}
+                              </span>
+                              <span className="text-xs sm:text-sm font-bold text-zinc-400">
+                                {lang === "ar" ? "ج.م" : "EGP"}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="space-y-4">
-                      <div className="rounded-3xl border border-black/10 bg-[#faf7f1] p-4">
-                        <div className="text-sm font-semibold mb-3">
-                          {lang === "ar" ? "فئات الغرف" : "Room categories"}
+                    {/* ── 2. Pricing Mode Switcher (طريقة التسعير) ── */}
+                    <div className="grid grid-cols-2 gap-3 p-1.5 bg-zinc-100 rounded-2xl border border-zinc-200">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInspectionPricingMode("detailed");
+                          if (inspectionFormData.pieces && inspectionFormData.pieces.length > 0) {
+                            const sum = inspectionFormData.pieces.reduce(
+                              (s, p) => s + (Number(p.price) || 0) * (Number(p.quantity) || 1),
+                              0,
+                            );
+                            setInspectionFormData((prev) => ({ ...prev, totalAmount: sum }));
+                          }
+                        }}
+                        className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                          inspectionPricingMode === "detailed"
+                            ? "bg-zinc-900 text-white shadow-md scale-[1.02]"
+                            : "text-zinc-600 hover:text-zinc-900 hover:bg-white/60"
+                        }`}
+                      >
+                        <FileSpreadsheet className="w-4 h-4" />
+                        <span>{lang === "ar" ? "تسعير تفصيلي بالقطع (جدول)" : "Detailed (Table)"}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setInspectionPricingMode("total")}
+                        className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                          inspectionPricingMode === "total"
+                            ? "bg-zinc-900 text-white shadow-md scale-[1.02]"
+                            : "text-zinc-600 hover:text-zinc-900 hover:bg-white/60"
+                        }`}
+                      >
+                        <Coins className="w-4 h-4" />
+                        <span>{lang === "ar" ? "إدخال السعر الإجمالي مباشرة" : "Direct Total"}</span>
+                      </button>
+                    </div>
+
+                    {/* ── 3. Detailed Mode: 2-Column Table (جدول من خانتين) ── */}
+                    {inspectionPricingMode === "detailed" && (
+                      <div className="space-y-4">
+                        {/* Quick Add Chips */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-bold text-zinc-500">
+                            {lang === "ar" ? "إضافة سريعة:" : "Quick add:"}
+                          </span>
+                          {[
+                            "سرير",
+                            "دولاب",
+                            "تسريحة",
+                            "كومود",
+                            "ركنة",
+                            "سفرة",
+                            "نيش",
+                            "مكتب",
+                            "ترابيزة",
+                            "بانكيت",
+                          ].map((presetName) => (
+                            <button
+                              key={presetName}
+                              type="button"
+                              onClick={() => addPieceRow(presetName, 0)}
+                              className="px-3 py-1.5 rounded-full text-xs font-semibold bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-900 hover:text-white transition-all shadow-xs cursor-pointer active:scale-95"
+                            >
+                              + {presetName}
+                            </button>
+                          ))}
                         </div>
+
+                        {/* 2-Column Table */}
+                        <div className="bg-white rounded-3xl border border-zinc-200 overflow-hidden shadow-sm">
+                          <table className="w-full text-right border-collapse">
+                            <thead>
+                              <tr className="bg-zinc-50 border-b border-zinc-200 text-[11px] font-extrabold uppercase text-zinc-500 tracking-wider">
+                                <th className="px-4 py-3.5 w-12 text-center">#</th>
+                                <th className="px-5 py-3.5">{lang === "ar" ? "اسم القطعة (مثل: سرير، دولاب)" : "Piece Name"}</th>
+                                <th className="px-5 py-3.5 w-44">{lang === "ar" ? "السعر (جنيه)" : "Price (EGP)"}</th>
+                                <th className="px-4 py-3.5 w-16 text-center">{lang === "ar" ? "حذف" : "Del"}</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-zinc-100">
+                              {(inspectionFormData.pieces || []).map((p, idx) => (
+                                <tr key={idx} className="hover:bg-amber-50/20 transition-colors">
+                                  <td className="px-4 py-3 text-center text-xs text-zinc-400 font-mono">
+                                    {idx + 1}
+                                  </td>
+                                  <td className="px-5 py-3">
+                                    <input
+                                      type="text"
+                                      value={p.name}
+                                      onChange={(e) => updatePieceRow(idx, "name", e.target.value)}
+                                      placeholder={lang === "ar" ? "مثال: سرير، دولاب، مكتب..." : "e.g., Bed, Wardrobe..."}
+                                      className="w-full bg-zinc-50 hover:bg-white focus:bg-white border border-zinc-200 focus:border-zinc-900 rounded-xl px-3.5 py-2 text-sm font-semibold text-zinc-800 outline-none transition-all"
+                                    />
+                                  </td>
+                                  <td className="px-5 py-3">
+                                    <div className="relative">
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        value={p.price || ""}
+                                        onChange={(e) => updatePieceRow(idx, "price", Number(e.target.value) || 0)}
+                                        placeholder="0"
+                                        className="w-full bg-zinc-50 hover:bg-white focus:bg-white border border-zinc-200 focus:border-zinc-900 rounded-xl px-3.5 py-2 pe-12 text-sm font-bold text-zinc-900 text-right font-mono outline-none transition-all"
+                                      />
+                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-zinc-400 pointer-events-none">
+                                        {lang === "ar" ? "ج.م" : "EGP"}
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => removePieceRow(idx)}
+                                      className="w-8 h-8 rounded-lg flex items-center justify-center text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-all cursor-pointer mx-auto"
+                                      title={lang === "ar" ? "حذف القطعة" : "Delete piece"}
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+
+                              {(inspectionFormData.pieces || []).length === 0 && (
+                                <tr>
+                                  <td colSpan={4} className="py-12 text-center text-zinc-400 text-sm">
+                                    <p className="font-semibold text-zinc-600 mb-1">
+                                      {lang === "ar" ? "الجدول فارغ حالياً" : "Table is empty"}
+                                    </p>
+                                    <p className="text-xs text-zinc-400">
+                                      {lang === "ar"
+                                        ? "اضغط على الزر أدناه لإضافة قطعة، أو اختر من أزرار الإضافة السريعة بالأعلى."
+                                        : "Click Add Piece below or choose from quick items."}
+                                    </p>
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                            <tfoot>
+                              <tr className="bg-zinc-50 border-t-2 border-zinc-200 font-bold text-sm">
+                                <td colSpan={2} className="px-5 py-4 text-zinc-800">
+                                  <div className="flex items-center gap-2">
+                                    <Sparkles className="w-4 h-4 text-amber-500" />
+                                    <span>{lang === "ar" ? "الإجمالي المحسوب تلقائياً من الجدول:" : "Auto-calculated Total:"}</span>
+                                  </div>
+                                </td>
+                                <td className="px-5 py-4 font-mono text-lg font-black text-amber-600">
+                                  {(inspectionFormData.totalAmount || 0).toLocaleString()} {lang === "ar" ? "ج.م" : "EGP"}
+                                </td>
+                                <td></td>
+                              </tr>
+                            </tfoot>
+                          </table>
+
+                          {/* Add Row Button */}
+                          <div className="p-4 bg-zinc-50/70 border-t border-zinc-100 flex justify-center">
+                            <button
+                              type="button"
+                              onClick={() => addPieceRow("", 0)}
+                              className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-zinc-900 text-white text-xs sm:text-sm font-bold hover:bg-zinc-800 transition-all shadow-md active:scale-95 cursor-pointer"
+                            >
+                              <Plus className="w-4 h-4" />
+                              <span>{lang === "ar" ? "إضافة قطعة جديدة للجدول" : "Add New Piece"}</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── 4. Direct Total Mode Settings ── */}
+                    {inspectionPricingMode === "total" && (
+                      <div className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm space-y-4">
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-zinc-700 block">
+                            {lang === "ar" ? "عدد الغرف الإجمالي (اختياري):" : "Total Rooms (Optional):"}
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={inspectionFormData.rooms || ""}
+                            onChange={(e) =>
+                              setInspectionFormData({
+                                ...inspectionFormData,
+                                rooms: Number(e.target.value) || 0,
+                              })
+                            }
+                            placeholder="0"
+                            className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-2xl text-sm font-semibold text-zinc-800 outline-none focus:border-zinc-900 focus:bg-white transition-all"
+                          />
+                        </div>
+
+                        <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 text-amber-900 text-xs flex items-center gap-3">
+                          <Sparkles className="w-5 h-5 text-amber-600 shrink-0" />
+                          <span>
+                            {lang === "ar"
+                              ? "تم تفعيل خيار السعر الإجمالي المباشر. يمكنك كتابة وتعديل المبلغ في المربع البارز بالأعلى متى شئت وسيتم اعتماده كإجمالي للمعاينة والتعاقد."
+                              : "Direct total price mode enabled. You can edit the amount in the prominent box above anytime."}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── 5. Optional Room Categories Collapsible (فئات الغرف المشمولة) ── */}
+                    <details className="rounded-3xl border border-zinc-200 bg-white p-5 group shadow-xs">
+                      <summary className="text-xs font-bold text-zinc-700 cursor-pointer flex items-center justify-between select-none">
+                        <div className="flex items-center gap-2">
+                          <Armchair className="w-4 h-4 text-accent-tan" />
+                          <span>{lang === "ar" ? "تحديد فئات الغرف المشمولة (اختياري)" : "Room Categories (Optional)"}</span>
+                          {(inspectionFormData.room_types || []).length > 0 && (
+                            <span className="px-2 py-0.5 rounded-full bg-zinc-900 text-white text-[10px] font-bold font-mono">
+                              {(inspectionFormData.room_types || []).length}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-zinc-400 group-open:rotate-180 transition-transform">▼</span>
+                      </summary>
+
+                      <div className="mt-4 pt-4 border-t border-zinc-100 space-y-3">
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                           {ROOM_TYPES.map((room) => {
                             const count = getRoomTypeCount(room.key);
@@ -7833,741 +8197,24 @@ export default function App() {
                                 key={room.key}
                                 type="button"
                                 onClick={() => toggleRoomType(room.key)}
-                                className={`flex items-center justify-center gap-2 px-3 py-2 rounded-3xl text-sm font-bold transition-all ${count > 0 ? "bg-zinc-900 text-white" : "bg-white border border-black/10 text-zinc-700 hover:bg-zinc-100"}`}
+                                className={`flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                                  count > 0
+                                    ? "bg-zinc-900 text-white shadow-xs"
+                                    : "bg-zinc-50 border border-zinc-200 text-zinc-700 hover:bg-zinc-100"
+                                }`}
                               >
                                 <span>{room.ar}</span>
-                                {count > 0 ? (
-                                  <span className="inline-flex h-6 min-w-[24px] items-center justify-center rounded-full bg-white text-[10px] font-black text-zinc-900 px-1">
+                                {count > 0 && (
+                                  <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-white text-[10px] font-black text-zinc-900 px-1">
                                     {count}
                                   </span>
-                                ) : null}
+                                )}
                               </button>
                             );
                           })}
                         </div>
-                        {inspectionFormData.room_types?.length ? (
-                          <div className="text-xs text-zinc-500 mt-3">
-                            {lang === "ar"
-                              ? "الغرف المحددة:"
-                              : "Selected rooms:"}{" "}
-                            {inspectionFormData.room_types
-                              .map(
-                                (key) =>
-                                  ROOM_TYPES.find((room) => room.key === key)
-                                    ?.ar || key,
-                              )
-                              .join(", ")}
-                          </div>
-                        ) : (
-                          <div className="text-xs text-zinc-500 mt-3">
-                            {lang === "ar"
-                              ? "اختر الفئات التي ستشملها المعاينة."
-                              : "Pick the room categories to include in this visit."}
-                          </div>
-                        )}
                       </div>
-
-                      {inspectionFormData.room_types?.length ? (
-                        <div className="rounded-3xl border border-black/10 bg-white p-4">
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-3">
-                            <div className="text-sm font-semibold">
-                              {lang === "ar"
-                                ? "القائمة الافتراضية لكل غرفة"
-                                : "Default checklist per room"}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const firstRoomType =
-                                  inspectionFormData.room_types?.[0];
-                                if (firstRoomType) {
-                                  addRoomTypeInstance(firstRoomType);
-                                }
-                              }}
-                              className="rounded-full bg-zinc-900 px-4 py-2 text-xs font-bold text-white hover:bg-zinc-800"
-                            >
-                              {lang === "ar"
-                                ? "إضافة غرفة جديدة"
-                                : "Add new room"}
-                            </button>
-                          </div>
-                          <div className="space-y-4">
-                            {inspectionFormData.room_types.map(
-                              (roomKey, roomIndex) => {
-                                const room = ROOM_TYPES.find(
-                                  (r) => r.key === roomKey,
-                                );
-                                if (!room) return null;
-                                const roomCount = getRoomTypeCount(roomKey);
-                                const roomInstanceId = getRoomInstanceKey(
-                                  roomKey,
-                                  roomIndex,
-                                );
-                                return (
-                                  <div
-                                    key={`${roomKey}-${roomIndex}`}
-                                    className="rounded-3xl border border-black/10 p-4 bg-[#faf7f1]"
-                                  >
-                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
-                                      <div>
-                                        <div className="text-base font-semibold">
-                                          {getRoomDisplayName(
-                                            room.key,
-                                            roomIndex,
-                                          )}
-                                        </div>
-                                        <div className="text-[11px] text-zinc-500">
-                                          {room.en}
-                                        </div>
-                                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-zinc-600">
-                                          <span>
-                                            {lang === "ar" ? "عدد" : "Count"}:{" "}
-                                            {roomCount}
-                                          </span>
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              addRoomTypeInstance(room.key)
-                                            }
-                                            className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] font-semibold text-zinc-700 hover:bg-zinc-100"
-                                          >
-                                            {lang === "ar"
-                                              ? "إضافة نفس النوع"
-                                              : "Add same type"}
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              removeRoomTypeInstance(
-                                                room.key,
-                                                roomIndex,
-                                              )
-                                            }
-                                            className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] font-semibold text-zinc-700 hover:bg-zinc-100"
-                                          >
-                                            {lang === "ar"
-                                              ? "إزالة غرفة"
-                                              : "Remove room"}
-                                          </button>
-                                        </div>
-                                      </div>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2">
-                                      {room.defaults.map((itemName) => {
-                                        const isHighlighted =
-                                          recentlyClickedItem === itemName;
-                                        return (
-                                          <button
-                                            key={itemName}
-                                            type="button"
-                                            onClick={() => {
-                                              addPiece(
-                                                itemName,
-                                                roomKey,
-                                                roomInstanceId,
-                                              );
-                                              setRecentlyClickedItem(itemName);
-                                              setTimeout(
-                                                () =>
-                                                  setRecentlyClickedItem(null),
-                                                300,
-                                              );
-                                            }}
-                                            className={`rounded-full px-3 py-2 text-xs font-bold transition-all ${
-                                              isHighlighted
-                                                ? "bg-zinc-900 text-white"
-                                                : "border border-black/10 bg-white text-zinc-700 hover:bg-zinc-100"
-                                            }`}
-                                          >
-                                            {itemName}
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
-                                );
-                              },
-                            )}
-                          </div>
-                        </div>
-                      ) : null}
-
-                      <div className="rounded-3xl border border-black/10 bg-white p-4">
-                        <div className="text-sm font-semibold mb-3">
-                          {lang === "ar" ? "عنصر مخصص" : "Custom item"}
-                        </div>
-                        <div className="grid gap-3 sm:grid-cols-[1fr_90px]">
-                          <input
-                            value={customPieceName}
-                            onChange={(e) => setCustomPieceName(e.target.value)}
-                            placeholder={
-                              lang === "ar" ? "اسم العنصر" : "Item name"
-                            }
-                            className="rounded-3xl border border-black/10 px-4 py-3"
-                          />
-                          <input
-                            type="number"
-                            min={1}
-                            value={customPieceQty}
-                            onChange={(e) =>
-                              setCustomPieceQty(Number(e.target.value))
-                            }
-                            placeholder={lang === "ar" ? "الكمية" : "Qty"}
-                            className="rounded-3xl border border-black/10 px-4 py-3"
-                          />
-                        </div>
-                        <div className="grid gap-3 mt-3">
-                          <select
-                            value={customPieceRoomInstanceId || ""}
-                            onChange={(e) =>
-                              setCustomPieceRoomInstanceId(
-                                e.target.value || undefined,
-                              )
-                            }
-                            className="rounded-3xl border border-black/10 px-4 py-3 bg-white"
-                          >
-                            <option value="">
-                              {lang === "ar"
-                                ? "اختر غرفة موجودة (اختياري)"
-                                : "Choose existing room (optional)"}
-                            </option>
-                            {(inspectionFormData.room_types || []).map(
-                              (roomKey, roomIndex) => {
-                                const roomInstanceId = getRoomInstanceKey(
-                                  roomKey,
-                                  roomIndex,
-                                );
-                                return (
-                                  <option
-                                    key={roomInstanceId}
-                                    value={roomInstanceId}
-                                  >
-                                    {getRoomDisplayName(roomKey, roomIndex)}
-                                  </option>
-                                );
-                              },
-                            )}
-                          </select>
-                        </div>
-                        <div className="grid gap-3 sm:grid-cols-[1fr_120px] mt-3">
-                          <input
-                            value={customPieceRoomLabel}
-                            onChange={(e) =>
-                              setCustomPieceRoomLabel(e.target.value)
-                            }
-                            placeholder={
-                              lang === "ar"
-                                ? "اسم الغرفة (اختياري)"
-                                : "Room name (optional)"
-                            }
-                            className="rounded-3xl border border-black/10 px-4 py-3"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!customPieceName.trim()) return;
-                              const name = customPieceName.trim();
-                              const qty = Math.max(1, customPieceQty);
-                              const price = Number(customPiecePrice) || 0;
-                              const selectedRoomInstanceId =
-                                customPieceRoomInstanceId?.trim();
-                              const roomType = selectedRoomInstanceId
-                                ? selectedRoomInstanceId.split(":")[0]
-                                : inspectionFormData.room_types?.[0] || "other";
-
-                              const roomInstanceId =
-                                customPieceRoomLabel &&
-                                customPieceRoomLabel.trim()
-                                  ? `${getRoomTypeKey(roomType)}:custom:${encodeURIComponent(
-                                      customPieceRoomLabel
-                                        .trim()
-                                        .replace(/\s+/g, "_"),
-                                    )}`
-                                  : selectedRoomInstanceId ||
-                                    getRoomInstanceKey(roomType, 0);
-
-                              // ensure pieces is based on latest state
-                              setInspectionFormData((prev) => {
-                                const pieces = [...(prev.pieces || [])];
-                                const existingIndex = pieces.findIndex(
-                                  (p) =>
-                                    p.name === name &&
-                                    pieceMatchesRoomInstance(
-                                      p,
-                                      roomType,
-                                      roomInstanceId,
-                                      0,
-                                    ),
-                                );
-                                if (existingIndex >= 0) {
-                                  pieces[existingIndex].quantity =
-                                    (pieces[existingIndex].quantity || 1) + qty;
-                                  pieces[existingIndex].price = price;
-                                } else {
-                                  pieces.push({
-                                    name,
-                                    quantity: qty,
-                                    price,
-                                    details: "",
-                                    room_type: roomType,
-                                    room_instance_id: roomInstanceId,
-                                  });
-                                }
-                                return {
-                                  ...prev,
-                                  pieces,
-                                  totalAmount:
-                                    computeInspectionTotalAmount(pieces),
-                                };
-                              });
-
-                              setCustomPieceName("");
-                              setCustomPieceQty(1);
-                              setCustomPiecePrice("");
-                              setCustomPieceRoomLabel("");
-                              setCustomPieceRoomInstanceId(undefined);
-                            }}
-                            className="rounded-3xl bg-zinc-900 text-white px-4 py-3 text-sm font-bold hover:bg-zinc-800 transition-all"
-                          >
-                            {lang === "ar" ? "أضف" : "Add"}
-                          </button>
-                        </div>
-                      </div>
-
-                      {(() => {
-                        const pieces = inspectionFormData.pieces || [];
-
-                        // base instances from selected room types
-                        const baseInstances = (
-                          inspectionFormData.room_types || ["other"]
-                        ).map((roomKey, roomIndex) => {
-                          const roomInstanceId = getRoomInstanceKey(
-                            roomKey,
-                            roomIndex,
-                          );
-                          const room = ROOM_TYPES.find(
-                            (r) => r.key === roomKey,
-                          );
-                          const items = pieces
-                            .map((p, idx) => ({ ...p, idx }))
-                            .filter((p) =>
-                              pieceMatchesRoomInstance(
-                                p,
-                                roomKey,
-                                roomInstanceId,
-                                roomIndex,
-                              ),
-                            );
-                          return {
-                            roomKey,
-                            roomInstanceId,
-                            room,
-                            items,
-                            customLabel: null as string | null,
-                          };
-                        });
-
-                        // include any custom room_instance_id that are not part of baseInstances
-                        const existingIds = new Set(
-                          baseInstances.map((r) => r.roomInstanceId),
-                        );
-                        const extraMap = new Map<
-                          string,
-                          {
-                            roomKey: string;
-                            roomInstanceId: string;
-                            room: any;
-                            items: any[];
-                            customLabel: string | null;
-                          }
-                        >();
-                        pieces.forEach((p, idx) => {
-                          if (
-                            p.room_instance_id &&
-                            !existingIds.has(p.room_instance_id)
-                          ) {
-                            if (!extraMap.has(p.room_instance_id)) {
-                              const roomKey = getRoomTypeKey(p.room_type);
-                              const room = ROOM_TYPES.find(
-                                (r) => r.key === roomKey,
-                              );
-                              // decode custom label encoded as key:custom:label
-                              const m = String(p.room_instance_id).match(
-                                /:custom:(.+)$/,
-                              );
-                              const customLabel = m
-                                ? decodeURIComponent(m[1]).replace(/_/g, " ")
-                                : null;
-                              extraMap.set(p.room_instance_id, {
-                                roomKey,
-                                roomInstanceId: p.room_instance_id,
-                                room,
-                                items: [],
-                                customLabel,
-                              });
-                            }
-                            const entry = extraMap.get(p.room_instance_id)!;
-                            entry.items.push({ ...p, idx });
-                          }
-                        });
-
-                        const roomInstances = [
-                          ...baseInstances,
-                          ...Array.from(extraMap.values()),
-                        ];
-
-                        return (
-                          <div className="space-y-4">
-                            {roomInstances.map(
-                              (
-                                {
-                                  roomKey,
-                                  roomInstanceId,
-                                  room,
-                                  items,
-                                  customLabel,
-                                },
-                                roomIdx,
-                              ) => {
-                                if (!items.length) return null;
-                                const subtotal = inspectionRoomSubtotal(
-                                  roomKey,
-                                  roomInstanceId,
-                                  roomIdx,
-                                );
-                                const isTotalPricing =
-                                  (inspectionFormData.room_pricing_type?.[
-                                    roomInstanceId
-                                  ] || "detailed") === "total";
-                                const roomTotalPrice =
-                                  inspectionFormData.room_total_price?.[
-                                    roomInstanceId
-                                  ] ?? "";
-                                const isRoomVeneer = Boolean(
-                                  inspectionFormData.room_aro_veneer?.[
-                                    roomInstanceId
-                                  ],
-                                );
-                                const roomVeneerPrice =
-                                  inspectionFormData.room_aro_veneer_price?.[
-                                    roomInstanceId
-                                  ] ?? "";
-
-                                return (
-                                  <div
-                                    key={roomInstanceId}
-                                    className="rounded-3xl border border-black/10 bg-white p-4"
-                                  >
-                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3 pb-3 border-b border-black/5">
-                                      <div>
-                                        <div className="text-base font-semibold">
-                                          {customLabel
-                                            ? customLabel
-                                            : `${getRoomDisplayName(roomKey, roomIdx)}`}
-                                        </div>
-                                        <div className="text-[11px] text-zinc-500">
-                                          {lang === "ar"
-                                            ? "إجمالي هذه الغرفة"
-                                            : "Room subtotal"}
-                                        </div>
-                                      </div>
-                                      <div className="text-xl font-bold text-amber-600">
-                                        {subtotal.toLocaleString()} EGP
-                                      </div>
-                                    </div>
-
-                                    {/* Room Pricing Mode & Whole-room Veneer Toolbar */}
-                                    <div className="mb-4 rounded-2xl bg-[#f8f5ee] p-3 border border-black/5 space-y-3">
-                                      <div className="flex flex-wrap items-center justify-between gap-2">
-                                        <div className="flex items-center gap-2">
-                                          <span className="text-xs font-bold text-zinc-700">
-                                            {lang === "ar"
-                                              ? "طريقة التسعير:"
-                                              : "Pricing:"}
-                                          </span>
-                                          <div className="inline-flex rounded-xl bg-white p-1 border border-black/10 shadow-sm text-xs font-semibold">
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                setInspectionRoomPricingType(
-                                                  roomInstanceId,
-                                                  "detailed",
-                                                )
-                                              }
-                                              className={`px-3 py-1 rounded-lg transition-all ${
-                                                !isTotalPricing
-                                                  ? "bg-zinc-900 text-white font-bold"
-                                                  : "text-zinc-600 hover:text-zinc-900"
-                                              }`}
-                                            >
-                                              {lang === "ar"
-                                                ? "سعر تفصيلي"
-                                                : "Detailed"}
-                                            </button>
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                setInspectionRoomPricingType(
-                                                  roomInstanceId,
-                                                  "total",
-                                                )
-                                              }
-                                              className={`px-3 py-1 rounded-lg transition-all ${
-                                                isTotalPricing
-                                                  ? "bg-zinc-900 text-white font-bold"
-                                                  : "text-zinc-600 hover:text-zinc-900"
-                                              }`}
-                                            >
-                                              {lang === "ar"
-                                                ? "سعر إجمالي"
-                                                : "Room total"}
-                                            </button>
-                                          </div>
-                                        </div>
-
-                                        {isTotalPricing && (
-                                          <div className="flex items-center gap-2">
-                                            <label className="text-xs font-bold text-zinc-700">
-                                              {lang === "ar"
-                                                ? "سعر الغرفة الإجمالي:"
-                                                : "Total price:"}
-                                            </label>
-                                            <div className="flex items-center rounded-xl bg-white px-3 py-1 border border-black/10 text-xs font-bold">
-                                              <input
-                                                type="number"
-                                                min={0}
-                                                value={roomTotalPrice}
-                                                onChange={(e) =>
-                                                  setInspectionRoomTotalPrice(
-                                                    roomInstanceId,
-                                                    Number(e.target.value) || 0,
-                                                  )
-                                                }
-                                                placeholder="0"
-                                                className="w-24 bg-transparent outline-none text-right font-bold text-zinc-900"
-                                              />
-                                              <span className="ms-1 text-[10px] text-zinc-400">
-                                                EGP
-                                              </span>
-                                            </div>
-                                          </div>
-                                        )}
-                                      </div>
-
-                                      {/* Whole-Room Veneer Option */}
-                                      <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-black/5">
-                                        <label className="inline-flex items-center gap-2 text-xs font-bold text-zinc-800 cursor-pointer">
-                                          <input
-                                            type="checkbox"
-                                            checked={isRoomVeneer}
-                                            onChange={(e) =>
-                                              setInspectionRoomVeneer(
-                                                roomInstanceId,
-                                                e.target.checked,
-                                              )
-                                            }
-                                            className="w-4 h-4 rounded accent-[#d4a373]"
-                                          />
-                                          <span>
-                                            {lang === "ar"
-                                              ? "إضافة قشرة أرو للغرفة كاملة"
-                                              : "Add Aro veneer for room"}
-                                          </span>
-                                        </label>
-                                        {isRoomVeneer && (
-                                          <div className="flex items-center gap-1.5 rounded-xl bg-white px-3 py-1 border border-black/10 text-xs font-bold">
-                                            <label className="text-[10px] text-zinc-400">
-                                              {lang === "ar"
-                                                ? "سعر القشرة:"
-                                                : "Veneer price:"}
-                                            </label>
-                                            <input
-                                              type="number"
-                                              min={0}
-                                              value={roomVeneerPrice}
-                                              onChange={(e) =>
-                                                setInspectionRoomVeneerPrice(
-                                                  roomInstanceId,
-                                                  Number(e.target.value) || 0,
-                                                )
-                                              }
-                                              placeholder="0"
-                                              className="w-20 bg-transparent outline-none text-right font-bold text-zinc-900"
-                                            />
-                                            <span className="ms-1 text-[10px] text-zinc-400">
-                                              EGP
-                                            </span>
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-
-                                    <div className="space-y-3">
-                                      {items.map((p) => (
-                                        <div
-                                          key={p.idx}
-                                          className="flex flex-col gap-3 rounded-3xl border border-black/10 bg-[#faf7f1] p-4"
-                                        >
-                                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                                            <div className="space-y-1">
-                                              <div className="font-bold text-lg text-zinc-800">
-                                                {p.name}
-                                              </div>
-                                              <div className="text-xs text-zinc-500">
-                                                {lang === "ar"
-                                                  ? "الغرفة"
-                                                  : "Room"}
-                                                : {room?.ar || roomKey}
-                                              </div>
-                                            </div>
-                                            <div className="grid gap-2 sm:grid-cols-[auto_auto] items-center">
-                                              <div className="relative rounded-3xl bg-white px-4 py-3 text-sm font-bold text-zinc-800">
-                                                <span className="text-[10px] text-zinc-400 block mb-1">
-                                                  {roomKey === "rokna"
-                                                    ? lang === "ar"
-                                                      ? "الأمتار"
-                                                      : "Meters"
-                                                    : lang === "ar"
-                                                      ? "العدد"
-                                                      : "Qty"}
-                                                </span>
-                                                <input
-                                                  type="number"
-                                                  value={p.quantity || ""}
-                                                  onChange={(e) =>
-                                                    updatePiece(
-                                                      p.idx,
-                                                      "quantity",
-                                                      e.target.value === ""
-                                                        ? ""
-                                                        : Number(
-                                                            e.target.value,
-                                                          ),
-                                                    )
-                                                  }
-                                                  onBlur={(e) => {
-                                                    const val = Number(
-                                                      e.target.value,
-                                                    );
-                                                    if (isNaN(val) || val < 1) {
-                                                      updatePiece(
-                                                        p.idx,
-                                                        "quantity",
-                                                        1,
-                                                      );
-                                                    }
-                                                  }}
-                                                  className="w-20 bg-transparent outline-none text-right"
-                                                />
-                                              </div>
-                                              <div className="relative rounded-3xl bg-white px-4 py-3 text-sm font-bold text-zinc-800">
-                                                <span className="text-[10px] text-zinc-400 block mb-1">
-                                                  EGP
-                                                </span>
-                                                {isTotalPricing ? (
-                                                  <span className="text-xs text-zinc-400 italic block py-0.5">
-                                                    {lang === "ar"
-                                                      ? "مشمل بالإجمالي"
-                                                      : "Included"}
-                                                  </span>
-                                                ) : (
-                                                  <input
-                                                    type="number"
-                                                    min={0}
-                                                    value={p.price || ""}
-                                                    onChange={(e) =>
-                                                      updatePiece(
-                                                        p.idx,
-                                                        "price",
-                                                        Number(e.target.value),
-                                                      )
-                                                    }
-                                                    className="w-24 bg-transparent outline-none text-right"
-                                                  />
-                                                )}
-                                              </div>
-                                            </div>
-                                          </div>
-                                            <div className="grid gap-3 sm:grid-cols-[1fr_auto] items-start">
-                                              <div>
-                                                <label className="text-[10px] font-bold uppercase text-zinc-400">
-                                                  {lang === "ar"
-                                                    ? "التفاصيل"
-                                                    : "Details"}
-                                                </label>
-                                                <textarea
-                                                  placeholder={
-                                                    lang === "ar"
-                                                      ? "أضف تفاصيل للالمنتج..."
-                                                      : "Add product details..."
-                                                  }
-                                                  rows={2}
-                                                  value={p.details || ""}
-                                                  onChange={(e) =>
-                                                    updatePiece(
-                                                      p.idx,
-                                                      "details",
-                                                      e.target.value,
-                                                    )
-                                                  }
-                                                  className="w-full px-4 py-3 bg-white border border-black/5 rounded-xl text-sm text-zinc-700 placeholder:text-zinc-300 outline-none focus:border-accent-tan/40 transition-all resize-none"
-                                                />
-                                              </div>
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  setInspectionFormData(
-                                                    (prev) => {
-                                                      const pieces =
-                                                        prev.pieces?.filter(
-                                                          (_, i) => i !== p.idx,
-                                                        ) || [];
-                                                      return {
-                                                        ...prev,
-                                                        pieces,
-                                                        totalAmount:
-                                                          computeInspectionTotalAmount(
-                                                            pieces,
-                                                          ),
-                                                      };
-                                                    },
-                                                  );
-                                                  setExpandedPieceDetails(
-                                                    (prev) =>
-                                                      prev
-                                                        .filter(
-                                                          (i) => i !== p.idx,
-                                                        )
-                                                        .map((i) =>
-                                                          i > p.idx ? i - 1 : i,
-                                                        ),
-                                                  );
-                                                }}
-                                                className="min-w-[56px] p-3 bg-white border border-red-200 text-red-600 rounded-3xl shadow-[0_12px_24px_rgba(239,68,68,0.12)] hover:bg-red-50 transition-all duration-200 flex items-center justify-center"
-                                              >
-                                                <Trash2 className="w-5 h-5" />
-                                              </button>
-                                            </div>
-                                          </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                );
-                              },
-                            )}
-                          </div>
-                        );
-                      })()}
-                      <div className="pt-4 border-t border-black/5 flex justify-between items-center">
-                        <span className="font-bold text-lg">{t.total}:</span>
-                        <span className="text-2xl font-bold text-accent-tan">
-                          {(
-                            inspectionFormData.totalAmount || 0
-                          ).toLocaleString()}{" "}
-                          EGP
-                        </span>
-                      </div>
-                    </div>
+                    </details>
                   </div>
                 )}
 

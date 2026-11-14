@@ -460,6 +460,43 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                       : "To be estimated"}
                 </span>
               </div>
+
+              {/* Paid & Remaining — contracted only */}
+              {!isInspection && Number(customerRecord.totalAmount || customerRecord.total_amount || 0) > 0 && (() => {
+                const totalVal = Number(customerRecord.totalAmount || customerRecord.total_amount || 0);
+                const paidVal  = Number(customerRecord.paidAmount  || customerRecord.paid_amount  || 0);
+                const remVal   = Math.max(0, totalVal - paidVal);
+                const paidPct  = totalVal > 0 ? Math.min(100, Math.round((paidVal / totalVal) * 100)) : 0;
+                return (
+                  <>
+                    <div className="flex justify-between items-center py-2 border-b border-zinc-800">
+                      <span className="text-zinc-400 text-sm">{isAr ? "المدفوع حتى الآن" : "Total Paid"}</span>
+                      <span className="text-lg font-bold text-emerald-400 font-mono">
+                        {paidVal.toLocaleString()} EGP
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center py-2 border-b border-zinc-800">
+                      <span className="text-zinc-400 text-sm">{isAr ? "المتبقي للسداد" : "Remaining Balance"}</span>
+                      <span className={`text-lg font-bold font-mono ${remVal > 0 ? "text-rose-400" : "text-emerald-400"}`}>
+                        {remVal > 0 ? `${remVal.toLocaleString()} EGP` : (isAr ? "مكتمل ✓" : "Paid ✓")}
+                      </span>
+                    </div>
+                    {/* Progress bar */}
+                    <div className="pt-1">
+                      <div className="flex justify-between text-[10px] text-zinc-500 mb-1.5">
+                        <span>{isAr ? "نسبة السداد" : "Payment Progress"}</span>
+                        <span className="font-mono">{paidPct}%</span>
+                      </div>
+                      <div className="w-full bg-zinc-700 rounded-full h-2 overflow-hidden">
+                        <div
+                          className="bg-gradient-to-r from-emerald-500 to-accent-tan h-full rounded-full transition-all duration-700"
+                          style={{ width: `${paidPct}%` }}
+                        />
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
               <div className="flex justify-between items-center py-2 border-b border-zinc-800">
                 <span className="text-zinc-400 text-sm">
                   {isAr
@@ -511,6 +548,83 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {/* ── Contract Price Breakdown (contracted customers only) ── */}
+              {!isInspection && Array.isArray(customerRecord.pieces) && customerRecord.pieces.length > 0 && (
+                <div className="pt-4 border-t border-zinc-700/60">
+                  <span className="text-zinc-400 text-xs block mb-3 font-bold uppercase tracking-wider">
+                    {isAr ? "تفصيل الأسعار بالتعاقد:" : "Contract Price Breakdown:"}
+                  </span>
+
+                  {/* Group pieces by room */}
+                  {(() => {
+                    const byRoom: Record<string, { roomLabel: string; pieces: any[] }> = {};
+                    (customerRecord.pieces as any[]).forEach((p: any) => {
+                      const roomKey = p.room_instance_id || p.room_type || "general";
+                      const roomLabel = p.room_type || (isAr ? "عام" : "General");
+                      if (!byRoom[roomKey]) byRoom[roomKey] = { roomLabel, pieces: [] };
+                      byRoom[roomKey].pieces.push(p);
+                    });
+
+                    const roomEntries = Object.entries(byRoom);
+                    let grandTotal = 0;
+
+                    return (
+                      <div className="space-y-3">
+                        {roomEntries.map(([roomKey, { roomLabel, pieces: roomPieces }]) => {
+                          const roomTotal = roomPieces.reduce(
+                            (s, p) => s + (Number(p.price || 0) * Number(p.quantity || 1)),
+                            0,
+                          );
+                          grandTotal += roomTotal;
+                          return (
+                            <div key={roomKey} className="bg-zinc-800/60 rounded-2xl overflow-hidden border border-zinc-700/40">
+                              {/* Room header */}
+                              <div className="flex justify-between items-center px-3 py-2 bg-zinc-700/50">
+                                <span className="text-xs font-bold text-zinc-200">{roomLabel}</span>
+                                {roomTotal > 0 && (
+                                  <span className="text-xs font-bold text-accent-tan font-mono">
+                                    {roomTotal.toLocaleString()} EGP
+                                  </span>
+                                )}
+                              </div>
+                              {/* Pieces */}
+                              <div className="divide-y divide-zinc-700/30">
+                                {roomPieces.map((p: any, pIdx: number) => {
+                                  const lineTotal = Number(p.price || 0) * Number(p.quantity || 1);
+                                  return (
+                                    <div key={p.id || pIdx} className="flex items-center justify-between px-3 py-1.5 text-xs">
+                                      <span className="text-zinc-300 flex-1 leading-snug">
+                                        {p.name || p.item_name}
+                                        {Number(p.quantity || 1) > 1 && (
+                                          <span className="text-zinc-500 mx-1">×{p.quantity}</span>
+                                        )}
+                                      </span>
+                                      <span className="text-zinc-200 font-mono shrink-0 ml-2">
+                                        {lineTotal > 0 ? `${lineTotal.toLocaleString()} EGP` : "—"}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {/* Grand total separator */}
+                        <div className="flex justify-between items-center px-1 pt-2 border-t border-zinc-600/60">
+                          <span className="text-xs font-bold text-zinc-300">
+                            {isAr ? "الإجمالي الكلي" : "Grand Total"}
+                          </span>
+                          <span className="text-sm font-bold text-accent-tan font-mono">
+                            {(Number(customerRecord.totalAmount || customerRecord.total_amount || 0)).toLocaleString()} EGP
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>

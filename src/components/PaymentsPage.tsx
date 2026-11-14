@@ -85,6 +85,7 @@ export const PaymentsPage: React.FC<{
   stages?: any[];
   lang: "en" | "ar";
   isAdmin: boolean;
+  isFactorySupervisor?: boolean;
   t: Record<string, string>;
   onRefresh: () => Promise<void>;
   onSendWhatsApp: (phone: string, msg: string) => void;
@@ -94,6 +95,7 @@ export const PaymentsPage: React.FC<{
   stages = [],
   lang,
   isAdmin,
+  isFactorySupervisor = false,
   t,
   onRefresh,
   onSendWhatsApp,
@@ -783,13 +785,17 @@ export const PaymentsPage: React.FC<{
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-end gap-6">
         <div>
           <h1 className="text-3xl md:text-4xl font-light">
-            {lang === "ar" ? "كشف الحساب وتحصيل الدفعات" : "Statement of Account & Payments"}
+            {isFactorySupervisor
+              ? (lang === "ar" ? "مصروفات الإنتاج" : "Production Expenses")
+              : (lang === "ar" ? "كشف الحساب وتحصيل الدفعات" : "Statement of Account & Payments")}
           </h1>
+          {!isFactorySupervisor && (
           <p className="text-zinc-500 mt-2">
             {lang === "ar"
               ? "مراحل التحصيل الأربعة: (التعاقد، الاستلام، النجارة، الدهانات) مع إمكانية التعديل والحذف"
               : "Four collection stages: (Contract, Intake, Carpentry, Painting) with edit & delete controls"}
           </p>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
@@ -821,6 +827,9 @@ export const PaymentsPage: React.FC<{
             )}
           </div>
 
+          {/* Summary Cards — hidden for factory supervisor */}
+          {!isFactorySupervisor && (
+            <>
           {/* 1st Card: Actual Paid */}
           <div className="glass px-4 py-3 rounded-2xl min-w-[130px] border-emerald-500/20 bg-emerald-50/30">
             <div className="text-[10px] uppercase font-bold text-emerald-700 flex items-center gap-1">
@@ -853,10 +862,13 @@ export const PaymentsPage: React.FC<{
               {totalContractValue.toLocaleString()} <span className="text-xs font-normal">EGP</span>
             </div>
           </div>
+            </>
+          )}
         </div>
       </div>
 
-      {/* View Switcher Tabs */}
+      {/* View Switcher Tabs — hidden for factory supervisor */}
+      {!isFactorySupervisor && (
       <div className="flex items-center gap-2 border-b border-zinc-200/80 pb-3">
         <button
           onClick={() => setViewMode("customers")}
@@ -888,12 +900,79 @@ export const PaymentsPage: React.FC<{
           </span>
         </button>
       </div>
+      )}
 
       {/* Main Content Area */}
       {loadingPayments ? (
         <div className="glass rounded-[2rem] py-20 text-center text-zinc-400">
-          {lang === "ar" ? "جاري تحميل الدفعات والحسابات..." : "Loading payments..."}
+          {lang === "ar" ? "جاري تحميل البيانات..." : "Loading..."}
         </div>
+      ) : isFactorySupervisor ? (
+        /* ── Factory Supervisor: Expenses Only View ── */
+        filteredContractedCustomers.length > 0 ? (
+          <div className="glass rounded-[2.5rem] overflow-hidden p-6 md:p-8 shadow-xl border border-white/40">
+            <div className="overflow-x-auto">
+              <table className="w-full text-right">
+                <thead>
+                  <tr className="border-b border-black/5 text-[10px] font-bold uppercase text-zinc-400 tracking-widest">
+                    <th className="px-6 py-4">{lang === "ar" ? "العميل" : "Customer"}</th>
+                    <th className="px-6 py-4">{lang === "ar" ? "الهاتف" : "Phone"}</th>
+                    <th className="px-6 py-4 text-indigo-700">{lang === "ar" ? "المصروفات" : "Expenses"}</th>
+                    <th className="px-6 py-4">{lang === "ar" ? "إدارة" : "Manage"}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-black/[0.03]">
+                  {filteredContractedCustomers.map((customer) => {
+                    const customerExpenses = getCustomerExpenses(customer);
+                    const totalExpenses = getCustomerTotalExpenses(customer);
+                    return (
+                      <tr key={customer.id} className="hover:bg-black/[0.01] transition-colors">
+                        <td className="px-6 py-4 font-semibold text-zinc-800 text-sm">
+                          {customer.customerName || "—"}
+                        </td>
+                        <td className="px-6 py-4 text-zinc-500 text-xs font-mono">
+                          {customer.phone || "—"}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col gap-1">
+                            <span className="font-bold text-indigo-700 font-mono">
+                              {totalExpenses.toLocaleString()} ج.م
+                            </span>
+                            {customerExpenses.length > 0 && (
+                              <span className="text-[10px] text-zinc-400">
+                                {customerExpenses.length} {lang === "ar" ? "بند" : "items"}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <button
+                            onClick={() => {
+                              setSelectedExpenseCustomer(customer);
+                              setIsExpensesModalOpen(true);
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-700 text-xs font-bold hover:bg-indigo-100 transition-colors border border-indigo-200/50"
+                          >
+                            <span>{lang === "ar" ? "عرض / إدارة المصروفات" : "Manage Expenses"}</span>
+                            {customerExpenses.length > 0 && (
+                              <span className="bg-indigo-200 text-indigo-800 rounded-full px-1.5 py-0.5 text-[10px]">
+                                {customerExpenses.length}
+                              </span>
+                            )}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          <div className="glass rounded-[2rem] py-20 text-center text-zinc-400">
+            {lang === "ar" ? "لا توجد بيانات" : "No data found"}
+          </div>
+        )
       ) : viewMode === "customers" ? (
         filteredContractedCustomers.length > 0 ? (
           <>
