@@ -30,7 +30,7 @@ import {
 import toast from "react-hot-toast";
 import type { Inspection } from "../types";
 import { STAGE_ORDER } from "../constants";
-import { InvoiceService, StageService, CustomerService } from "../services/data";
+import { InvoiceService, StageService, CustomerService, OrderService } from "../services/data";
 import { getOrderStages, isPhoneMatch } from "../utils";
 import {
   exportExpensesToExcel,
@@ -948,6 +948,19 @@ export const ProductionPage: React.FC<{
       };
 
       await InvoiceService.savePayment(newPayment);
+
+      const newTotalPaid = totalPaid + Number(paymentAmount);
+      const newRemaining = Math.max(0, (paymentTargetOrder.totalAmount || 0) - newTotalPaid);
+      try {
+        await OrderService.updateContracted(paymentTargetOrder.id, {
+          paidAmount: newTotalPaid,
+          paid_amount: newTotalPaid,
+          remainingAmount: newRemaining,
+          remaining_amount: newRemaining,
+        });
+      } catch (custErr) {
+        console.warn("Could not sync customer contract balance in production:", custErr);
+      }
 
       if (onRefresh) await onRefresh();
 

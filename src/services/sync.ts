@@ -896,4 +896,27 @@ export class SyncManager {
     await db.table(tableName).put(recordToStore);
     return true;
   }
+
+  static async logActivity(
+    type: string,
+    message: string,
+    success: boolean = true,
+    details?: any,
+  ) {
+    try {
+      const logItem = {
+        id: crypto.randomUUID(),
+        type,
+        message,
+        success,
+        details: details || null,
+        created_at: new Date().toISOString(),
+        last_modified: Date.now(),
+      };
+      await db.activity_logs.put(logItem);
+      await this.queueOperation("INSERT", "activity_logs", logItem.id, logItem);
+    } catch (e) {
+      console.warn("Failed to log activity in SyncManager:", e);
+    }
+  }
 }

@@ -1928,12 +1928,39 @@ export default function App() {
         }
       }
     };
+
+    const handlePaymentsSync = async () => {
+      try {
+        const localPayments = await InvoiceService.getPayments();
+        setAllPayments(
+          localPayments.map((p: any) => ({
+            id: p.id,
+            amount: p.amount,
+            paid_at: p.paid_at,
+            installment: p.installment ?? null,
+            note: p.note ?? null,
+          })),
+        );
+      } catch (e) {
+        console.warn("Payments sync error in App:", e);
+      }
+    };
+
+    window.addEventListener("payments-updated", handlePaymentsSync);
+    const handlePaymentsStorage = (e: StorageEvent) => {
+      if (e.key === "el3mmary_payments_updated_at") {
+        void handlePaymentsSync();
+      }
+    };
+    window.addEventListener("storage", handlePaymentsStorage);
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       authListener.unsubscribe();
       clearInterval(pollingId);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("payments-updated", handlePaymentsSync);
+      window.removeEventListener("storage", handlePaymentsStorage);
     };
   }, []);
 

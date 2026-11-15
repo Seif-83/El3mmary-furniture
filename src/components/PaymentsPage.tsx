@@ -27,7 +27,7 @@ import {
 import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
 import { SyncManager } from "../services/sync";
-import { InvoiceService, OrderService, StageService } from "../services/data";
+import { InvoiceService, OrderService, StageService, ActivityLogService } from "../services/data";
 import { db } from "../services/db";
 import { STAGE_ORDER } from "../constants";
 import type { Inspection, ContractAddition, FurniturePiece } from "../types";
@@ -452,17 +452,23 @@ export const PaymentsPage: React.FC<{
       }
 
       // 3. تسجيل النشاط
-      await SyncManager.logActivity(
-        "contract_addition",
-        `${lang === "ar" ? "إضافة للتعاقد بقيمة" : "Contract addition of"} ${addAmt.toLocaleString()} ${lang === "ar" ? "ج.م للعميل" : "EGP for"} ${selectedAdditionCustomer.customerName} (${title})`,
-        true,
-        {
-          customerId: selectedAdditionCustomer.id,
-          title,
-          amount: addAmt,
-          newTotal,
-        },
-      );
+      try {
+        await ActivityLogService.insert({
+          id: crypto.randomUUID(),
+          type: "contract_addition",
+          message: `${lang === "ar" ? "إضافة للتعاقد بقيمة" : "Contract addition of"} ${addAmt.toLocaleString()} ${lang === "ar" ? "ج.م للعميل" : "EGP for"} ${selectedAdditionCustomer.customerName} (${title})`,
+          success: true,
+          details: {
+            customerId: selectedAdditionCustomer.id,
+            title,
+            amount: addAmt,
+            newTotal,
+          },
+          created_at: new Date().toISOString(),
+        });
+      } catch (logErr) {
+        console.warn("Could not log contract addition activity:", logErr);
+      }
 
       // تحديث البيانات
       if (onRefresh) await onRefresh();
@@ -687,6 +693,19 @@ export const PaymentsPage: React.FC<{
         created_at: new Date().toISOString(),
       });
 
+      const newTotalPaid = totalPaid + Number(paymentAmount);
+      const newRemaining = Math.max(0, (selectedCustomer.totalAmount || 0) - newTotalPaid);
+      try {
+        await OrderService.updateContracted(selectedCustomer.id, {
+          paidAmount: newTotalPaid,
+          paid_amount: newTotalPaid,
+          remainingAmount: newRemaining,
+          remaining_amount: newRemaining,
+        });
+      } catch (custUpdateErr) {
+        console.warn("Could not sync customer contract balance:", custUpdateErr);
+      }
+
       await fetchPayments();
       if (onRefresh) await onRefresh();
 
@@ -744,6 +763,26 @@ export const PaymentsPage: React.FC<{
       };
 
       await InvoiceService.update(editingPayment.id, updates);
+
+      const targetCustomer = editCustomer || findCustomerForPayment(editingPayment);
+      if (targetCustomer) {
+        try {
+          const custPayments = (await InvoiceService.getPayments()).filter((p) =>
+            p.note?.startsWith(`cc:${targetCustomer.id}:`),
+          );
+          const newPaid = custPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+          const newRemaining = Math.max(0, (targetCustomer.totalAmount || 0) - newPaid);
+          await OrderService.updateContracted(targetCustomer.id, {
+            paidAmount: newPaid,
+            paid_amount: newPaid,
+            remainingAmount: newRemaining,
+            remaining_amount: newRemaining,
+          });
+        } catch (syncErr) {
+          console.warn("Could not sync edited customer balance:", syncErr);
+        }
+      }
+
       await fetchPayments();
       if (onRefresh) await onRefresh();
 
@@ -764,7 +803,27 @@ export const PaymentsPage: React.FC<{
     setIsDeleting(true);
 
     try {
+      const targetCustomer = deletingCustomer || findCustomerForPayment(deletingPayment);
       await InvoiceService.delete(deletingPayment.id);
+
+      if (targetCustomer) {
+        try {
+          const custPayments = (await InvoiceService.getPayments()).filter((p) =>
+            p.id !== deletingPayment.id && p.note?.startsWith(`cc:${targetCustomer.id}:`),
+          );
+          const newPaid = custPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+          const newRemaining = Math.max(0, (targetCustomer.totalAmount || 0) - newPaid);
+          await OrderService.updateContracted(targetCustomer.id, {
+            paidAmount: newPaid,
+            paid_amount: newPaid,
+            remainingAmount: newRemaining,
+            remaining_amount: newRemaining,
+          });
+        } catch (syncErr) {
+          console.warn("Could not sync deleted customer balance:", syncErr);
+        }
+      }
+
       await fetchPayments();
       if (onRefresh) await onRefresh();
 

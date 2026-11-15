@@ -26,7 +26,8 @@ import {
 import { AnimatePresence } from "motion/react";
 import toast from "react-hot-toast";
 import { STAGE_ORDER } from "../constants";
-import { CustomerServiceLogsService } from "../services/data";
+import { CustomerServiceLogsService, InvoiceService } from "../services/data";
+import { supabase, SUPABASE_CONFIGURED } from "../lib/supabase";
 
 // Helper to format remaining timer for customer
 const formatCustomerRemainingTime = (
@@ -158,15 +159,135 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
     (!customerRecord.contractDate && !customerRecord.contract_date && !customerRecord.finalized_at && !customerRecord.finalizedAt)
   );
 
+  // Live state for payments to ensure immediate reactivity
+  const [livePayments, setLivePayments] = useState<any[]>(payments || []);
+
+  useEffect(() => {
+    if (payments) {
+      setLivePayments(payments);
+    }
+  }, [payments]);
+
+  // Dynamically refresh payments from local database & Supabase
+  const refreshCustomerPayments = async () => {
+    try {
+      const localPayments = await InvoiceService.getPayments();
+      let updated = localPayments || [];
+
+      if (SUPABASE_CONFIGURED && navigator.onLine && customerRecord?.id) {
+        try {
+          const { data: remotePayments } = await supabase.rpc(
+            "get_customer_payments_by_id",
+            { customer_id: customerRecord.id }
+          );
+          if (remotePayments && Array.isArray(remotePayments) && remotePayments.length > 0) {
+            const rpcMap = new Map<string, any>();
+            remotePayments.forEach((p: any) => rpcMap.set(p.id, p));
+            updated = [
+              ...remotePayments,
+              ...updated.filter((p: any) => !rpcMap.has(p.id)),
+            ];
+          }
+        } catch (rpcErr) {
+          console.warn("Remote payments fetch error in CustomerPortal:", rpcErr);
+        }
+      }
+
+      if (updated && updated.length > 0) {
+        setLivePayments(updated);
+      }
+    } catch (err) {
+      console.warn("Failed to refresh customer payments:", err);
+    }
+  };
+
+  useEffect(() => {
+    void refreshCustomerPayments();
+
+    const handleLocalUpdate = () => {
+      void refreshCustomerPayments();
+    };
+    window.addEventListener("payments-updated", handleLocalUpdate);
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === "el3mmary_payments_updated_at") {
+        void refreshCustomerPayments();
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener("focus", handleLocalUpdate);
+
+    const pollInterval = setInterval(() => {
+      void refreshCustomerPayments();
+    }, 8000);
+
+    let channel: any = null;
+    if (SUPABASE_CONFIGURED && supabase) {
+      try {
+        channel = supabase
+          .channel(`customer-portal-payments-${customerRecord?.id || "all"}`)
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "payments" },
+            () => {
+              void refreshCustomerPayments();
+            }
+          )
+          .subscribe();
+      } catch (rtErr) {
+        console.warn("Supabase realtime channel subscription failed:", rtErr);
+      }
+    }
+
+    return () => {
+      window.removeEventListener("payments-updated", handleLocalUpdate);
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("focus", handleLocalUpdate);
+      clearInterval(pollInterval);
+      if (channel && supabase) {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, [customerRecord?.id]);
+
   // Filter payments belonging to this customer
+  const customerId = String(customerRecord.id || "").trim();
   const customerPhone = customerRecord.phone || "";
-  const filteredPayments = payments.filter((p) => {
-    return (
-      p.note?.startsWith(`cc:${customerRecord.id}:`) ||
-      p.client_id === customerRecord.id ||
-      p.visit_id === customerRecord.id
-    );
+  const normalizedCustPhone = customerPhone.replace(/\D/g, "");
+
+  const filteredPayments = livePayments.filter((p) => {
+    if (!p) return false;
+    const note = String(p.note || "");
+    const matchId =
+      Boolean(customerId) &&
+      (note.startsWith(`cc:${customerId}:`) ||
+        note.startsWith(`cc:${customerId}`) ||
+        p.client_id === customerId ||
+        p.visit_id === customerId ||
+        p.customer_id === customerId);
+
+    const matchPhone =
+      Boolean(normalizedCustPhone) &&
+      normalizedCustPhone.length >= 8 &&
+      (note.includes(normalizedCustPhone) ||
+        (p.phone && String(p.phone).replace(/\D/g, "").includes(normalizedCustPhone)));
+
+    return Boolean(matchId || matchPhone);
   });
+
+  // Dynamic Financial Summary Calculations
+  const totalVal = Number(customerRecord.totalAmount || customerRecord.total_amount || 0);
+  const paymentsSum = filteredPayments.reduce(
+    (sum, p) => sum + (Number(p.amount) || 0),
+    0
+  );
+  // Total Paid dynamically reads from payments log, or falls back to customerRecord initial paid amount if no payments in log
+  const paidVal = filteredPayments.length > 0
+    ? paymentsSum
+    : Number(customerRecord.paidAmount || customerRecord.paid_amount || 0);
+  // Remaining Balance = Total Contract Value - Total Paid
+  const remVal = Math.max(0, totalVal - paidVal);
+  const paidPct = totalVal > 0 ? Math.min(100, Math.round((paidVal / totalVal) * 100)) : 0;
 
   // Find client ID from stages to filter client's specific stages
   const normalizedPhone = customerPhone.replace(/\D/g, "");
@@ -462,41 +583,35 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
               </div>
 
               {/* Paid & Remaining — contracted only */}
-              {!isInspection && Number(customerRecord.totalAmount || customerRecord.total_amount || 0) > 0 && (() => {
-                const totalVal = Number(customerRecord.totalAmount || customerRecord.total_amount || 0);
-                const paidVal  = Number(customerRecord.paidAmount  || customerRecord.paid_amount  || 0);
-                const remVal   = Math.max(0, totalVal - paidVal);
-                const paidPct  = totalVal > 0 ? Math.min(100, Math.round((paidVal / totalVal) * 100)) : 0;
-                return (
-                  <>
-                    <div className="flex justify-between items-center py-2 border-b border-zinc-800">
-                      <span className="text-zinc-400 text-sm">{isAr ? "المدفوع حتى الآن" : "Total Paid"}</span>
-                      <span className="text-lg font-bold text-emerald-400 font-mono">
-                        {paidVal.toLocaleString()} EGP
-                      </span>
+              {!isInspection && totalVal > 0 && (
+                <>
+                  <div className="flex justify-between items-center py-2 border-b border-zinc-800">
+                    <span className="text-zinc-400 text-sm">{isAr ? "المدفوع حتى الآن" : "Total Paid"}</span>
+                    <span className="text-lg font-bold text-emerald-400 font-mono">
+                      {paidVal.toLocaleString()} EGP
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-b border-zinc-800">
+                    <span className="text-zinc-400 text-sm">{isAr ? "المتبقي للسداد" : "Remaining Balance"}</span>
+                    <span className={`text-lg font-bold font-mono ${remVal > 0 ? "text-rose-400" : "text-emerald-400"}`}>
+                      {remVal > 0 ? `${remVal.toLocaleString()} EGP` : (isAr ? "مكتمل ✓" : "Paid ✓")}
+                    </span>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="pt-1">
+                    <div className="flex justify-between text-[10px] text-zinc-500 mb-1.5">
+                      <span>{isAr ? "نسبة السداد" : "Payment Progress"}</span>
+                      <span className="font-mono">{paidPct}%</span>
                     </div>
-                    <div className="flex justify-between items-center py-2 border-b border-zinc-800">
-                      <span className="text-zinc-400 text-sm">{isAr ? "المتبقي للسداد" : "Remaining Balance"}</span>
-                      <span className={`text-lg font-bold font-mono ${remVal > 0 ? "text-rose-400" : "text-emerald-400"}`}>
-                        {remVal > 0 ? `${remVal.toLocaleString()} EGP` : (isAr ? "مكتمل ✓" : "Paid ✓")}
-                      </span>
+                    <div className="w-full bg-zinc-700 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="bg-gradient-to-r from-emerald-500 to-accent-tan h-full rounded-full transition-all duration-700"
+                        style={{ width: `${paidPct}%` }}
+                      />
                     </div>
-                    {/* Progress bar */}
-                    <div className="pt-1">
-                      <div className="flex justify-between text-[10px] text-zinc-500 mb-1.5">
-                        <span>{isAr ? "نسبة السداد" : "Payment Progress"}</span>
-                        <span className="font-mono">{paidPct}%</span>
-                      </div>
-                      <div className="w-full bg-zinc-700 rounded-full h-2 overflow-hidden">
-                        <div
-                          className="bg-gradient-to-r from-emerald-500 to-accent-tan h-full rounded-full transition-all duration-700"
-                          style={{ width: `${paidPct}%` }}
-                        />
-                      </div>
-                    </div>
-                  </>
-                );
-              })()}
+                  </div>
+                </>
+              )}
               <div className="flex justify-between items-center py-2 border-b border-zinc-800">
                 <span className="text-zinc-400 text-sm">
                   {isAr
@@ -862,11 +977,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
 
                 {/* Payment Collection Milestone Notice */}
                 {(() => {
-                  const totalPaid = filteredPayments.reduce(
-                    (sum, p) => sum + (Number(p.amount) || 0),
-                    0,
-                  );
-                  const remainingBalance = (customerRecord.totalAmount || 0) - totalPaid;
+                  const remainingBalance = remVal;
                   if (remainingBalance <= 0) return null;
 
                   const deliveryDone = clientStages.find(

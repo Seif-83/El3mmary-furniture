@@ -216,6 +216,15 @@ export class ProductService {
 }
 
 export class InvoiceService {
+  private static notifyChange() {
+    if (typeof window !== "undefined") {
+      try {
+        window.dispatchEvent(new CustomEvent("payments-updated"));
+        localStorage.setItem("el3mmary_payments_updated_at", Date.now().toString());
+      } catch {}
+    }
+  }
+
   static async getPayments() {
     return db.payments.orderBy("paid_at").reverse().toArray();
   }
@@ -224,6 +233,7 @@ export class InvoiceService {
     const record = { ...payment, last_modified: Date.now() };
     await db.payments.put(record);
     await SyncManager.queueOperation("INSERT", "payments", payment.id, payment);
+    InvoiceService.notifyChange();
   }
 
   static async savePayment(payment: any) {
@@ -235,6 +245,7 @@ export class InvoiceService {
     const updated = { ...record, ...updates, id, last_modified: Date.now() };
     await db.payments.put(updated);
     await SyncManager.queueOperation("UPDATE", "payments", id, updates);
+    InvoiceService.notifyChange();
     return updated;
   }
 
@@ -242,6 +253,7 @@ export class InvoiceService {
     await db.payments.delete(id);
     await SyncManager.addTombstone("payments", id);
     await SyncManager.queueOperation("DELETE", "payments", id, null);
+    InvoiceService.notifyChange();
   }
 }
 
