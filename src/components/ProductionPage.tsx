@@ -1700,7 +1700,7 @@ export const ProductionPage: React.FC<{
                   )}
 
                   {/* PAYMENT COLLECTION TRIGGER MILESTONE BANNER */}
-                  {collectionMilestone && (
+                  {collectionMilestone && !isFactorySupervisor && (
                     <div className="mb-4 p-3 rounded-2xl bg-gradient-to-r from-amber-500/15 to-emerald-500/15 border border-amber-500/30">
                       <div className="flex items-center justify-between gap-2 mb-2">
                         <div className="flex items-center gap-1.5">
@@ -2232,7 +2232,7 @@ export const ProductionPage: React.FC<{
               </div>
 
               <div className="space-y-3">
-                {onSendWhatsApp && collectionData.order.phone && (
+                {onSendWhatsApp && collectionData.order.phone && !isFactorySupervisor && (
                   <button
                     type="button"
                     onClick={() =>
