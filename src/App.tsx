@@ -2253,6 +2253,15 @@ export default function App() {
     }
 
     try {
+      // 0. Force sync with Supabase first to ensure local data is fresh
+      if (navigator.onLine && SUPABASE_CONFIGURED) {
+        try {
+          await SyncManager.triggerSync({ force: true });
+        } catch (syncErr) {
+          console.warn("Pre-login sync failed, continuing with local data:", syncErr);
+        }
+      }
+
       // 1. Try to find local match in contracted customers first
       const contracted = await OrderService.getContracted();
       let match: any = contracted.find(
@@ -2300,8 +2309,65 @@ export default function App() {
             isInspection: false,
           };
         }
+
+        // For contracted customers, also try to get the freshest data from Supabase directly
+        if (!match.isInspection && navigator.onLine && SUPABASE_CONFIGURED) {
+          try {
+            const { data: customerData, error: rpcError } = await supabase
+              .rpc("get_customer_by_phone", { phone_input: normalized });
+            if (!rpcError && customerData) {
+              match = {
+                ...match,
+                id: customerData.id,
+                customerName: customerData.customer_name || match.customerName,
+                phone: customerData.phone || match.phone,
+                address: customerData.address || match.address,
+                deliveryAddress: customerData.delivery_address || match.deliveryAddress,
+                deliveryDate: customerData.delivery_date || match.deliveryDate,
+                visitDate: customerData.visit_date || match.visitDate,
+                notes: customerData.notes || match.notes,
+                rooms: customerData.rooms ?? match.rooms,
+                pieces: customerData.pieces ?? match.pieces,
+                totalAmount: customerData.total_amount ?? match.totalAmount,
+                paidAmount: customerData.paid_amount ?? match.paidAmount,
+                remainingAmount: customerData.remaining_amount ?? match.remainingAmount,
+                status: customerData.status || match.status,
+                governorate: customerData.governorate || match.governorate,
+                contractUrl: customerData.contract_url || match.contractUrl,
+                contractDate: customerData.contract_date || match.contractDate,
+                isInspection: false,
+              };
+            }
+          } catch (rpcErr) {
+            console.warn("RPC fresh data fetch error (non-critical):", rpcErr);
+          }
+        }
+
         fetchedPayments = await InvoiceService.getPayments();
         fetchedStages = await StageService.getStages();
+
+        // Also try to get fresh payments and stages from Supabase
+        if (navigator.onLine && SUPABASE_CONFIGURED && match.id) {
+          try {
+            const { data: remotePayments } = await supabase
+              .rpc("get_customer_payments_by_id", { customer_id: match.id });
+            if (remotePayments && Array.isArray(remotePayments) && remotePayments.length > 0) {
+              const rpcMap = new Map<string, any>();
+              remotePayments.forEach((p: any) => rpcMap.set(p.id, p));
+              fetchedPayments = [
+                ...remotePayments,
+                ...fetchedPayments.filter((p: any) => !rpcMap.has(p.id)),
+              ];
+            }
+          } catch {}
+          try {
+            const { data: remoteStages } = await supabase
+              .rpc("get_customer_stages_by_phone", { phone_input: normalized });
+            if (remoteStages && Array.isArray(remoteStages) && remoteStages.length > 0) {
+              fetchedStages = remoteStages;
+            }
+          } catch {}
+        }
       } else {
         // 3. Check remote Supabase if offline search did not find it
         // 3a. Check contracted customers via RPC
