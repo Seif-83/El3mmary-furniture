@@ -20,22 +20,38 @@ export class CustomerService {
     governorate?: string;
   }) {
     const cleanPhones = extractCleanPhones(client.phones);
+    // Find existing client by phone to avoid duplicate client records
+    let existing: any = null;
+    if (cleanPhones.length > 0) {
+      const allClients = await db.clients.toArray();
+      existing = allClients.find((c) => isPhoneMatch(c.phones, cleanPhones[0]));
+    }
+    const clientId = existing?.id || client.id;
+    const mergedPhones = Array.from(
+      new Set([...(existing?.phones || []), ...(cleanPhones.length > 0 ? cleanPhones : client.phones)])
+    );
+
     const record = {
+      ...(existing || {}),
       ...client,
-      phones: cleanPhones.length > 0 ? cleanPhones : client.phones,
-      created_at: new Date().toISOString(),
+      id: clientId,
+      phones: mergedPhones,
+      address: client.address || existing?.address,
+      governorate: client.governorate || existing?.governorate,
+      created_at: existing?.created_at || new Date().toISOString(),
       last_modified: Date.now(),
     };
     await db.clients.put(record);
-    await SyncManager.clearTombstone("clients", client.id);
-    await SyncManager.queueOperation("INSERT", "clients", client.id, {
-      id: client.id,
-      name: client.name,
+    await SyncManager.clearTombstone("clients", clientId);
+    await SyncManager.queueOperation(existing ? "UPDATE" : "INSERT", "clients", clientId, {
+      id: clientId,
+      name: record.name,
       phones: record.phones,
-      address: client.address,
-      governorate: client.governorate,
+      address: record.address,
+      governorate: record.governorate,
       created_at: record.created_at,
     });
+    return record;
   }
 
   static async getClientById(id: string) {
@@ -263,8 +279,45 @@ export class StageService {
     const clientsList = await db.clients.toArray();
     const clientMap = new Map(clientsList.map((c) => [c.id, c]));
 
+    // Deduplicate stages locally by (client_id || visit_id, stage) to ensure
+    // the UI never suffers from stale duplicate entries
+    const statusScore = (s: string) => (s === "done" ? 3 : s === "in_progress" ? 2 : 1);
+    const stageMap = new Map<string, any>();
+
+    for (const s of stagesList) {
+      const ownerKey = s.client_id || s.visit_id || "";
+      if (!ownerKey || !s.stage) continue;
+      const key = `${ownerKey}::${s.stage}`;
+      const existing = stageMap.get(key);
+      if (!existing) {
+        stageMap.set(key, s);
+      } else {
+        const scoreExisting = statusScore(existing.status);
+        const scoreNew = statusScore(s.status);
+        if (scoreNew > scoreExisting) {
+          stageMap.set(key, {
+            ...s,
+            expenses: (s.expenses && s.expenses.length > 0) ? s.expenses : existing.expenses,
+            images: (s.images && s.images.length > 0) ? s.images : existing.images,
+          });
+        } else if (scoreNew === scoreExisting) {
+          const compExisting = existing.completed_at ? new Date(existing.completed_at).getTime() : 0;
+          const compNew = s.completed_at ? new Date(s.completed_at).getTime() : 0;
+          if (compNew > compExisting) {
+            stageMap.set(key, {
+              ...s,
+              expenses: (s.expenses && s.expenses.length > 0) ? s.expenses : existing.expenses,
+              images: (s.images && s.images.length > 0) ? s.images : existing.images,
+            });
+          }
+        }
+      }
+    }
+
+    const deduplicatedStages = Array.from(stageMap.values());
+
     // Join stage records with clients phones & names to mimic Supabase relation result
-    return stagesList.map((s) => {
+    return deduplicatedStages.map((s) => {
       const client = s.client_id ? clientMap.get(s.client_id) : undefined;
       const cleanPhones = client ? extractCleanPhones(client.phones) : [];
       return {
@@ -278,6 +331,112 @@ export class StageService {
           : undefined,
       };
     });
+  }
+
+  static async cleanupDuplicateStages() {
+    try {
+      const allStages = await db.production_stages.toArray();
+      const statusScore = (s: string) => (s === "done" ? 3 : s === "in_progress" ? 2 : 1);
+      const byKey = new Map<string, any[]>();
+      for (const s of allStages) {
+        const owner = s.client_id || s.visit_id || "";
+        if (!owner || !s.stage) continue;
+        const key = `${owner}::${s.stage}`;
+        if (!byKey.has(key)) byKey.set(key, []);
+        byKey.get(key)!.push(s);
+      }
+
+      const toDelete: string[] = [];
+      for (const [, list] of byKey.entries()) {
+        if (list.length <= 1) continue;
+        list.sort((a, b) => {
+          const scoreA = statusScore(a.status);
+          const scoreB = statusScore(b.status);
+          if (scoreA !== scoreB) return scoreB - scoreA;
+          const compA = a.completed_at ? new Date(a.completed_at).getTime() : 0;
+          const compB = b.completed_at ? new Date(b.completed_at).getTime() : 0;
+          if (compA !== compB) return compB - compA;
+          const crA = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const crB = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return crB - crA;
+        });
+
+        // Keep winner list[0], purge all inferior duplicate records
+        for (let i = 1; i < list.length; i++) {
+          toDelete.push(list[i].id);
+        }
+      }
+
+      if (toDelete.length > 0) {
+        await db.production_stages.bulkDelete(toDelete);
+      }
+    } catch (e) {
+      console.warn("Failed to cleanup local duplicate stages:", e);
+    }
+  }
+
+  static async ensureStagesForClient(
+    clientId: string,
+    visitId?: string | null,
+    stageOrderKeys: readonly string[] = [
+      "received",
+      "inventory",
+      "carpentry",
+      "painting",
+      "fittings",
+      "delivery",
+    ],
+  ) {
+    if (!clientId) return [];
+
+    const existingStages = await db.production_stages
+      .where("client_id")
+      .equals(clientId)
+      .toArray();
+
+    const existingByKey = new Map<string, any>();
+    for (const s of existingStages) {
+      if (!existingByKey.has(s.stage)) {
+        existingByKey.set(s.stage, s);
+      }
+    }
+
+    const resultStages: any[] = [];
+    const stagesToInsert: any[] = [];
+
+    for (const stageKey of stageOrderKeys) {
+      let stageRecord = existingByKey.get(stageKey);
+      if (stageRecord) {
+        if (visitId && !stageRecord.visit_id) {
+          stageRecord.visit_id = visitId;
+          stageRecord.last_modified = Date.now();
+          await db.production_stages.put(stageRecord);
+          await SyncManager.queueOperation("UPDATE", "production_stages", stageRecord.id, {
+            visit_id: visitId,
+          });
+        }
+        resultStages.push(stageRecord);
+      } else {
+        const newStage = {
+          id: crypto.randomUUID(),
+          client_id: clientId,
+          visit_id: visitId || null,
+          stage: stageKey,
+          status: "not_started",
+          completed_at: null,
+          created_at: new Date().toISOString(),
+          last_modified: Date.now(),
+        };
+        resultStages.push(newStage);
+        stagesToInsert.push(newStage);
+      }
+    }
+
+    if (stagesToInsert.length > 0) {
+      await this.insertMultiple(stagesToInsert);
+    }
+
+    return resultStages;
   }
 
   static async insertMultiple(stages: any[]) {
@@ -317,10 +476,14 @@ export class StageService {
       last_modified: Date.now(),
     };
     await db.production_stages.put(updated as any);
-    await SyncManager.queueOperation("UPDATE", "production_stages", id, {
+    const syncPayload: any = {
       status,
       completed_at: updated.completed_at,
-    });
+    };
+    if (updated.expenses) {
+      syncPayload.expenses = updated.expenses;
+    }
+    await SyncManager.queueOperation("UPDATE", "production_stages", id, syncPayload);
   }
 
   static async updateStageExpenses(id: string, expenses: { destination: string; amount: number }[]) {

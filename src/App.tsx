@@ -1383,6 +1383,7 @@ export default function App() {
       ),
     );
 
+    await StageService.cleanupDuplicateStages();
     const localStages = await StageService.getStages();
     setStages(localStages);
 
@@ -1736,7 +1737,9 @@ export default function App() {
       if (nextStage) {
         const nextStageRecord = stages.find(
           (s) =>
-            s.client_id === currentStage.client_id && s.stage === nextStage.key,
+            ((s.client_id && s.client_id === currentStage.client_id) ||
+              (s.visit_id && currentStage.visit_id && s.visit_id === currentStage.visit_id)) &&
+            s.stage === nextStage.key,
         );
         if (nextStageRecord && nextStageRecord.status === "not_started") {
           // Auto start next stage if it's a timed phase (carpentry, painting, fittings)
@@ -3227,23 +3230,19 @@ export default function App() {
           let clientId = localClient?.id || null;
           if (!clientId) {
             clientId = crypto.randomUUID();
-            await CustomerService.saveClient({
+            const saved = await CustomerService.saveClient({
               id: clientId,
               name: name || phone,
               phones: [phone],
             });
+            if (saved?.id) clientId = saved.id;
           }
           if (clientId) {
-            const stagesPayload = STAGE_ORDER.map((stage) => ({
-              id: crypto.randomUUID(),
-              client_id: clientId,
-              visit_id: null,
-              stage: stage.key,
-              status: "not_started",
-              created_at: new Date().toISOString(),
-            }));
-            // Optimistic UI: insert stages locally & queue sync
-            await StageService.insertMultiple(stagesPayload);
+            // Ensure stages exist without creating duplicates or resetting existing progress
+            await StageService.ensureStagesForClient(
+              clientId,
+              inspectionId || directRecord?.id || null,
+            );
           }
         }
       }
@@ -3488,22 +3487,16 @@ export default function App() {
             let clientId = localClient?.id || null;
             if (!clientId) {
               clientId = crypto.randomUUID();
-              await CustomerService.saveClient({
+              const saved = await CustomerService.saveClient({
                 id: clientId,
                 name: name || phone,
                 phones: [phone],
               });
+              if (saved?.id) clientId = saved.id;
             }
             if (clientId) {
-              const stagesPayload = STAGE_ORDER.map((stage) => ({
-                id: crypto.randomUUID(),
-                client_id: clientId,
-                visit_id: null,
-                stage: stage.key,
-                status: "not_started",
-                created_at: new Date().toISOString(),
-              }));
-              await StageService.insertMultiple(stagesPayload);
+              // Ensure stages exist without creating duplicates or resetting existing progress
+              await StageService.ensureStagesForClient(clientId, r.id || null);
             }
           }
 

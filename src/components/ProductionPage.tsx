@@ -712,39 +712,29 @@ export const ProductionPage: React.FC<{
 
   // Helper to ensure customer and stages exist, then confirm intake
   const handleConfirmIntake = async (order: Inspection, currentStages: any[]) => {
-    const receivedStage = currentStages.find((s: any) => s.stage === "received");
-    if (receivedStage) {
-      onStageUpdate(receivedStage.id, "done");
-      toast.success(
-        lang === "ar"
-          ? "تم الاستلام بنجاح وتم نقل الطلب إلى الإنتاج"
-          : "Intake confirmed, moved to production",
-      );
-      return;
-    }
-
     try {
       const phone = order.phone?.trim();
       const name = order.customerName?.trim();
       let localClient = phone ? await CustomerService.getClientByPhone(phone) : null;
       let clientId = localClient?.id || (order as any).clientId || order.id || crypto.randomUUID();
       if (!localClient && phone) {
-        await CustomerService.saveClient({
+        const saved = await CustomerService.saveClient({
           id: clientId,
           name: name || phone,
           phones: [phone],
         });
+        if (saved?.id) clientId = saved.id;
       }
-      const stagesPayload = STAGE_ORDER.map((stage) => ({
-        id: crypto.randomUUID(),
-        client_id: clientId,
-        visit_id: order.id || null,
-        stage: stage.key,
-        status: stage.key === "received" ? "done" : "not_started",
-        completed_at: stage.key === "received" ? new Date().toISOString() : null,
-        created_at: new Date().toISOString(),
-      }));
-      await StageService.insertMultiple(stagesPayload);
+
+      // Ensure stages exist without creating duplicate records
+      const allClientStages = await StageService.ensureStagesForClient(clientId, order.id);
+      const receivedStage =
+        currentStages.find((s: any) => s.stage === "received") ||
+        allClientStages.find((s: any) => s.stage === "received");
+
+      if (receivedStage) {
+        onStageUpdate(receivedStage.id, "done");
+      }
       if (onRefresh) await onRefresh();
       toast.success(
         lang === "ar"
@@ -771,23 +761,20 @@ export const ProductionPage: React.FC<{
         let localClient = phone ? await CustomerService.getClientByPhone(phone) : null;
         let clientId = localClient?.id || (order as any).clientId || order.id || crypto.randomUUID();
         if (!localClient && phone) {
-          await CustomerService.saveClient({
+          const saved = await CustomerService.saveClient({
             id: clientId,
             name: name || phone,
             phones: [phone],
           });
+          if (saved?.id) clientId = saved.id;
         }
-        const targetStatus = isAdmin ? "done" : (isTimedStage(stageDef.key) ? "in_progress" : "done");
-        const stagesPayload = STAGE_ORDER.map((stage) => ({
-          id: crypto.randomUUID(),
-          client_id: clientId,
-          visit_id: order.id || null,
-          stage: stage.key,
-          status: stage.key === stageDef.key ? targetStatus : "not_started",
-          completed_at: stage.key === stageDef.key && targetStatus === "done" ? new Date().toISOString() : null,
-          created_at: new Date().toISOString(),
-        }));
-        await StageService.insertMultiple(stagesPayload);
+
+        const allClientStages = await StageService.ensureStagesForClient(clientId, order.id);
+        const targetStage = allClientStages.find((s: any) => s.stage === stageDef.key);
+        if (targetStage) {
+          const targetStatus = isAdmin ? "done" : (isTimedStage(stageDef.key) ? "in_progress" : "done");
+          onStageUpdate(targetStage.id, targetStatus);
+        }
         if (onRefresh) await onRefresh();
         toast.success(
           lang === "ar"

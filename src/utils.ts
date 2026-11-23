@@ -288,34 +288,38 @@ export const isPhoneMatch = (phoneA: any, phoneB: any): boolean => {
 export const getOrderStages = (order: any, allStages: any[]): any[] => {
   if (!order || !Array.isArray(allStages) || allStages.length === 0) return [];
 
+  let rawMatches: any[] = [];
+
   // 1. Explicit client ID match
-  const targetClientId = order.clientId || null;
+  const targetClientId = order.clientId || order.client_id || null;
   if (targetClientId) {
     const matched = allStages.filter((s: any) => s.client_id === targetClientId);
-    if (matched.length > 0) return matched;
+    if (matched.length > 0) rawMatches.push(...matched);
   }
 
   // 2. Direct ID / Visit ID match
-  if (order.id) {
+  if (rawMatches.length === 0 && order.id) {
     const directMatches = allStages.filter(
       (s: any) =>
         (s.client_id && s.client_id === order.id) ||
         (s.visit_id && s.visit_id === order.id),
     );
-    if (directMatches.length > 0) return directMatches;
+    if (directMatches.length > 0) rawMatches.push(...directMatches);
   }
 
   // 3. Match by phone
-  let foundStage = allStages.find((s: any) => {
-    if (!order.phone) return false;
-    const stagePhones = s.client?.phones;
-    return isPhoneMatch(order.phone, stagePhones);
-  });
+  if (rawMatches.length === 0 && order.phone) {
+    const phoneMatches = allStages.filter((s: any) => {
+      const stagePhones = s.client?.phones;
+      return isPhoneMatch(order.phone, stagePhones);
+    });
+    if (phoneMatches.length > 0) rawMatches.push(...phoneMatches);
+  }
 
   // 4. Match by customer name if phone didn't match
-  if (!foundStage && order.customerName) {
+  if (rawMatches.length === 0 && order.customerName) {
     const orderNameNorm = order.customerName.trim().toLowerCase();
-    foundStage = allStages.find((s: any) => {
+    const nameMatches = allStages.filter((s: any) => {
       const clientName = s.client?.name?.trim()?.toLowerCase();
       return (
         clientName &&
@@ -324,11 +328,44 @@ export const getOrderStages = (order: any, allStages: any[]): any[] => {
           orderNameNorm.includes(clientName))
       );
     });
+    if (nameMatches.length > 0) rawMatches.push(...nameMatches);
   }
 
-  if (foundStage?.client_id) {
-    return allStages.filter((s: any) => s.client_id === foundStage.client_id);
+  if (rawMatches.length === 0) return [];
+
+  // Deduplicate matched stages by stage key, ensuring the most advanced status
+  // always wins (done > in_progress > not_started) so that stale duplicates
+  // can never shadow a confirmed or in-progress stage.
+  const statusScore = (s: string) => (s === "done" ? 3 : s === "in_progress" ? 2 : 1);
+  const stageMap = new Map<string, any>();
+
+  for (const s of rawMatches) {
+    if (!s?.stage) continue;
+    const existing = stageMap.get(s.stage);
+    if (!existing) {
+      stageMap.set(s.stage, s);
+    } else {
+      const existingScore = statusScore(existing.status);
+      const newScore = statusScore(s.status);
+      if (newScore > existingScore) {
+        stageMap.set(s.stage, {
+          ...s,
+          expenses: (s.expenses && s.expenses.length > 0) ? s.expenses : existing.expenses,
+          images: (s.images && s.images.length > 0) ? s.images : existing.images,
+        });
+      } else if (newScore === existingScore) {
+        const timeExisting = existing.completed_at ? new Date(existing.completed_at).getTime() : 0;
+        const timeNew = s.completed_at ? new Date(s.completed_at).getTime() : 0;
+        if (timeNew > timeExisting) {
+          stageMap.set(s.stage, {
+            ...s,
+            expenses: (s.expenses && s.expenses.length > 0) ? s.expenses : existing.expenses,
+            images: (s.images && s.images.length > 0) ? s.images : existing.images,
+          });
+        }
+      }
+    }
   }
 
-  return [];
+  return Array.from(stageMap.values());
 };

@@ -236,11 +236,35 @@ export class SyncManager {
       tablesToPull.map(async (tableName) => {
         const pkColumn = tableName === "app_settings" ? "key" : "id";
         const columns = TABLE_COLUMNS[tableName] || "*";
-        const { data, error } = await supabase.from(tableName).select(columns);
-        if (error || !Array.isArray(data)) {
-          if (error) {
-            console.warn(`Failed to pull remote data for ${tableName}:`, error.message || error);
+        const PAGE_SIZE = 1000;
+        let data: any[] = [];
+        let from = 0;
+        let fetchFailed = false;
+
+        // Paginated retrieval so tables exceeding 1,000 rows (e.g. production_stages)
+        // are completely fetched without arbitrary server truncation.
+        while (true) {
+          const { data: pageData, error } = await supabase
+            .from(tableName)
+            .select(columns)
+            .range(from, from + PAGE_SIZE - 1);
+
+          if (error || !Array.isArray(pageData)) {
+            if (error) {
+              console.warn(`Failed to pull remote data for ${tableName}:`, error.message || error);
+            }
+            fetchFailed = true;
+            break;
           }
+
+          data.push(...pageData);
+          if (pageData.length < PAGE_SIZE) {
+            break;
+          }
+          from += PAGE_SIZE;
+        }
+
+        if (fetchFailed && data.length === 0) {
           return;
         }
 
@@ -407,19 +431,32 @@ export class SyncManager {
             continue;
           }
 
-          // 5. Conflict resolution via timestamp comparison
+          // 5. Conflict resolution via timestamp & status comparison
           const localRecord = localRecordsMap.get(remoteKey);
           if (localRecord) {
             const localTime = localRecord.last_modified || 0;
             const remoteTime = remoteRecord.updated_at
               ? new Date(remoteRecord.updated_at).getTime()
-              : remoteRecord.created_at
-              ? new Date(remoteRecord.created_at).getTime()
+              : remoteRecord.completed_at
+              ? new Date(remoteRecord.completed_at).getTime()
               : remoteRecord.finalized_at
               ? new Date(remoteRecord.finalized_at).getTime()
+              : remoteRecord.created_at
+              ? new Date(remoteRecord.created_at).getTime()
               : 0;
 
-            if (localTime > remoteTime) {
+            if (tableName === "production_stages") {
+              const statusScore = (s: string) => (s === "done" ? 3 : s === "in_progress" ? 2 : 1);
+              const remoteScore = statusScore(remoteRecord.status);
+              const localScore = statusScore(localRecord.status);
+              // Remote with more advanced status always wins
+              if (remoteScore < localScore && localTime > remoteTime) {
+                continue;
+              }
+              if (remoteScore === localScore && localTime > remoteTime) {
+                continue;
+              }
+            } else if (localTime > remoteTime) {
               continue;
             }
           }
@@ -434,41 +471,43 @@ export class SyncManager {
           recordsToPut.push(mergedRecord);
         }
 
-        // Self-healing / reconciliation sync
-        for (const localRecord of localRecords) {
-          const localKey = String(localRecord[pkColumn] ?? "").trim();
-          if (!localKey) continue;
+        // Self-healing / reconciliation sync (only run if fetch succeeded completely)
+        if (!fetchFailed) {
+          for (const localRecord of localRecords) {
+            const localKey = String(localRecord[pkColumn] ?? "").trim();
+            if (!localKey) continue;
 
-          if (!remoteIds.has(localKey)) {
-            if (pendingOpRecordIds.has(localKey)) continue;
+            if (!remoteIds.has(localKey)) {
+              if (pendingOpRecordIds.has(localKey)) continue;
 
-            const localPhone = normalizePhone((localRecord as any).phone);
-            const isKnownDeleted =
-              localTombIds.has(localKey) ||
-              Boolean(localPhone && localTombPhones.has(localPhone)) ||
-              Boolean(tombIds && tombIds.has(localKey)) ||
-              Boolean(localPhone && tombPhones && tombPhones.has(localPhone));
+              const localPhone = normalizePhone((localRecord as any).phone);
+              const isKnownDeleted =
+                localTombIds.has(localKey) ||
+                Boolean(localPhone && localTombPhones.has(localPhone)) ||
+                Boolean(tombIds && tombIds.has(localKey)) ||
+                Boolean(localPhone && tombPhones && tombPhones.has(localPhone));
 
-            const recentlyModified =
-              ((localRecord as any).last_modified || 0) > Date.now() - RECONCILE_GRACE_MS;
+              const recentlyModified =
+                ((localRecord as any).last_modified || 0) > Date.now() - RECONCILE_GRACE_MS;
 
-            if (isKnownDeleted) {
-              recordsToDeleteLocally.add(localKey);
-            } else if ((localRecord as any).synced) {
-              if (!recentlyModified) {
+              if (isKnownDeleted) {
                 recordsToDeleteLocally.add(localKey);
+              } else if ((localRecord as any).synced) {
+                if (!recentlyModified) {
+                  recordsToDeleteLocally.add(localKey);
+                }
+              } else {
+                pendingOpRecordIds.add(localKey);
+                operationsToQueue.push({
+                  operation: "INSERT",
+                  tableName,
+                  recordId: localKey,
+                  payload: localRecord,
+                  createdAt: Date.now(),
+                  retryCount: 0,
+                  status: "pending",
+                });
               }
-            } else {
-              pendingOpRecordIds.add(localKey);
-              operationsToQueue.push({
-                operation: "INSERT",
-                tableName,
-                recordId: localKey,
-                payload: localRecord,
-                createdAt: Date.now(),
-                retryCount: 0,
-                status: "pending",
-              });
             }
           }
         }

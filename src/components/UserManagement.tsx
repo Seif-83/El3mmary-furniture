@@ -118,9 +118,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ lang, currentUse
     } else if (roleKey === "moderator") {
       setSelectedPermissions(["production.view", "production.alexandria", "production.cairo"]);
     } else if (roleKey === "production_alexandria") {
-      setSelectedPermissions(["production.view", "production.alexandria"]);
+      setSelectedPermissions(["production.view", "production.alexandria", "production.edit"]);
     } else if (roleKey === "production_cairo") {
-      setSelectedPermissions(["production.view", "production.cairo"]);
+      setSelectedPermissions(["production.view", "production.cairo", "production.edit"]);
     }
   };
 
