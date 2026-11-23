@@ -100,6 +100,7 @@ import {
   playSound,
   formatTime12,
   getOrderStages,
+  isPhoneMatch,
 } from "./utils";
 import { ProductionPage } from "./components/ProductionPage";
 import { PaymentsPage, type PaymentRecord } from "./components/PaymentsPage";
@@ -1540,6 +1541,31 @@ export default function App() {
     tableName: "contracted_customers" | "non_contracted_customers",
     payload: Record<string, any>,
   ) => {
+    // Check if customer with matching phone already exists in this table to prevent duplicates
+    const phone = payload.phone?.trim();
+    if (phone) {
+      const existingRecords =
+        tableName === "contracted_customers"
+          ? await OrderService.getContracted()
+          : await OrderService.getNonContracted();
+      const existing = existingRecords.find((r: any) => isPhoneMatch(r.phone, phone));
+      if (existing) {
+        const merged = {
+          ...existing,
+          ...payload,
+          id: existing.id,
+          contract_url: payload.contract_url || existing.contract_url || null,
+          last_modified: Date.now(),
+        };
+        if (tableName === "contracted_customers") {
+          await OrderService.updateContracted(existing.id, merged);
+        } else {
+          await OrderService.updateNonContracted(existing.id, merged);
+        }
+        return existing.id;
+      }
+    }
+
     const id = payload.id || crypto.randomUUID();
     const record = {
       ...payload,
@@ -1549,11 +1575,11 @@ export default function App() {
     };
     if (tableName === "contracted_customers") {
       await OrderService.insertContracted(record);
-      return;
+      return id;
     }
     if (tableName === "non_contracted_customers") {
       await OrderService.insertNonContracted(record);
-      return;
+      return id;
     }
   };
 

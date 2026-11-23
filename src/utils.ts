@@ -145,7 +145,11 @@ export const mapInspectionFromDB = (dbInsp: any): Inspection =>
   }) as Inspection;
 
 export const sortContractedRecordsByContractDate = (records: Inspection[]) => {
-  return [...records].sort((a, b) => {
+  const sorted = [...records].sort((a, b) => {
+    // Prefer records that have contractUrl attached
+    if (a.contractUrl && !b.contractUrl) return -1;
+    if (!a.contractUrl && b.contractUrl) return 1;
+
     // Sort by finalizedAt first (most recent finalized/contracted first), fallback to createdAt
     const getTime = (r: Inspection) => {
       const ts = (r as any).finalizedAt || r.createdAt;
@@ -153,6 +157,23 @@ export const sortContractedRecordsByContractDate = (records: Inspection[]) => {
     };
     return getTime(b) - getTime(a);
   });
+
+  // Deduplicate by normalized phone number and ID so duplicate customer records never appear in the UI
+  const seenPhones = new Set<string>();
+  const seenIds = new Set<string>();
+  const deduplicated: Inspection[] = [];
+
+  for (const r of sorted) {
+    if (r.id && seenIds.has(r.id)) continue;
+    const phoneNorm = r.phone ? String(r.phone).replace(/\D/g, "").replace(/^2/, "") : "";
+    if (phoneNorm && seenPhones.has(phoneNorm)) continue;
+
+    if (r.id) seenIds.add(r.id);
+    if (phoneNorm) seenPhones.add(phoneNorm);
+    deduplicated.push(r);
+  }
+
+  return deduplicated;
 };
 
 export const isMissingRoomTypesColumnError = (error: any) => {
